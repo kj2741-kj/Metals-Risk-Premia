@@ -778,7 +778,7 @@ with tab2:
                             )
                             # Snap to nearest available trading date
                             picked_ts = pd.Timestamp(picked)
-                            nearest_idx = (available_dates - picked_ts).abs().argmin()
+                            nearest_idx = available_dates.get_indexer([picked_ts], method="nearest")[0]
                             selected_curve_date = available_dates[nearest_idx]
 
                         with col2:
