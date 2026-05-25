@@ -1170,7 +1170,7 @@ with tab4:
                 vol_df = raw_curve[vol_cols].copy()
                 vol_df.columns = [c.split("_")[0] if "_" in c else c for c in vol_df.columns]
 
-                vol_monthly = vol_df.resample("M").mean()
+                vol_monthly = vol_df.resample("ME").mean()
                 vol_monthly = vol_monthly.tail(36)
 
                 if not vol_monthly.empty:
