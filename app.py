@@ -39,10 +39,10 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
     /* Global */
-    .stApp { font-family: 'DM Sans', sans-serif; }
+    .stApp { font-family: 'IBM Plex Sans', sans-serif; background-color: #0E0E0E; }
 
     /* Hide default streamlit elements */
     #MainMenu { visibility: hidden; }
@@ -50,84 +50,103 @@ st.markdown("""
 
     /* Metric cards */
     .metric-card {
-        background: linear-gradient(135deg, #1A1F2E 0%, #0F1724 100%);
-        border: 1px solid #2D3748;
-        border-radius: 12px;
-        padding: 16px 20px;
+        background: #161616;
+        border: 1px solid #2A2A2A;
+        border-left: 3px solid #B87333;
+        border-radius: 4px;
+        padding: 14px 18px;
         margin: 4px 0;
     }
     .metric-card h4 {
-        color: #94A3B8;
-        font-size: 0.75rem;
+        color: #7A7068;
+        font-size: 0.72rem;
         font-weight: 500;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
-        margin: 0 0 4px 0;
+        margin: 0 0 6px 0;
     }
     .metric-card .value {
-        color: #E2E8F0;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 1.5rem;
-        font-weight: 700;
+        color: #D4CFC8;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 1.45rem;
+        font-weight: 500;
         margin: 0;
     }
-    .metric-card .delta-pos { color: #34D399; font-size: 0.85rem; }
-    .metric-card .delta-neg { color: #F87171; font-size: 0.85rem; }
+    .metric-card .delta-pos { color: #5BAD72; font-size: 0.82rem; }
+    .metric-card .delta-neg { color: #B85450; font-size: 0.82rem; }
 
     /* Section headers */
     .section-header {
-        font-family: 'DM Sans', sans-serif;
-        color: #E2E8F0;
-        font-size: 1.1rem;
-        font-weight: 700;
-        border-bottom: 2px solid #3B82F6;
-        padding-bottom: 8px;
-        margin: 24px 0 16px 0;
+        font-family: 'IBM Plex Sans', sans-serif;
+        color: #D4CFC8;
+        font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        border-bottom: 1px solid #B87333;
+        padding-bottom: 6px;
+        margin: 24px 0 14px 0;
     }
 
     /* Tab styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 4px;
-        background-color: #0F1724;
-        padding: 4px;
-        border-radius: 10px;
+        gap: 0px;
+        background-color: #111111;
+        padding: 0;
+        border-bottom: 1px solid #2A2A2A;
+        border-radius: 0;
     }
     .stTabs [data-baseweb="tab"] {
-        border-radius: 8px;
-        padding: 8px 20px;
+        border-radius: 0;
+        padding: 10px 22px;
         font-weight: 500;
+        font-size: 0.88rem;
+        letter-spacing: 0.03em;
+        color: #7A7068;
+        border-bottom: 2px solid transparent;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #B87333 !important;
+        border-bottom: 2px solid #B87333 !important;
+        background-color: transparent !important;
     }
 
     /* Backwardation / Contango badges */
     .badge-backwardation {
-        background: rgba(52, 211, 153, 0.15);
-        color: #34D399;
-        padding: 2px 10px;
-        border-radius: 20px;
-        font-size: 0.8rem;
+        background: rgba(91, 173, 114, 0.12);
+        color: #5BAD72;
+        padding: 3px 10px;
+        border-radius: 2px;
+        font-size: 0.78rem;
         font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
     }
     .badge-contango {
-        background: rgba(248, 113, 113, 0.15);
-        color: #F87171;
-        padding: 2px 10px;
-        border-radius: 20px;
-        font-size: 0.8rem;
+        background: rgba(184, 84, 80, 0.12);
+        color: #B85450;
+        padding: 3px 10px;
+        border-radius: 2px;
+        font-size: 0.78rem;
         font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
     }
 
     /* Title */
     .main-title {
-        font-family: 'DM Sans', sans-serif;
-        font-weight: 700;
-        font-size: 1.8rem;
-        color: #E2E8F0;
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-weight: 600;
+        font-size: 1.6rem;
+        color: #D4CFC8;
         margin-bottom: 0;
+        letter-spacing: 0.02em;
     }
     .main-subtitle {
-        color: #64748B;
-        font-size: 0.9rem;
-        margin-top: 0;
+        color: #5A5248;
+        font-size: 0.85rem;
+        margin-top: 2px;
+        letter-spacing: 0.04em;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -140,38 +159,38 @@ st.markdown("""
 CHART_LAYOUT = dict(
     template="plotly_dark",
     paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(14,17,23,0.8)",
-    font=dict(family="DM Sans, sans-serif", color="#94A3B8"),
-    xaxis=dict(gridcolor="rgba(45,55,72,0.5)", zerolinecolor="rgba(45,55,72,0.5)"),
-    yaxis=dict(gridcolor="rgba(45,55,72,0.5)", zerolinecolor="rgba(45,55,72,0.5)"),
+    plot_bgcolor="#111111",
+    font=dict(family="IBM Plex Sans, sans-serif", color="#8A8278"),
+    xaxis=dict(gridcolor="rgba(50,46,42,0.6)", zerolinecolor="rgba(50,46,42,0.6)"),
+    yaxis=dict(gridcolor="rgba(50,46,42,0.6)", zerolinecolor="rgba(50,46,42,0.6)"),
     margin=dict(l=60, r=30, t=50, b=50),
-    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
-    hoverlabel=dict(bgcolor="#1A1F2E", font_size=12, font_family="JetBrains Mono"),
+    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11, color="#8A8278")),
+    hoverlabel=dict(bgcolor="#1C1A18", font_size=12, font_family="IBM Plex Mono"),
 )
 
 COLORS = {
-    "primary": "#3B82F6",
-    "secondary": "#8B5CF6",
-    "accent": "#06B6D4",
-    "green": "#34D399",
-    "red": "#F87171",
-    "amber": "#FBBF24",
-    "orange": "#FB923C",
-    "pink": "#F472B6",
-    "slate": "#64748B",
+    "primary": "#B87333",    # copper
+    "secondary": "#C9A84C",  # gold
+    "accent": "#3D8F8A",     # muted teal
+    "green": "#5BAD72",      # muted green
+    "red": "#B85450",        # muted red
+    "amber": "#C9A84C",      # amber/gold
+    "orange": "#B87333",     # copper-orange
+    "pink": "#A07898",       # muted mauve
+    "slate": "#6A6460",      # warm gray
 }
 
 METAL_COLORS = {
-    "Copper": "#FB923C",
-    "Aluminium": "#94A3B8",
-    "Zinc": "#3B82F6",
-    "Nickel": "#8B5CF6",
-    "Lead": "#64748B",
-    "Tin": "#06B6D4",
-    "Gold": "#FBBF24",
-    "Silver": "#CBD5E1",
-    "Platinum": "#A78BFA",
-    "Palladium": "#F472B6",
+    "Copper":    "#B87333",  # real copper
+    "Aluminium": "#9BAAB3",  # aluminum
+    "Zinc":      "#7A8E9A",  # zinc blue-gray
+    "Nickel":    "#A0A5A8",  # nickel silver
+    "Lead":      "#6B7073",  # lead dark gray
+    "Tin":       "#9A9EA0",  # tin
+    "Gold":      "#C9A84C",  # gold
+    "Silver":    "#B0B8C0",  # silver
+    "Platinum":  "#C8D0D8",  # platinum
+    "Palladium": "#B8A898",  # palladium warm gray
 }
 
 
