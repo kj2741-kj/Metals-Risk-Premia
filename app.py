@@ -769,11 +769,17 @@ with tab2:
                         col1, col2 = st.columns([2, 1])
 
                         with col1:
-                            date_options = [d.strftime("%Y-%m-%d") for d in reversed(available_dates)]
-                            selected_date_str = st.selectbox(
-                                "Select Date", date_options, index=0, key="curve_date_select"
+                            min_d = available_dates.min().date()
+                            max_d = available_dates.max().date()
+                            picked = st.date_input(
+                                "Select Date", value=max_d,
+                                min_value=min_d, max_value=max_d,
+                                key="curve_date_select",
                             )
-                            selected_curve_date = pd.Timestamp(selected_date_str)
+                            # Snap to nearest available trading date
+                            picked_ts = pd.Timestamp(picked)
+                            nearest_idx = (available_dates - picked_ts).abs().argmin()
+                            selected_curve_date = available_dates[nearest_idx]
 
                         with col2:
                             st.markdown("##### Compare With")
