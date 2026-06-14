@@ -1732,7 +1732,7 @@ with tab7:
     m_net   = _perf(net_pnl,   pos_s, f"Net (TC={tc_label})")
 
     # ── Metric cards ──────────────────────────────────────────────────────────
-    def _mcard(col, label, val, fmt=".4f", suffix="", good_high=True):
+    def _mcard(col, label, val, fmt=".2f", suffix="", good_high=True):
         if val is None or (isinstance(val, float) and np.isnan(val)):
             col.markdown(f'<div class="metric-card"><h4>{label}</h4><p class="value">—</p></div>',
                          unsafe_allow_html=True)
@@ -1750,10 +1750,10 @@ with tab7:
     if m_gross and m_net:
         # Row 1: Sharpe, Sortino, Ann Return, Std Dev
         cols = st.columns(8)
-        _mcard(cols[0], "Sharpe (Gross)",       m_gross.get("sharpe"),       ".4f")
-        _mcard(cols[1], "Sharpe (Net)",          m_net.get("sharpe"),         ".4f")
-        _mcard(cols[2], "Sortino (Gross)",       m_gross.get("sortino"),      ".4f")
-        _mcard(cols[3], "Sortino (Net)",         m_net.get("sortino"),        ".4f")
+        _mcard(cols[0], "Sharpe (Gross)",       m_gross.get("sharpe"),       ".2f")
+        _mcard(cols[1], "Sharpe (Net)",          m_net.get("sharpe"),         ".2f")
+        _mcard(cols[2], "Sortino (Gross)",       m_gross.get("sortino"),      ".2f")
+        _mcard(cols[3], "Sortino (Net)",         m_net.get("sortino"),        ".2f")
         _mcard(cols[4], "Ann Return % (Gross)",  m_gross.get("ann_ret_pct"),  ".2f", "%")
         _mcard(cols[5], "Ann Return % (Net)",    m_net.get("ann_ret_pct"),    ".2f", "%")
         _mcard(cols[6], "Ann Std Dev %",         m_gross.get("ann_std_pct"),  ".2f", "%")
@@ -1763,12 +1763,12 @@ with tab7:
         cols2 = st.columns(8)
         _mcard(cols2[0], "Max DD % (Gross)",     m_gross.get("mdd_pct"),      ".2f", "%", good_high=False)
         _mcard(cols2[1], "Max DD % (Net)",       m_net.get("mdd_pct"),        ".2f", "%", good_high=False)
-        _mcard(cols2[2], "Calmar (Gross)",       m_gross.get("calmar"),       ".4f")
-        _mcard(cols2[3], "Calmar (Net)",         m_net.get("calmar"),         ".4f")
+        _mcard(cols2[2], "Calmar (Gross)",       m_gross.get("calmar"),       ".2f")
+        _mcard(cols2[3], "Calmar (Net)",         m_net.get("calmar"),         ".2f")
         _mcard(cols2[4], "Hit Rate",             m_gross.get("hit_rate"),     ".2f", "%")
-        _mcard(cols2[5], "Profit Factor",        m_gross.get("profit_factor"),".4f")
-        _mcard(cols2[6], "Total PnL ($/MT Gross)", m_gross.get("total_pnl_usdmt"), ",.1f")
-        _mcard(cols2[7], "Total PnL ($/MT Net)", m_net.get("total_pnl_usdmt"), ",.1f")
+        _mcard(cols2[5], "Profit Factor",        m_gross.get("profit_factor"),".2f")
+        _mcard(cols2[6], "Total PnL ($/MT Gross)", m_gross.get("total_pnl_usdmt"), ",.2f")
+        _mcard(cols2[7], "Total PnL ($/MT Net)", m_net.get("total_pnl_usdmt"), ",.2f")
     else:
         st.warning("Insufficient active trading days to compute metrics.")
 
