@@ -424,6 +424,28 @@ def parse_cash_3m_columns(df, metal_name):
 
 
 # ═══════════════════════════════════════════════
+# COPPER F1 CONTINUOUS LOADER (module-level)
+# ═══════════════════════════════════════════════
+
+LOCAL_F1_CONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LME_Copper_Rolling_F1_v2.csv")
+
+
+@st.cache_data(show_spinner=False)
+def _load_copper_f1_data() -> pd.DataFrame:
+    """Load pre-computed LME Copper rolling F1 continuous series from CSV.
+
+    Returns a DataFrame with columns F1_raw and F1_continuous, indexed by Date.
+    Returns an empty DataFrame if the file is not found.
+    """
+    if not os.path.exists(LOCAL_F1_CONT_PATH):
+        return pd.DataFrame()
+    df = pd.read_csv(LOCAL_F1_CONT_PATH, parse_dates=["Date"]).set_index("Date")
+    df.index = df.index.normalize()
+    df = df.sort_index()
+    return df[["F1_raw", "F1_continuous"]]
+
+
+# ═══════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════
 
@@ -620,13 +642,14 @@ ALL_METALS = available_metals + CME_METALS_LIST
 # TABS
 # ═══════════════════════════════════════════════
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📊 Market Overview",
     "📈 Term Structure",
     "💰 Cash vs 3M (Carry)",
     "📉 Volume & Open Interest",
     "🔗 Copper LME-CME Spread",
-    "📋 Statistics"
+    "📋 Statistics",
+    "⚡ Momentum Signals",
 ])
 
 
@@ -1538,3 +1561,385 @@ with tab6:
             for k, v in ret_stats.items():
                 st.markdown(f"**{k}:** `{v}`")
 
+
+# ══════════════════════════════════════════════════════
+# TAB 7: MOMENTUM SIGNALS
+# ══════════════════════════════════════════════════════
+
+with tab7:
+    st.markdown("### Momentum Signals — LME Copper")
+    st.caption(
+        "Baz-Granger CTA trend signal (Eqs 29-33) and MA Crossover. "
+        "Signal computed from F1_raw only; PnL from F1_continuous (roll costs captured). "
+        "Returns expressed as % of notional. Transaction costs applied on every position change."
+    )
+
+    # ── Controls ──────────────────────────────────────────────────────────────
+    c1, c2, c3, c4 = st.columns([1.6, 1.8, 1.4, 1.4])
+
+    with c1:
+        sig_type = st.selectbox(
+            "Signal Type",
+            ["MA Crossover", "CTA (Baz-Granger)"],
+            key="mom_sig_type",
+        )
+
+    with c2:
+        if sig_type == "MA Crossover":
+            variant_opts = {
+                "MA(35,43) — Best Sharpe [default]": (35, 43),
+                "MA(33,48)": (33, 48),
+                "MA(35,44)": (35, 44),
+                "MA(34,47)": (34, 47),
+                "MA(36,44)": (36, 44),
+            }
+            default_idx = 0
+        else:
+            variant_opts = {
+                "CTA(8,21) — Best Same-Day Sharpe": ("cta_single", 8, 21),
+                "CTA(9,21) — Best Lag-1 Sharpe [default]": ("cta_single", 9, 21),
+                "CTA(9,20)": ("cta_single", 9, 20),
+                "CTA(10,19)": ("cta_single", 10, 19),
+                "CTA(14,15)": ("cta_single", 14, 15),
+                "CTA Paper (8-16-32 / 24-48-96)": ("cta_paper",),
+            }
+            default_idx = 1
+        variant_label = st.selectbox(
+            "Strategy Variant", list(variant_opts.keys()),
+            index=default_idx, key="mom_variant",
+        )
+        variant_params = variant_opts[variant_label]
+
+    with c3:
+        timing_label = st.selectbox(
+            "Position Entry",
+            ["Lag-1 (Next-Day)", "Same-Day"],
+            index=0, key="mom_timing",
+        )
+        same_day = timing_label == "Same-Day"
+
+    with c4:
+        tc_map = {
+            "$0 / MT  (No TC)":          0.0,
+            "$2 / MT  Round Trip":        2.0,
+            "$5 / MT  Round Trip":        5.0,
+            "$10 / MT Round Trip":       10.0,
+        }
+        tc_label = st.selectbox(
+            "Transaction Cost", list(tc_map.keys()),
+            index=0, key="mom_tc",
+        )
+        tc_rt = tc_map[tc_label]   # round-trip cost in $/MT
+
+    # ── Data loading ──────────────────────────────────────────────────────────
+    _f1_df = _load_copper_f1_data()
+    if _f1_df.empty:
+        st.error(
+            "LME_Copper_Rolling_F1_v2.csv not found. "
+            "Ensure it is in the same directory as app.py."
+        )
+        st.stop()
+    f1r: pd.Series = _f1_df["F1_raw"]
+    f1c: pd.Series = _f1_df["F1_continuous"]
+
+    # ── Signal & position computation ─────────────────────────────────────────
+    def _ewma(s: pd.Series, n: int) -> pd.Series:
+        return s.ewm(com=n - 1, adjust=False).mean()
+
+    if sig_type == "MA Crossover":
+        m_val, n_val = variant_params
+        sig_raw = np.sign(f1r.rolling(m_val).mean() - f1r.rolling(n_val).mean()).values.astype(float)
+
+    elif isinstance(variant_params, tuple) and variant_params[0] == "cta_paper":
+        pv = f1r.rolling(63).std()
+        us = []
+        for sk, lk in zip((8, 16, 32), (24, 48, 96)):
+            x = _ewma(f1r, sk) - _ewma(f1r, lk)
+            y = x / pv
+            with np.errstate(invalid="ignore"):
+                z = (y / y.rolling(252).std()).values
+                u = z * np.exp(-z ** 2 / 4) / 0.89
+            us.append(u)
+        sig_raw = np.sign(np.nanmean(np.stack(us, axis=1), axis=1))
+
+    else:  # cta_single
+        _, s_val, l_val = variant_params
+        x = _ewma(f1r, s_val) - _ewma(f1r, l_val)
+        y = x / f1r.rolling(63).std()
+        with np.errstate(invalid="ignore"):
+            z = (y / y.rolling(252).std()).values
+            u = z * np.exp(-z ** 2 / 4) / 0.89
+        sig_raw = np.sign(u)
+
+    T = len(sig_raw)
+    pos_np = np.empty(T)
+    if same_day:
+        pos_np[:] = np.where(np.isfinite(sig_raw), sig_raw, 0.0)
+    else:
+        pos_np[0] = 0.0
+        pos_np[1:] = np.where(np.isfinite(sig_raw[:-1]), sig_raw[:-1], 0.0)
+    sig_np = sig_raw
+
+    # ── PnL with transaction costs ─────────────────────────────────────────────
+    delta_np  = f1c.diff().values.astype(float)
+    pos_s     = pd.Series(pos_np, index=f1r.index)
+    delta_s   = pd.Series(delta_np, index=f1r.index)
+    gross_pnl = pos_s * delta_s
+
+    tc_one_way   = tc_rt / 2.0
+    pos_change   = pos_s.diff().abs()
+    pos_change.iloc[0] = abs(pos_s.iloc[0])
+    tc_cost_s    = pos_change * tc_one_way
+    net_pnl      = gross_pnl - tc_cost_s
+
+    cum_pnl_gross = gross_pnl.cumsum()
+    cum_pnl_net   = net_pnl.cumsum()
+
+    # ── Performance metrics ────────────────────────────────────────────────────
+    def _perf(daily_pnl: pd.Series, position: pd.Series, label: str) -> dict:
+        f1_prev   = f1c.shift(1)
+        daily_ret = daily_pnl / f1_prev
+        active    = daily_ret[position != 0].dropna()
+        pnl_act   = daily_pnl[position != 0].dropna()
+        n         = len(active)
+        if n < 20:
+            return {}
+        ann_r  = float(active.mean() * 252 * 100)
+        ann_sd = float(active.std()  * np.sqrt(252) * 100)
+        sharpe = ann_r / ann_sd if ann_sd > 0 else np.nan
+        down   = active[active < 0]
+        srt_d  = float(down.std() * np.sqrt(252) * 100) if len(down) > 1 else np.nan
+        sortino = ann_r / srt_d if srt_d and srt_d > 0 else np.nan
+        full_ret    = daily_ret.fillna(0)
+        cum_r_pct   = full_ret.cumsum() * 100
+        mdd_pct     = float((cum_r_pct - cum_r_pct.cummax()).min())
+        calmar      = ann_r / abs(mdd_pct) if mdd_pct != 0 else np.nan
+        wins        = pnl_act[pnl_act > 0]
+        losses      = pnl_act[pnl_act < 0]
+        hit_rate    = float((active > 0).mean()) * 100
+        pf          = abs(wins.sum() / losses.sum()) if len(losses) > 0 else np.nan
+        total_pnl   = float(pnl_act.sum())
+        return {
+            "label": label, "n": n,
+            "sharpe": sharpe, "sortino": sortino,
+            "ann_ret_pct": ann_r, "ann_std_pct": ann_sd,
+            "mdd_pct": mdd_pct, "calmar": calmar,
+            "hit_rate": hit_rate, "profit_factor": pf,
+            "total_pnl_usdmt": total_pnl,
+        }
+
+    m_gross = _perf(gross_pnl, pos_s, "Gross (No TC)")
+    m_net   = _perf(net_pnl,   pos_s, f"Net (TC={tc_label})")
+
+    # ── Metric cards ──────────────────────────────────────────────────────────
+    def _mcard(col, label, val, fmt=".4f", suffix="", good_high=True):
+        if val is None or (isinstance(val, float) and np.isnan(val)):
+            col.markdown(f'<div class="metric-card"><h4>{label}</h4><p class="value">—</p></div>',
+                         unsafe_allow_html=True)
+            return
+        v_str = f"{val:{fmt}}{suffix}"
+        col.markdown(f'<div class="metric-card"><h4>{label}</h4><p class="value">{v_str}</p></div>',
+                     unsafe_allow_html=True)
+
+    section_header = lambda t: st.markdown(f'<div class="section-header">{t}</div>', unsafe_allow_html=True)
+
+    st.divider()
+    section_header("PERFORMANCE METRICS")
+    st.caption(f"**Strategy:** {variant_label}  |  **Entry:** {timing_label}  |  **TC:** {tc_label}")
+
+    if m_gross and m_net:
+        # Row 1: Sharpe, Sortino, Ann Return, Std Dev
+        cols = st.columns(8)
+        _mcard(cols[0], "Sharpe (Gross)",       m_gross.get("sharpe"),       ".4f")
+        _mcard(cols[1], "Sharpe (Net)",          m_net.get("sharpe"),         ".4f")
+        _mcard(cols[2], "Sortino (Gross)",       m_gross.get("sortino"),      ".4f")
+        _mcard(cols[3], "Sortino (Net)",         m_net.get("sortino"),        ".4f")
+        _mcard(cols[4], "Ann Return % (Gross)",  m_gross.get("ann_ret_pct"),  ".2f", "%")
+        _mcard(cols[5], "Ann Return % (Net)",    m_net.get("ann_ret_pct"),    ".2f", "%")
+        _mcard(cols[6], "Ann Std Dev %",         m_gross.get("ann_std_pct"),  ".2f", "%")
+        _mcard(cols[7], "Active Days",           float(m_gross.get("n", 0)), ",.0f")
+
+        # Row 2: MaxDD, Calmar, Hit Rate, Profit Factor, Total PnL
+        cols2 = st.columns(8)
+        _mcard(cols2[0], "Max DD % (Gross)",     m_gross.get("mdd_pct"),      ".2f", "%", good_high=False)
+        _mcard(cols2[1], "Max DD % (Net)",       m_net.get("mdd_pct"),        ".2f", "%", good_high=False)
+        _mcard(cols2[2], "Calmar (Gross)",       m_gross.get("calmar"),       ".4f")
+        _mcard(cols2[3], "Calmar (Net)",         m_net.get("calmar"),         ".4f")
+        _mcard(cols2[4], "Hit Rate",             m_gross.get("hit_rate"),     ".2f", "%")
+        _mcard(cols2[5], "Profit Factor",        m_gross.get("profit_factor"),".4f")
+        _mcard(cols2[6], "Total PnL ($/MT Gross)", m_gross.get("total_pnl_usdmt"), ",.1f")
+        _mcard(cols2[7], "Total PnL ($/MT Net)", m_net.get("total_pnl_usdmt"), ",.1f")
+    else:
+        st.warning("Insufficient active trading days to compute metrics.")
+
+    # ── Cumulative PnL chart ──────────────────────────────────────────────────
+    st.divider()
+    section_header("CUMULATIVE PnL (USD/MT)")
+
+    fig_cum = go.Figure()
+    fig_cum.add_trace(go.Scatter(
+        x=cum_pnl_gross.index, y=cum_pnl_gross.values,
+        name="Gross PnL", mode="lines",
+        line=dict(color=COLORS["primary"], width=1.8),
+        hovertemplate="%{x|%b %d, %Y}<br>Gross: $%{y:,.1f}/MT<extra></extra>",
+    ))
+    if tc_rt > 0:
+        fig_cum.add_trace(go.Scatter(
+            x=cum_pnl_net.index, y=cum_pnl_net.values,
+            name=f"Net PnL (TC ${tc_rt}/MT RT)", mode="lines",
+            line=dict(color=COLORS["amber"], width=1.8, dash="dot"),
+            hovertemplate="%{x|%b %d, %Y}<br>Net: $%{y:,.1f}/MT<extra></extra>",
+        ))
+    fig_cum.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1)
+    fig_cum.update_layout(
+        **CHART_LAYOUT, height=380,
+        title=dict(text=f"{variant_label} — Cumulative PnL ({timing_label})", font=dict(size=13)),
+        yaxis_title="Cumulative PnL (USD/MT)",
+        xaxis_title=None, hovermode="x unified",
+    )
+    fig_cum.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+    st.plotly_chart(fig_cum, use_container_width=True)
+
+    # ── Annual PnL bar chart ──────────────────────────────────────────────────
+    st.divider()
+    section_header("ANNUAL PnL BREAKDOWN (Gross, USD/MT)")
+
+    annual_pnl = gross_pnl.resample("YE").sum()
+    annual_pnl.index = annual_pnl.index.year
+    bar_colors = [COLORS["green"] if v >= 0 else COLORS["red"] for v in annual_pnl.values]
+
+    fig_ann = go.Figure(go.Bar(
+        x=annual_pnl.index.astype(str), y=annual_pnl.values,
+        marker_color=bar_colors, name="Annual PnL",
+        hovertemplate="%{x}<br>PnL: $%{y:,.1f}/MT<extra></extra>",
+    ))
+    fig_ann.update_layout(
+        **CHART_LAYOUT, height=300,
+        title=dict(text="Annual PnL", font=dict(size=13)),
+        yaxis_title="PnL (USD/MT)", xaxis_title=None, showlegend=False,
+    )
+    st.plotly_chart(fig_ann, use_container_width=True)
+
+    # ── Signal & Position chart ────────────────────────────────────────────────
+    st.divider()
+    section_header("SIGNAL & POSITION OVER TIME")
+
+    date_range_mom = st.date_input(
+        "Date range",
+        value=[f1r.index[0].date(), f1r.index[-1].date()],
+        min_value=f1r.index[0].date(),
+        max_value=f1r.index[-1].date(),
+        key="mom_date_range",
+    )
+    if len(date_range_mom) == 2:
+        d_start, d_end = pd.Timestamp(date_range_mom[0]), pd.Timestamp(date_range_mom[1])
+    else:
+        d_start, d_end = f1r.index[0], f1r.index[-1]
+
+    mask = (f1r.index >= d_start) & (f1r.index <= d_end)
+    f1r_w    = f1r[mask]
+    pos_w    = pos_s[mask]
+    sig_arr  = pd.Series(sig_np, index=f1r.index)[mask]
+
+    fig_sig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35],
+        vertical_spacing=0.04,
+    )
+    # F1_raw price
+    fig_sig.add_trace(go.Scatter(
+        x=f1r_w.index, y=f1r_w.values, name="F1 Price",
+        line=dict(color=COLORS["primary"], width=1.5),
+        hovertemplate="%{x|%b %d, %Y}<br>F1: $%{y:,.1f}<extra></extra>",
+    ), row=1, col=1)
+
+    # Long / short shading based on position
+    long_mask  = pos_w == 1
+    short_mask = pos_w == -1
+    for idx_group, color, label in [
+        (long_mask,  "rgba(91,173,114,0.12)",  "Long"),
+        (short_mask, "rgba(184,84,80,0.12)",   "Short"),
+    ]:
+        if idx_group.any():
+            # Draw filled area for long/short periods using a scatter fill trick
+            # (Use position as a shading layer)
+            pass  # handled via position plot below
+
+    # Position bar
+    pos_colors = [COLORS["green"] if v > 0 else (COLORS["red"] if v < 0 else "#444") for v in pos_w.values]
+    fig_sig.add_trace(go.Bar(
+        x=pos_w.index, y=pos_w.values,
+        name="Position", marker_color=pos_colors, opacity=0.8,
+        hovertemplate="%{x|%b %d, %Y}<br>Position: %{y:+.0f}<extra></extra>",
+    ), row=2, col=1)
+
+    fig_sig.update_layout(
+        **CHART_LAYOUT, height=500,
+        title=dict(text=f"{variant_label} — Price & Position ({timing_label})", font=dict(size=13)),
+        hovermode="x unified", showlegend=True,
+        xaxis2_title=None,
+    )
+    fig_sig.update_yaxes(title_text="F1 Price ($/MT)", row=1, col=1)
+    fig_sig.update_yaxes(title_text="Position", tickvals=[-1, 0, 1],
+                          ticktext=["Short", "Flat", "Long"], row=2, col=1)
+    fig_sig.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+    st.plotly_chart(fig_sig, use_container_width=True)
+
+    # ── Signal flip table (most recent 20) ────────────────────────────────────
+    st.divider()
+    section_header("RECENT SIGNAL FLIPS (Last 20)")
+
+    pos_full   = pos_s.copy()
+    flips_mask = pos_full.diff().abs() > 0
+    flips_mask.iloc[0] = pos_full.iloc[0] != 0
+    flip_dates = pos_full[flips_mask].tail(20)
+
+    if not flip_dates.empty:
+        flip_df = pd.DataFrame({
+            "Date":       flip_dates.index.strftime("%Y-%m-%d"),
+            "Position":   flip_dates.values.astype(int),
+            "Direction":  ["LONG" if v > 0 else "SHORT" for v in flip_dates.values],
+            "F1_raw":     f1r.reindex(flip_dates.index).round(1).values,
+            "Gross PnL on flip day": gross_pnl.reindex(flip_dates.index).round(2).values,
+            "TC cost":    tc_cost_s.reindex(flip_dates.index).round(2).values,
+            "Net PnL":    net_pnl.reindex(flip_dates.index).round(2).values,
+        })
+        st.dataframe(flip_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No signal flips found in data.")
+
+    # ── Methodology note ──────────────────────────────────────────────────────
+    st.divider()
+    with st.expander("Methodology Notes", expanded=False):
+        st.markdown("""
+**Signal sources (no leakage)**
+- All signals computed exclusively from `F1_raw` (closing prices, backward-looking only)
+- PnL computed exclusively from `F1_continuous` (return-based roll-adjusted series)
+
+**MA Crossover**
+- Signal = sign(SMA(m) − SMA(n)) where m < n
+- +1 (long) when fast MA is above slow MA; −1 (short) otherwise
+
+**CTA Signal — Baz-Granger Eqs 29-33**
+- x = EWMA(S) − EWMA(L)  [EWMA convention: com = n−1, i.e. λ = (n−1)/n]
+- y = x / σ₆₃(price)     [63-day price volatility normalisation]
+- z = y / σ₂₅₂(y)        [252-day signal normalisation]
+- u = z · exp(−z²/4) / 0.89  [response function — shrinks extreme signals]
+- Signal = sign(u)
+- CTA Paper uses 3 timescales (S,L) = (8,24), (16,48), (32,96); S_CTA = mean(u₁,u₂,u₃)
+
+**Position timing**
+- *Lag-1*: position[t] = signal[t−1]  → entered at close t−1, PnL from t−1→t
+- *Same-Day*: position[t] = signal[t]  → entered at close t, PnL from t−1→t
+- MA Crossover: Lag-1 outperforms (4/5 top pairs, avg Sharpe delta −0.04)
+- CTA: Same-Day substantially outperforms (5/5 top pairs, avg Sharpe delta +0.30)
+
+**Transaction costs**
+- Applied on every position change: TC_cost[t] = |Δposition[t]| × (TC_round_trip / 2)
+- Flip (+1→−1): |Δ|=2, cost = 1 full round trip
+- Entry (0→±1): |Δ|=1, cost = ½ round trip
+
+**Returns & risk metrics**
+- daily_ret[t] = position[t] × ΔF1_cont[t] / F1_cont[t−1]
+- All % metrics (Ann Return, Std Dev, Max DD, Calmar, Sortino) computed from daily_ret
+- Sharpe = Ann_ret / Ann_std (unitless, consistent across gross/net)
+        """)
