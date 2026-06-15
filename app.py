@@ -1755,28 +1755,28 @@ _CARRY_CMP_OPTIONS = {
     "V1: (F1-F3)/F1 - Same-Day":     {"variant": "v1", "signal_type": "f1f3",   "same_day": True},
     "V1: (Cash-3M)/Cash - Lag-1":    {"variant": "v1", "signal_type": "cash3m", "same_day": False},
     "V1: (Cash-3M)/Cash - Same-Day": {"variant": "v1", "signal_type": "cash3m", "same_day": True},
-    "V3: F3-F15 - Lag-1":            {"variant": "v3", "j": 3,  "k": 15, "same_day": False},
-    "V3: F3-F15 - Same-Day":         {"variant": "v3", "j": 3,  "k": 15, "same_day": True},
-    "V3: F4-F16 - Lag-1":            {"variant": "v3", "j": 4,  "k": 16, "same_day": False},
-    "V3: F4-F16 - Same-Day":         {"variant": "v3", "j": 4,  "k": 16, "same_day": True},
-    "V3: F5-F17 - Lag-1":            {"variant": "v3", "j": 5,  "k": 17, "same_day": False},
-    "V3: F5-F17 - Same-Day":         {"variant": "v3", "j": 5,  "k": 17, "same_day": True},
-    "V3: F6-F18 - Lag-1":            {"variant": "v3", "j": 6,  "k": 18, "same_day": False},
-    "V3: F6-F18 - Same-Day":         {"variant": "v3", "j": 6,  "k": 18, "same_day": True},
-    "V3: F7-F19 - Lag-1":            {"variant": "v3", "j": 7,  "k": 19, "same_day": False},
-    "V3: F7-F19 - Same-Day":         {"variant": "v3", "j": 7,  "k": 19, "same_day": True},
-    "V3: F8-F20 - Lag-1":            {"variant": "v3", "j": 8,  "k": 20, "same_day": False},
-    "V3: F8-F20 - Same-Day":         {"variant": "v3", "j": 8,  "k": 20, "same_day": True},
-    "V3: F9-F21 - Lag-1":            {"variant": "v3", "j": 9,  "k": 21, "same_day": False},
-    "V3: F9-F21 - Same-Day":         {"variant": "v3", "j": 9,  "k": 21, "same_day": True},
-    "V3: F10-F22 - Lag-1":           {"variant": "v3", "j": 10, "k": 22, "same_day": False},
-    "V3: F10-F22 - Same-Day":        {"variant": "v3", "j": 10, "k": 22, "same_day": True},
-    "V3: F11-F23 - Lag-1":           {"variant": "v3", "j": 11, "k": 23, "same_day": False},
-    "V3: F11-F23 - Same-Day":        {"variant": "v3", "j": 11, "k": 23, "same_day": True},
-    "V3: F12-F24 - Lag-1":           {"variant": "v3", "j": 12, "k": 24, "same_day": False},
-    "V3: F12-F24 - Same-Day":        {"variant": "v3", "j": 12, "k": 24, "same_day": True},
-    "V4: Z-score (252d) - Lag-1":    {"variant": "v4", "window": 252, "same_day": False},
-    "V4: Z-score (252d) - Same-Day": {"variant": "v4", "window": 252, "same_day": True},
+    "V2: F3-F15 - Lag-1":            {"variant": "v3", "j": 3,  "k": 15, "same_day": False},
+    "V2: F3-F15 - Same-Day":         {"variant": "v3", "j": 3,  "k": 15, "same_day": True},
+    "V2: F4-F16 - Lag-1":            {"variant": "v3", "j": 4,  "k": 16, "same_day": False},
+    "V2: F4-F16 - Same-Day":         {"variant": "v3", "j": 4,  "k": 16, "same_day": True},
+    "V2: F5-F17 - Lag-1":            {"variant": "v3", "j": 5,  "k": 17, "same_day": False},
+    "V2: F5-F17 - Same-Day":         {"variant": "v3", "j": 5,  "k": 17, "same_day": True},
+    "V2: F6-F18 - Lag-1":            {"variant": "v3", "j": 6,  "k": 18, "same_day": False},
+    "V2: F6-F18 - Same-Day":         {"variant": "v3", "j": 6,  "k": 18, "same_day": True},
+    "V2: F7-F19 - Lag-1":            {"variant": "v3", "j": 7,  "k": 19, "same_day": False},
+    "V2: F7-F19 - Same-Day":         {"variant": "v3", "j": 7,  "k": 19, "same_day": True},
+    "V2: F8-F20 - Lag-1":            {"variant": "v3", "j": 8,  "k": 20, "same_day": False},
+    "V2: F8-F20 - Same-Day":         {"variant": "v3", "j": 8,  "k": 20, "same_day": True},
+    "V2: F9-F21 - Lag-1":            {"variant": "v3", "j": 9,  "k": 21, "same_day": False},
+    "V2: F9-F21 - Same-Day":         {"variant": "v3", "j": 9,  "k": 21, "same_day": True},
+    "V2: F10-F22 - Lag-1":           {"variant": "v3", "j": 10, "k": 22, "same_day": False},
+    "V2: F10-F22 - Same-Day":        {"variant": "v3", "j": 10, "k": 22, "same_day": True},
+    "V2: F11-F23 - Lag-1":           {"variant": "v3", "j": 11, "k": 23, "same_day": False},
+    "V2: F11-F23 - Same-Day":        {"variant": "v3", "j": 11, "k": 23, "same_day": True},
+    "V2: F12-F24 - Lag-1":           {"variant": "v3", "j": 12, "k": 24, "same_day": False},
+    "V2: F12-F24 - Same-Day":        {"variant": "v3", "j": 12, "k": 24, "same_day": True},
+    "V3: Z-score (252d) - Lag-1":    {"variant": "v4", "window": 252, "same_day": False},
+    "V3: Z-score (252d) - Same-Day": {"variant": "v4", "window": 252, "same_day": True},
 }
 
 
@@ -2365,18 +2365,37 @@ with tab8:
     st.markdown("### Carry Signals — LME Copper")
     st.caption("Term structure carry: Long in backwardation, Short in contango. Signal from curve shape; PnL always from F1_continuous.")
 
+    st.markdown("""
+    <div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;border-radius:4px;padding:14px 20px;margin-bottom:8px;">
+      <div style="display:flex;gap:40px;flex-wrap:wrap;">
+        <div style="min-width:180px;">
+          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V1 — Roll Yield</span><br>
+          <span style="color:#8A8278;font-size:0.78rem;">Short-end basis: (F1-F2)/F1, (F1-F3)/F1,<br>or (Cash-3M)/Cash. Raw 1-period roll cost.</span>
+        </div>
+        <div style="min-width:200px;">
+          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V2 — Long Slope</span><br>
+          <span style="color:#8A8278;font-size:0.78rem;">Curve slope at longer tenors: (Fj-Fk)/Fk<br>for 10 pairs (F3-F15 through F12-F24).</span>
+        </div>
+        <div style="min-width:180px;">
+          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V3 — Z-score</span><br>
+          <span style="color:#8A8278;font-size:0.78rem;">Rolling 252-day standardisation of (F1-F2)/F1.<br>Filters permanent level shifts; regime-relative signal.</span>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
     # ── Controls ──────────────────────────────────────────────────────────────
     c8_c1, c8_c2, c8_c3, c8_c4 = st.columns([2, 2, 1.5, 1.5])
     with c8_c1:
         carry_vgroup = st.selectbox(
             "Variant Group",
-            ["V1 — Roll Yield", "V3 — Long Slope", "V4 — Z-score"],
+            ["V1 — Roll Yield", "V2 — Long Slope", "V3 — Z-score"],
             key="carry_vgroup",
         )
     with c8_c2:
         if carry_vgroup == "V1 — Roll Yield":
             _c8_sub_opts = {"(F1-F2)/F1": "f1f2", "(F1-F3)/F1": "f1f3", "(Cash-3M)/Cash": "cash3m"}
-        elif carry_vgroup == "V3 — Long Slope":
+        elif carry_vgroup == "V2 — Long Slope":
             _c8_sub_opts = {f"F{j}-F{k} Slope": (j, k)
                             for j, k in [(3,15),(4,16),(5,17),(6,18),(7,19),(8,20),(9,21),(10,22),(11,23),(12,24)]}
         else:
@@ -2394,7 +2413,7 @@ with tab8:
     # Build spec dict
     if carry_vgroup == "V1 — Roll Yield":
         carry_spec = {"variant": "v1", "signal_type": carry_sub_val, "same_day": carry_same_day}
-    elif carry_vgroup == "V3 — Long Slope":
+    elif carry_vgroup == "V2 — Long Slope":
         carry_spec = {"variant": "v3", "j": carry_sub_val[0], "k": carry_sub_val[1], "same_day": carry_same_day}
     else:
         carry_spec = {"variant": "v4", "window": carry_sub_val, "same_day": carry_same_day}
@@ -2825,10 +2844,10 @@ with tab8:
     )
     st.plotly_chart(fig_c8ann, use_container_width=True)
 
-    # ── Section 9: Tenor Comparison (V3 only) ─────────────────────────────────
-    if carry_vgroup == "V3 — Long Slope":
+    # ── Section 9: Tenor Comparison (V2 only) ─────────────────────────────────
+    if carry_vgroup == "V2 — Long Slope":
         st.divider()
-        section_header("TENOR PAIR COMPARISON — V3 LONG SLOPE")
+        section_header("TENOR PAIR COMPARISON — V2 LONG SLOPE")
         st.caption("Sharpe ratio for all 10 tenor pairs. Shows which part of the curve carries the most predictive power.")
 
         _v3_pairs = [(3,15),(4,16),(5,17),(6,18),(7,19),(8,20),(9,21),(10,22),(11,23),(12,24)]
@@ -2881,7 +2900,7 @@ with tab8:
         fig_tenor.add_vline(x=0, line_dash="dash", line_color="#475569", line_width=1)
         fig_tenor.update_layout(
             **CHART_LAYOUT, height=420, barmode="group",
-            title=dict(text="V3 Long Slope — Sharpe by Tenor Pair (Gross, No TC)", font=dict(size=13)),
+            title=dict(text="V2 Long Slope — Sharpe by Tenor Pair (Gross, No TC)", font=dict(size=13)),
             xaxis_title="Sharpe Ratio", yaxis_title=None,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         )
@@ -2963,13 +2982,11 @@ Commodity carry (basis) reflects expected convenience yield and storage costs.
 
 **Signal Variant Formulas**
 - **V1 Roll Yield**: `(F1-F2)/F1`, `(F1-F3)/F1`, `(Cash-3M)/Cash`
-  Measures the 1-period roll cost as a fraction of current price.
-- **V2 Annualized**: V1 x 12 (for F1-F2) or x 6 (for F1-F3) — scaled to annual rate.
-  Note: binary signal (sign) is identical to V1; annualization only affects magnitude.
-- **V3 Long Slope**: `(Fj-Fk)/Fk` for j < k (e.g., F3-F15, F4-F16, ... F12-F24)
-  Measures the slope of the forward curve at longer tenors; downward slope = backwardation at the long end = Long signal.
-- **V4 Z-score**: 252-day rolling standardization of (F1-F2)/F1.
-  Filters out permanent level shifts; signal fires when carry is unusually high/low relative to recent history.
+  Short-end basis as a fraction of current price. Annualized reference values (x12, x6) shown in the badge panel above for comparability — binary signal is identical to the raw ratio.
+- **V2 Long Slope**: `(Fj-Fk)/Fk` for j < k (e.g., F3-F15, F4-F16, ... F12-F24)
+  Slope of the forward curve at longer tenors. Downward slope (Fj > Fk) = backwardation at the long end = Long signal.
+- **V3 Z-score**: 252-day rolling standardization of `(F1-F2)/F1`.
+  Filters permanent level shifts in the basis; signal fires when carry is unusually high or low relative to its recent history.
 
 **Position Timing**
 - *Same-Day*: `position[t] = sign(carry[t])` — taken at same close as signal
