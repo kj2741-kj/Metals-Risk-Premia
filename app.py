@@ -2370,14 +2370,12 @@ with tab8:
     with c8_c1:
         carry_vgroup = st.selectbox(
             "Variant Group",
-            ["V1 — Roll Yield", "V2 — Annualized", "V3 — Long Slope", "V4 — Z-score"],
+            ["V1 — Roll Yield", "V3 — Long Slope", "V4 — Z-score"],
             key="carry_vgroup",
         )
     with c8_c2:
         if carry_vgroup == "V1 — Roll Yield":
             _c8_sub_opts = {"(F1-F2)/F1": "f1f2", "(F1-F3)/F1": "f1f3", "(Cash-3M)/Cash": "cash3m"}
-        elif carry_vgroup == "V2 — Annualized":
-            _c8_sub_opts = {"(F1-F2)/F1 x12 (ann.)": "f1f2_ann", "(F1-F3)/F1 x6 (ann.)": "f1f3_ann"}
         elif carry_vgroup == "V3 — Long Slope":
             _c8_sub_opts = {f"F{j}-F{k} Slope": (j, k)
                             for j, k in [(3,15),(4,16),(5,17),(6,18),(7,19),(8,20),(9,21),(10,22),(11,23),(12,24)]}
@@ -2396,8 +2394,6 @@ with tab8:
     # Build spec dict
     if carry_vgroup == "V1 — Roll Yield":
         carry_spec = {"variant": "v1", "signal_type": carry_sub_val, "same_day": carry_same_day}
-    elif carry_vgroup == "V2 — Annualized":
-        carry_spec = {"variant": "v2", "signal_type": carry_sub_val, "same_day": carry_same_day}
     elif carry_vgroup == "V3 — Long Slope":
         carry_spec = {"variant": "v3", "j": carry_sub_val[0], "k": carry_sub_val[1], "same_day": carry_same_day}
     else:
@@ -2526,6 +2522,43 @@ with tab8:
       </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # ── Annualized Carry Reference (display only — not a separate strategy) ───
+    _ann_f1 = c8_curve_px["F1"].dropna() if "F1" in c8_curve_px.columns else pd.Series(dtype=float)
+    _ann_f2 = c8_curve_px["F2"].dropna() if "F2" in c8_curve_px.columns else pd.Series(dtype=float)
+    _ann_f3 = c8_curve_px["F3"].dropna() if "F3" in c8_curve_px.columns else pd.Series(dtype=float)
+
+    def _last_common(s1, s2):
+        idx = s1.index.intersection(s2.index)
+        return (s1.loc[idx[-1]], s2.loc[idx[-1]], idx[-1]) if len(idx) > 0 else (np.nan, np.nan, None)
+
+    _v1, _v2, _dt12 = _last_common(_ann_f1, _ann_f2)
+    _v1b, _v3, _dt13 = _last_common(_ann_f1, _ann_f3)
+    _ann_f1f2 = ((_v1 - _v2) / _v1) * 12 * 100 if pd.notna(_v1) and _v1 != 0 else np.nan
+    _ann_f1f3 = ((_v1b - _v3) / _v1b) * 6 * 100 if pd.notna(_v1b) and _v1b != 0 else np.nan
+    _cash_last = _cash_cu8["cash_price"].dropna() if not _cash_cu8.empty and "cash_price" in _cash_cu8.columns else pd.Series(dtype=float)
+    _3m_last   = _cash_cu8["3m_price"].dropna()   if not _cash_cu8.empty and "3m_price"  in _cash_cu8.columns else pd.Series(dtype=float)
+    _vc, _v3m, _dtc = _last_common(_cash_last, _3m_last)
+    _ann_c3m = ((_vc - _v3m) / _vc) * 100 if pd.notna(_vc) and _vc != 0 else np.nan
+
+    st.markdown("<div style='margin-top:10px;margin-bottom:4px;color:#7A7068;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;'>Annualized Carry Reference (display only — signal = V1)</div>", unsafe_allow_html=True)
+    _ann_cols = st.columns(3)
+    def _ann_card(col, label, val, date_label):
+        color = "#5BAD72" if (pd.notna(val) and val > 0) else "#B85450"
+        val_str = f"{val:+.2f}%" if pd.notna(val) else "—"
+        col.markdown(f"""<div class="metric-compact">
+            <h4>{label}</h4>
+            <p class="value" style="color:{color};">{val_str}</p>
+            <span style="color:#5A5248;font-size:0.65rem;">{date_label}</span>
+        </div>""", unsafe_allow_html=True)
+
+    _ann_card(_ann_cols[0], "(F1-F2)/F1 x12 — Ann. Roll Yield", _ann_f1f2,
+              f"as of {_dt12.strftime('%Y-%m-%d')}" if _dt12 else "")
+    _ann_card(_ann_cols[1], "(F1-F3)/F1 x6 — Ann. Roll Yield",  _ann_f1f3,
+              f"as of {_dt13.strftime('%Y-%m-%d')}" if _dt13 else "")
+    _ann_card(_ann_cols[2], "(Cash-3M)/Cash — Basis %",          _ann_c3m,
+              f"as of {_dtc.strftime('%Y-%m-%d')}" if _dtc else "")
+    st.caption("Annualized values for comparability across tenor pairs. Binary signal (long/short) is identical to V1 raw — multiplying by a positive constant cannot change sign.")
 
     # ── Section 3: Carry Signal History ───────────────────────────────────────
     st.divider()
