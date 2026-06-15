@@ -75,6 +75,35 @@ st.markdown("""
     .metric-card .delta-pos { color: #5BAD72; font-size: 0.82rem; }
     .metric-card .delta-neg { color: #B85450; font-size: 0.82rem; }
 
+    /* Compact metric cards (momentum tab — fits 8 per row) */
+    .metric-compact {
+        background: #161616;
+        border: 1px solid #2A2A2A;
+        border-left: 3px solid #B87333;
+        border-radius: 4px;
+        padding: 7px 10px;
+        margin: 3px 0;
+    }
+    .metric-compact h4 {
+        color: #7A7068;
+        font-size: 0.62rem;
+        font-weight: 500;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin: 0 0 3px 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .metric-compact .value {
+        color: #D4CFC8;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 1.1rem;
+        font-weight: 500;
+        margin: 0;
+        white-space: nowrap;
+    }
+
     /* Section headers */
     .section-header {
         font-family: 'IBM Plex Sans', sans-serif;
@@ -1563,6 +1592,72 @@ with tab6:
 
 
 # ══════════════════════════════════════════════════════
+# MOMENTUM: comparison helper (module-level)
+# ══════════════════════════════════════════════════════
+
+def _mom_cum_pnl(f1r: pd.Series, f1c: pd.Series, spec: dict) -> pd.Series:
+    """Compute gross cumulative PnL for a momentum variant spec dict."""
+    def _ew(s, n): return s.ewm(com=n - 1, adjust=False).mean()
+    t  = spec["type"]
+    sd = spec.get("same_day", False)
+    if t == "ma":
+        sig = np.sign(f1r.rolling(spec["m"]).mean() - f1r.rolling(spec["n"]).mean()).values.astype(float)
+    elif t == "cta_paper":
+        pv, us = f1r.rolling(63).std(), []
+        for sk, lk in zip((8, 16, 32), (24, 48, 96)):
+            x = _ew(f1r, sk) - _ew(f1r, lk); y = x / pv
+            with np.errstate(invalid="ignore"):
+                z = (y / y.rolling(252).std()).values
+                us.append(z * np.exp(-z ** 2 / 4) / 0.89)
+        sig = np.sign(np.nanmean(np.stack(us, axis=1), axis=1))
+    else:
+        x = _ew(f1r, spec["s"]) - _ew(f1r, spec["l"]); y = x / f1r.rolling(63).std()
+        with np.errstate(invalid="ignore"):
+            z = (y / y.rolling(252).std()).values
+            sig = np.sign(z * np.exp(-z ** 2 / 4) / 0.89)
+    T = len(sig); pos = np.empty(T)
+    if sd:
+        pos[:] = np.where(np.isfinite(sig), sig, 0.0)
+    else:
+        pos[0] = 0.0; pos[1:] = np.where(np.isfinite(sig[:-1]), sig[:-1], 0.0)
+    return pd.Series(pos * f1c.diff().values.astype(float), index=f1r.index).cumsum()
+
+
+# All variant+timing combinations available for comparison dropdown
+_MOM_CMP_OPTIONS = {
+    "N/A": None,
+    "MA(35,43) — Lag-1":    {"type": "ma", "m": 35, "n": 43, "same_day": False},
+    "MA(35,43) — Same-Day": {"type": "ma", "m": 35, "n": 43, "same_day": True},
+    "MA(33,48) — Lag-1":    {"type": "ma", "m": 33, "n": 48, "same_day": False},
+    "MA(33,48) — Same-Day": {"type": "ma", "m": 33, "n": 48, "same_day": True},
+    "MA(35,44) — Lag-1":    {"type": "ma", "m": 35, "n": 44, "same_day": False},
+    "MA(35,44) — Same-Day": {"type": "ma", "m": 35, "n": 44, "same_day": True},
+    "MA(34,47) — Lag-1":    {"type": "ma", "m": 34, "n": 47, "same_day": False},
+    "MA(34,47) — Same-Day": {"type": "ma", "m": 34, "n": 47, "same_day": True},
+    "MA(36,44) — Lag-1":    {"type": "ma", "m": 36, "n": 44, "same_day": False},
+    "MA(36,44) — Same-Day": {"type": "ma", "m": 36, "n": 44, "same_day": True},
+    "MA(1,5) — Lag-1":      {"type": "ma", "m": 1,  "n": 5,  "same_day": False},
+    "MA(1,5) — Same-Day":   {"type": "ma", "m": 1,  "n": 5,  "same_day": True},
+    "MA(5,20) — Lag-1":     {"type": "ma", "m": 5,  "n": 20, "same_day": False},
+    "MA(5,20) — Same-Day":  {"type": "ma", "m": 5,  "n": 20, "same_day": True},
+    "MA(10,60) — Lag-1":    {"type": "ma", "m": 10, "n": 60, "same_day": False},
+    "MA(10,60) — Same-Day": {"type": "ma", "m": 10, "n": 60, "same_day": True},
+    "CTA(9,21) — Lag-1":    {"type": "cta_single", "s": 9,  "l": 21, "same_day": False},
+    "CTA(9,21) — Same-Day": {"type": "cta_single", "s": 9,  "l": 21, "same_day": True},
+    "CTA(9,20) — Lag-1":    {"type": "cta_single", "s": 9,  "l": 20, "same_day": False},
+    "CTA(9,20) — Same-Day": {"type": "cta_single", "s": 9,  "l": 20, "same_day": True},
+    "CTA(10,19) — Lag-1":   {"type": "cta_single", "s": 10, "l": 19, "same_day": False},
+    "CTA(10,19) — Same-Day":{"type": "cta_single", "s": 10, "l": 19, "same_day": True},
+    "CTA(8,21) — Lag-1":    {"type": "cta_single", "s": 8,  "l": 21, "same_day": False},
+    "CTA(8,21) — Same-Day": {"type": "cta_single", "s": 8,  "l": 21, "same_day": True},
+    "CTA(14,15) — Lag-1":   {"type": "cta_single", "s": 14, "l": 15, "same_day": False},
+    "CTA(14,15) — Same-Day":{"type": "cta_single", "s": 14, "l": 15, "same_day": True},
+    "CTA Paper — Lag-1":    {"type": "cta_paper", "same_day": False},
+    "CTA Paper — Same-Day": {"type": "cta_paper", "same_day": True},
+}
+
+
+# ══════════════════════════════════════════════════════
 # TAB 7: MOMENTUM SIGNALS
 # ══════════════════════════════════════════════════════
 
@@ -1592,6 +1687,9 @@ with tab7:
                 "MA(35,44)": (35, 44),
                 "MA(34,47)": (34, 47),
                 "MA(36,44)": (36, 44),
+                "MA(1,5)":   (1, 5),
+                "MA(5,20)":  (5, 20),
+                "MA(10,60)": (10, 60),
             }
             default_idx = 0
         else:
@@ -1619,17 +1717,17 @@ with tab7:
         same_day = timing_label == "Same-Day"
 
     with c4:
-        tc_map = {
-            "$0 / MT  (No TC)":          0.0,
-            "$2 / MT  Round Trip":        2.0,
-            "$5 / MT  Round Trip":        5.0,
-            "$10 / MT Round Trip":       10.0,
+        tc_bps_map = {
+            "0 bps  (No TC)":   0,
+            "5 bps  Round Trip":  5,
+            "10 bps Round Trip": 10,
+            "20 bps Round Trip": 20,
         }
         tc_label = st.selectbox(
-            "Transaction Cost", list(tc_map.keys()),
+            "TC (bps, round-trip)", list(tc_bps_map.keys()),
             index=0, key="mom_tc",
         )
-        tc_rt = tc_map[tc_label]   # round-trip cost in $/MT
+        tc_bps = tc_bps_map[tc_label]   # round-trip cost in basis points
 
     # ── Data loading ──────────────────────────────────────────────────────────
     _f1_df = _load_copper_f1_data()
@@ -1686,10 +1784,10 @@ with tab7:
     delta_s   = pd.Series(delta_np, index=f1r.index)
     gross_pnl = pos_s * delta_s
 
-    tc_one_way   = tc_rt / 2.0
+    # TC in bps: cost per position change = |Δpos| × (bps/10000 / 2) × F1_price
     pos_change   = pos_s.diff().abs()
     pos_change.iloc[0] = abs(pos_s.iloc[0])
-    tc_cost_s    = pos_change * tc_one_way
+    tc_cost_s    = pos_change * (tc_bps / 10000.0 / 2.0) * f1c
     net_pnl      = gross_pnl - tc_cost_s
 
     cum_pnl_gross = gross_pnl.cumsum()
@@ -1729,16 +1827,16 @@ with tab7:
         }
 
     m_gross = _perf(gross_pnl, pos_s, "Gross (No TC)")
-    m_net   = _perf(net_pnl,   pos_s, f"Net (TC={tc_label})")
+    m_net   = _perf(net_pnl,   pos_s, f"Net ({tc_label})")
 
     # ── Metric cards ──────────────────────────────────────────────────────────
     def _mcard(col, label, val, fmt=".2f", suffix="", good_high=True):
         if val is None or (isinstance(val, float) and np.isnan(val)):
-            col.markdown(f'<div class="metric-card"><h4>{label}</h4><p class="value">—</p></div>',
+            col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">—</p></div>',
                          unsafe_allow_html=True)
             return
         v_str = f"{val:{fmt}}{suffix}"
-        col.markdown(f'<div class="metric-card"><h4>{label}</h4><p class="value">{v_str}</p></div>',
+        col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">{v_str}</p></div>',
                      unsafe_allow_html=True)
 
     section_header = lambda t: st.markdown(f'<div class="section-header">{t}</div>', unsafe_allow_html=True)
@@ -1748,27 +1846,27 @@ with tab7:
     st.caption(f"**Strategy:** {variant_label}  |  **Entry:** {timing_label}  |  **TC:** {tc_label}")
 
     if m_gross and m_net:
-        # Row 1: Sharpe, Sortino, Ann Return, Std Dev
+        # Row 1: Sharpe, Sortino, Ann Return, Std Dev, Active Days
         cols = st.columns(8)
-        _mcard(cols[0], "Sharpe (Gross)",       m_gross.get("sharpe"),       ".2f")
-        _mcard(cols[1], "Sharpe (Net)",          m_net.get("sharpe"),         ".2f")
-        _mcard(cols[2], "Sortino (Gross)",       m_gross.get("sortino"),      ".2f")
-        _mcard(cols[3], "Sortino (Net)",         m_net.get("sortino"),        ".2f")
-        _mcard(cols[4], "Ann Return % (Gross)",  m_gross.get("ann_ret_pct"),  ".2f", "%")
-        _mcard(cols[5], "Ann Return % (Net)",    m_net.get("ann_ret_pct"),    ".2f", "%")
-        _mcard(cols[6], "Ann Std Dev %",         m_gross.get("ann_std_pct"),  ".2f", "%")
-        _mcard(cols[7], "Active Days",           float(m_gross.get("n", 0)), ",.0f")
+        _mcard(cols[0], "Sharpe Gross",      m_gross.get("sharpe"),       ".2f")
+        _mcard(cols[1], "Sharpe Net",        m_net.get("sharpe"),         ".2f")
+        _mcard(cols[2], "Sortino Gross",     m_gross.get("sortino"),      ".2f")
+        _mcard(cols[3], "Sortino Net",       m_net.get("sortino"),        ".2f")
+        _mcard(cols[4], "Ann Ret% Gross",    m_gross.get("ann_ret_pct"),  ".2f", "%")
+        _mcard(cols[5], "Ann Ret% Net",      m_net.get("ann_ret_pct"),    ".2f", "%")
+        _mcard(cols[6], "Ann Std Dev%",      m_gross.get("ann_std_pct"),  ".2f", "%")
+        _mcard(cols[7], "Active Days",       float(m_gross.get("n", 0)), ",.0f")
 
         # Row 2: MaxDD, Calmar, Hit Rate, Profit Factor, Total PnL
         cols2 = st.columns(8)
-        _mcard(cols2[0], "Max DD % (Gross)",     m_gross.get("mdd_pct"),      ".2f", "%", good_high=False)
-        _mcard(cols2[1], "Max DD % (Net)",       m_net.get("mdd_pct"),        ".2f", "%", good_high=False)
-        _mcard(cols2[2], "Calmar (Gross)",       m_gross.get("calmar"),       ".2f")
-        _mcard(cols2[3], "Calmar (Net)",         m_net.get("calmar"),         ".2f")
-        _mcard(cols2[4], "Hit Rate",             m_gross.get("hit_rate"),     ".2f", "%")
-        _mcard(cols2[5], "Profit Factor",        m_gross.get("profit_factor"),".2f")
-        _mcard(cols2[6], "Total PnL ($/MT Gross)", m_gross.get("total_pnl_usdmt"), ",.2f")
-        _mcard(cols2[7], "Total PnL ($/MT Net)", m_net.get("total_pnl_usdmt"), ",.2f")
+        _mcard(cols2[0], "Max DD% Gross",    m_gross.get("mdd_pct"),      ".2f", "%", good_high=False)
+        _mcard(cols2[1], "Max DD% Net",      m_net.get("mdd_pct"),        ".2f", "%", good_high=False)
+        _mcard(cols2[2], "Calmar Gross",     m_gross.get("calmar"),       ".2f")
+        _mcard(cols2[3], "Calmar Net",       m_net.get("calmar"),         ".2f")
+        _mcard(cols2[4], "Hit Rate",         m_gross.get("hit_rate"),     ".2f", "%")
+        _mcard(cols2[5], "Profit Factor",    m_gross.get("profit_factor"),".2f")
+        _mcard(cols2[6], "PnL Gross $/MT",   m_gross.get("total_pnl_usdmt"), ",.2f")
+        _mcard(cols2[7], "PnL Net $/MT",     m_net.get("total_pnl_usdmt"),   ",.2f")
     else:
         st.warning("Insufficient active trading days to compute metrics.")
 
@@ -1776,24 +1874,58 @@ with tab7:
     st.divider()
     section_header("CUMULATIVE PnL (USD/MT)")
 
+    # Comparison strategy pickers
+    cmp_keys = list(_MOM_CMP_OPTIONS.keys())
+    cc1, cc2 = st.columns(2)
+    with cc1:
+        cmp_a_label = st.selectbox(
+            "Strategy A", cmp_keys, index=0, key="cmp_a",
+            help="First strategy to plot. Select N/A to hide.",
+        )
+    with cc2:
+        cmp_b_label = st.selectbox(
+            "Strategy B", cmp_keys, index=0, key="cmp_b",
+            help="Second strategy to compare. Select N/A to hide.",
+        )
+
+    _CMP_COLORS = [COLORS["primary"], COLORS["amber"], COLORS["green"], "#A78BFA"]
     fig_cum = go.Figure()
+    _cmp_plotted = 0
+    for _lbl, _cidx in [(cmp_a_label, 0), (cmp_b_label, 1)]:
+        _spec = _MOM_CMP_OPTIONS.get(_lbl)
+        if _spec is None:
+            continue
+        _cpnl = _mom_cum_pnl(f1r, f1c, _spec)
+        fig_cum.add_trace(go.Scatter(
+            x=_cpnl.index, y=_cpnl.values,
+            name=_lbl, mode="lines",
+            line=dict(color=_CMP_COLORS[_cidx], width=1.8,
+                      dash="dot" if _cidx == 1 else "solid"),
+            hovertemplate=f"%{{x|%b %d, %Y}}<br>{_lbl}: $%{{y:,.1f}}/MT<extra></extra>",
+        ))
+        _cmp_plotted += 1
+
+    # Also show gross/net for the currently selected main strategy
     fig_cum.add_trace(go.Scatter(
         x=cum_pnl_gross.index, y=cum_pnl_gross.values,
-        name="Gross PnL", mode="lines",
-        line=dict(color=COLORS["primary"], width=1.8),
+        name=f"{variant_label} Gross", mode="lines",
+        line=dict(color="#64748B", width=1.2, dash="solid"),
         hovertemplate="%{x|%b %d, %Y}<br>Gross: $%{y:,.1f}/MT<extra></extra>",
+        visible="legendonly",
     ))
-    if tc_rt > 0:
+    if tc_bps > 0:
         fig_cum.add_trace(go.Scatter(
             x=cum_pnl_net.index, y=cum_pnl_net.values,
-            name=f"Net PnL (TC ${tc_rt}/MT RT)", mode="lines",
-            line=dict(color=COLORS["amber"], width=1.8, dash="dot"),
+            name=f"{variant_label} Net ({tc_label})", mode="lines",
+            line=dict(color="#94A3B8", width=1.2, dash="dot"),
             hovertemplate="%{x|%b %d, %Y}<br>Net: $%{y:,.1f}/MT<extra></extra>",
+            visible="legendonly",
         ))
+
     fig_cum.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1)
     fig_cum.update_layout(
-        **CHART_LAYOUT, height=380,
-        title=dict(text=f"{variant_label} — Cumulative PnL ({timing_label})", font=dict(size=13)),
+        **CHART_LAYOUT, height=420,
+        title=dict(text="Strategy Comparison — Cumulative PnL (Gross, USD/MT)", font=dict(size=13)),
         yaxis_title="Cumulative PnL (USD/MT)",
         xaxis_title=None, hovermode="x unified",
     )
@@ -1824,22 +1956,9 @@ with tab7:
     st.divider()
     section_header("SIGNAL & POSITION OVER TIME")
 
-    date_range_mom = st.date_input(
-        "Date range",
-        value=[f1r.index[0].date(), f1r.index[-1].date()],
-        min_value=f1r.index[0].date(),
-        max_value=f1r.index[-1].date(),
-        key="mom_date_range",
-    )
-    if len(date_range_mom) == 2:
-        d_start, d_end = pd.Timestamp(date_range_mom[0]), pd.Timestamp(date_range_mom[1])
-    else:
-        d_start, d_end = f1r.index[0], f1r.index[-1]
-
-    mask = (f1r.index >= d_start) & (f1r.index <= d_end)
-    f1r_w    = f1r[mask]
-    pos_w    = pos_s[mask]
-    sig_arr  = pd.Series(sig_np, index=f1r.index)[mask]
+    # Full date range — no filter widget
+    f1r_w = f1r
+    pos_w = pos_s
 
     fig_sig = make_subplots(
         rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35],
@@ -1852,28 +1971,23 @@ with tab7:
         hovertemplate="%{x|%b %d, %Y}<br>F1: $%{y:,.1f}<extra></extra>",
     ), row=1, col=1)
 
-    # Long / short shading based on position
-    long_mask  = pos_w == 1
-    short_mask = pos_w == -1
-    for idx_group, color, label in [
-        (long_mask,  "rgba(91,173,114,0.12)",  "Long"),
-        (short_mask, "rgba(184,84,80,0.12)",   "Short"),
-    ]:
-        if idx_group.any():
-            # Draw filled area for long/short periods using a scatter fill trick
-            # (Use position as a shading layer)
-            pass  # handled via position plot below
+    # Separate bar traces for Long / Short so legend squares are clearly colored
+    pos_long  = pos_w.where(pos_w > 0, 0.0)
+    pos_short = pos_w.where(pos_w < 0, 0.0)
 
-    # Position bar
-    pos_colors = [COLORS["green"] if v > 0 else (COLORS["red"] if v < 0 else "#444") for v in pos_w.values]
     fig_sig.add_trace(go.Bar(
-        x=pos_w.index, y=pos_w.values,
-        name="Position", marker_color=pos_colors, opacity=0.8,
-        hovertemplate="%{x|%b %d, %Y}<br>Position: %{y:+.0f}<extra></extra>",
+        x=pos_w.index, y=pos_long.values,
+        name="Long (+1)", marker_color=COLORS["green"], opacity=0.85,
+        hovertemplate="%{x|%b %d, %Y}<br>Long<extra></extra>",
+    ), row=2, col=1)
+    fig_sig.add_trace(go.Bar(
+        x=pos_w.index, y=pos_short.values,
+        name="Short (-1)", marker_color=COLORS["red"], opacity=0.85,
+        hovertemplate="%{x|%b %d, %Y}<br>Short<extra></extra>",
     ), row=2, col=1)
 
     fig_sig.update_layout(
-        **CHART_LAYOUT, height=500,
+        **CHART_LAYOUT, height=500, barmode="overlay",
         title=dict(text=f"{variant_label} — Price & Position ({timing_label})", font=dict(size=13)),
         hovermode="x unified", showlegend=True,
         xaxis2_title=None,
@@ -1934,9 +2048,11 @@ with tab7:
 - CTA: Same-Day substantially outperforms (5/5 top pairs, avg Sharpe delta +0.30)
 
 **Transaction costs**
-- Applied on every position change: TC_cost[t] = |Δposition[t]| × (TC_round_trip / 2)
-- Flip (+1→−1): |Δ|=2, cost = 1 full round trip
-- Entry (0→±1): |Δ|=1, cost = ½ round trip
+- Expressed in basis points (bps) of notional, round-trip
+- TC_cost[t] = |Δposition[t]| × (bps / 10000 / 2) × F1_cont[t]
+- Flip (+1→−1): |Δ|=2 → cost = 1 full round trip × price
+- Entry (0→±1): |Δ|=1 → cost = ½ round trip × price
+- Cost is time-varying (scales with copper price level)
 
 **Returns & risk metrics**
 - daily_ret[t] = position[t] × ΔF1_cont[t] / F1_cont[t−1]
