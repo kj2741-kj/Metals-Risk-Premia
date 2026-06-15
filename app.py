@@ -2167,12 +2167,12 @@ with tab7:
 
     fig_sig.add_trace(go.Bar(
         x=pos_w.index, y=pos_long.values,
-        name="Long (+1)", marker_color=COLORS["green"], opacity=0.85,
+        name="Long (+1)", marker_color="#00E676", opacity=1.0,
         hovertemplate="%{x|%b %d, %Y}<br>Long<extra></extra>",
     ), row=2, col=1)
     fig_sig.add_trace(go.Bar(
         x=pos_w.index, y=pos_short.values,
-        name="Short (-1)", marker_color=COLORS["red"], opacity=0.85,
+        name="Short (-1)", marker_color="#FF1744", opacity=1.0,
         hovertemplate="%{x|%b %d, %Y}<br>Short<extra></extra>",
     ), row=2, col=1)
 
