@@ -671,7 +671,7 @@ ALL_METALS = available_metals + CME_METALS_LIST
 # TABS
 # ═══════════════════════════════════════════════
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📊 Market Overview",
     "📈 Term Structure",
     "💰 Cash vs 3M (Carry)",
@@ -679,6 +679,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🔗 Copper LME-CME Spread",
     "📋 Statistics",
     "⚡ Momentum Signals",
+    "📐 Carry Signals",
 ])
 
 
@@ -1675,6 +1676,111 @@ def _load_cta_opt() -> pd.DataFrame:
 
 
 # ══════════════════════════════════════════════════════
+# CARRY: signal helpers (module-level)
+# ══════════════════════════════════════════════════════
+
+def _carry_raw_signal(curve_prices: pd.DataFrame, cash_parsed: pd.DataFrame, spec: dict) -> pd.Series:
+    """Return raw carry signal series (continuous value, not binarized) for a spec dict."""
+    v = spec.get("variant", "v1")
+    if v in ("v1", "v2"):
+        st_type = spec.get("signal_type", "f1f2")
+        if st_type == "cash3m":
+            if cash_parsed.empty or "cash_price" not in cash_parsed.columns or "3m_price" not in cash_parsed.columns:
+                return pd.Series(dtype=float)
+            cp = cash_parsed["cash_price"].dropna()
+            tm = cash_parsed["3m_price"].dropna()
+            idx = cp.index.intersection(tm.index)
+            raw = (cp.reindex(idx) - tm.reindex(idx)) / cp.reindex(idx)
+        elif "f3" in st_type:
+            if "F1" not in curve_prices.columns or "F3" not in curve_prices.columns:
+                return pd.Series(dtype=float)
+            f1 = curve_prices["F1"].dropna(); f3 = curve_prices["F3"].dropna()
+            idx = f1.index.intersection(f3.index)
+            raw = (f1.reindex(idx) - f3.reindex(idx)) / f1.reindex(idx)
+        else:
+            if "F1" not in curve_prices.columns or "F2" not in curve_prices.columns:
+                return pd.Series(dtype=float)
+            f1 = curve_prices["F1"].dropna(); f2 = curve_prices["F2"].dropna()
+            idx = f1.index.intersection(f2.index)
+            raw = (f1.reindex(idx) - f2.reindex(idx)) / f1.reindex(idx)
+        if v == "v2":
+            raw = raw * (6 if "f3" in st_type else 12)
+        return raw.replace([np.inf, -np.inf], np.nan).dropna()
+    elif v == "v3":
+        j, k = spec.get("j", 3), spec.get("k", 15)
+        fj_col, fk_col = f"F{j}", f"F{k}"
+        if fj_col not in curve_prices.columns or fk_col not in curve_prices.columns:
+            return pd.Series(dtype=float)
+        fj = curve_prices[fj_col].dropna(); fk = curve_prices[fk_col].dropna()
+        idx = fj.index.intersection(fk.index)
+        raw = (fj.reindex(idx) - fk.reindex(idx)) / fk.reindex(idx)
+        return raw.replace([np.inf, -np.inf], np.nan).dropna()
+    elif v == "v4":
+        window = spec.get("window", 252)
+        if "F1" not in curve_prices.columns or "F2" not in curve_prices.columns:
+            return pd.Series(dtype=float)
+        f1 = curve_prices["F1"].dropna(); f2 = curve_prices["F2"].dropna()
+        idx = f1.index.intersection(f2.index)
+        base = (f1.reindex(idx) - f2.reindex(idx)) / f1.reindex(idx)
+        z = (base - base.rolling(window).mean()) / base.rolling(window).std()
+        return z.replace([np.inf, -np.inf], np.nan).dropna()
+    return pd.Series(dtype=float)
+
+
+def _carry_cum_pnl(curve_prices: pd.DataFrame, cash_parsed: pd.DataFrame,
+                   f1c: pd.Series, spec: dict) -> pd.Series:
+    """Gross cumulative PnL (USD/MT) for a carry spec dict."""
+    cr = _carry_raw_signal(curve_prices, cash_parsed, spec)
+    if cr.empty:
+        return pd.Series(dtype=float)
+    idx = cr.index.intersection(f1c.index)
+    if len(idx) < 10:
+        return pd.Series(dtype=float)
+    cr = cr.reindex(idx); f1c_a = f1c.reindex(idx)
+    sig = np.sign(cr.values); T = len(sig)
+    pos = np.empty(T)
+    if spec.get("same_day", True):
+        pos[:] = np.where(np.isfinite(sig), sig, 0.0)
+    else:
+        pos[0] = 0.0
+        pos[1:] = np.where(np.isfinite(sig[:-1]), sig[:-1], 0.0)
+    return (pd.Series(pos, index=idx) * f1c_a.diff()).cumsum()
+
+
+_CARRY_CMP_OPTIONS = {
+    "N/A": None,
+    "V1: (F1-F2)/F1 - Lag-1":        {"variant": "v1", "signal_type": "f1f2",   "same_day": False},
+    "V1: (F1-F2)/F1 - Same-Day":     {"variant": "v1", "signal_type": "f1f2",   "same_day": True},
+    "V1: (F1-F3)/F1 - Lag-1":        {"variant": "v1", "signal_type": "f1f3",   "same_day": False},
+    "V1: (F1-F3)/F1 - Same-Day":     {"variant": "v1", "signal_type": "f1f3",   "same_day": True},
+    "V1: (Cash-3M)/Cash - Lag-1":    {"variant": "v1", "signal_type": "cash3m", "same_day": False},
+    "V1: (Cash-3M)/Cash - Same-Day": {"variant": "v1", "signal_type": "cash3m", "same_day": True},
+    "V3: F3-F15 - Lag-1":            {"variant": "v3", "j": 3,  "k": 15, "same_day": False},
+    "V3: F3-F15 - Same-Day":         {"variant": "v3", "j": 3,  "k": 15, "same_day": True},
+    "V3: F4-F16 - Lag-1":            {"variant": "v3", "j": 4,  "k": 16, "same_day": False},
+    "V3: F4-F16 - Same-Day":         {"variant": "v3", "j": 4,  "k": 16, "same_day": True},
+    "V3: F5-F17 - Lag-1":            {"variant": "v3", "j": 5,  "k": 17, "same_day": False},
+    "V3: F5-F17 - Same-Day":         {"variant": "v3", "j": 5,  "k": 17, "same_day": True},
+    "V3: F6-F18 - Lag-1":            {"variant": "v3", "j": 6,  "k": 18, "same_day": False},
+    "V3: F6-F18 - Same-Day":         {"variant": "v3", "j": 6,  "k": 18, "same_day": True},
+    "V3: F7-F19 - Lag-1":            {"variant": "v3", "j": 7,  "k": 19, "same_day": False},
+    "V3: F7-F19 - Same-Day":         {"variant": "v3", "j": 7,  "k": 19, "same_day": True},
+    "V3: F8-F20 - Lag-1":            {"variant": "v3", "j": 8,  "k": 20, "same_day": False},
+    "V3: F8-F20 - Same-Day":         {"variant": "v3", "j": 8,  "k": 20, "same_day": True},
+    "V3: F9-F21 - Lag-1":            {"variant": "v3", "j": 9,  "k": 21, "same_day": False},
+    "V3: F9-F21 - Same-Day":         {"variant": "v3", "j": 9,  "k": 21, "same_day": True},
+    "V3: F10-F22 - Lag-1":           {"variant": "v3", "j": 10, "k": 22, "same_day": False},
+    "V3: F10-F22 - Same-Day":        {"variant": "v3", "j": 10, "k": 22, "same_day": True},
+    "V3: F11-F23 - Lag-1":           {"variant": "v3", "j": 11, "k": 23, "same_day": False},
+    "V3: F11-F23 - Same-Day":        {"variant": "v3", "j": 11, "k": 23, "same_day": True},
+    "V3: F12-F24 - Lag-1":           {"variant": "v3", "j": 12, "k": 24, "same_day": False},
+    "V3: F12-F24 - Same-Day":        {"variant": "v3", "j": 12, "k": 24, "same_day": True},
+    "V4: Z-score (252d) - Lag-1":    {"variant": "v4", "window": 252, "same_day": False},
+    "V4: Z-score (252d) - Same-Day": {"variant": "v4", "window": 252, "same_day": True},
+}
+
+
+# ══════════════════════════════════════════════════════
 # TAB 7: MOMENTUM SIGNALS
 # ══════════════════════════════════════════════════════
 
@@ -2248,4 +2354,610 @@ with tab7:
 - daily_ret[t] = position[t] × ΔF1_cont[t] / F1_cont[t−1]
 - All % metrics (Ann Return, Std Dev, Max DD, Calmar, Sortino) computed from daily_ret
 - Sharpe = Ann_ret / Ann_std (unitless, consistent across gross/net)
+        """)
+
+
+# ══════════════════════════════════════════════════════
+# TAB 8: CARRY SIGNALS
+# ══════════════════════════════════════════════════════
+
+with tab8:
+    st.markdown("### Carry Signals — LME Copper")
+    st.caption("Term structure carry: Long in backwardation, Short in contango. Signal from curve shape; PnL always from F1_continuous.")
+
+    # ── Controls ──────────────────────────────────────────────────────────────
+    c8_c1, c8_c2, c8_c3, c8_c4 = st.columns([2, 2, 1.5, 1.5])
+    with c8_c1:
+        carry_vgroup = st.selectbox(
+            "Variant Group",
+            ["V1 — Roll Yield", "V2 — Annualized", "V3 — Long Slope", "V4 — Z-score"],
+            key="carry_vgroup",
+        )
+    with c8_c2:
+        if carry_vgroup == "V1 — Roll Yield":
+            _c8_sub_opts = {"(F1-F2)/F1": "f1f2", "(F1-F3)/F1": "f1f3", "(Cash-3M)/Cash": "cash3m"}
+        elif carry_vgroup == "V2 — Annualized":
+            _c8_sub_opts = {"(F1-F2)/F1 x12 (ann.)": "f1f2_ann", "(F1-F3)/F1 x6 (ann.)": "f1f3_ann"}
+        elif carry_vgroup == "V3 — Long Slope":
+            _c8_sub_opts = {f"F{j}-F{k} Slope": (j, k)
+                            for j, k in [(3,15),(4,16),(5,17),(6,18),(7,19),(8,20),(9,21),(10,22),(11,23),(12,24)]}
+        else:
+            _c8_sub_opts = {"Z-score (252d window)": 252}
+        carry_sub_label = st.selectbox("Sub-Variant", list(_c8_sub_opts.keys()), key="carry_subv")
+        carry_sub_val = _c8_sub_opts[carry_sub_label]
+    with c8_c3:
+        carry_timing = st.selectbox("Position Entry", ["Same-Day", "Lag-1 (Next-Day)"], index=0, key="carry_timing")
+        carry_same_day = carry_timing == "Same-Day"
+    with c8_c4:
+        carry_tc_map = {"0 bps (No TC)": 0, "5 bps": 5, "10 bps": 10, "20 bps": 20}
+        carry_tc_label = st.selectbox("TC (bps, round-trip)", list(carry_tc_map.keys()), index=0, key="carry_tc")
+        carry_tc_bps = carry_tc_map[carry_tc_label]
+
+    # Build spec dict
+    if carry_vgroup == "V1 — Roll Yield":
+        carry_spec = {"variant": "v1", "signal_type": carry_sub_val, "same_day": carry_same_day}
+    elif carry_vgroup == "V2 — Annualized":
+        carry_spec = {"variant": "v2", "signal_type": carry_sub_val, "same_day": carry_same_day}
+    elif carry_vgroup == "V3 — Long Slope":
+        carry_spec = {"variant": "v3", "j": carry_sub_val[0], "k": carry_sub_val[1], "same_day": carry_same_day}
+    else:
+        carry_spec = {"variant": "v4", "window": carry_sub_val, "same_day": carry_same_day}
+
+    # ── Data loading ──────────────────────────────────────────────────────────
+    _f1_df_c8 = _load_copper_f1_data()
+    if _f1_df_c8.empty:
+        st.error("LME_Copper_Rolling_F1_v2.csv not found. Place it in the same directory as app.py.")
+        st.stop()
+    cf1c = _f1_df_c8["F1_continuous"]
+    cf1r = _f1_df_c8["F1_raw"]
+
+    _cu_sheet_c8 = _find_curve_sheet("Copper", curve_data) if curve_data else None
+    if not curve_data or _cu_sheet_c8 is None:
+        st.error("Futures Curve data not loaded. Upload Metals Futures Curve file in the sidebar.")
+        st.stop()
+    c8_curve_px = curve_data[_cu_sheet_c8]["prices"].copy()
+    c8_curve_px.index = pd.to_datetime(c8_curve_px.index).normalize()
+    c8_curve_px = c8_curve_px.sort_index()
+
+    _cash_cu8 = parse_cash_3m_columns(cash_data.get("Copper", pd.DataFrame()), "Copper")
+    if not _cash_cu8.empty:
+        _cash_cu8.index = pd.to_datetime(_cash_cu8.index).normalize()
+
+    # ── Carry signal computation ───────────────────────────────────────────────
+    carry_raw = _carry_raw_signal(c8_curve_px, _cash_cu8, carry_spec)
+    if carry_raw.empty:
+        st.error("Could not compute carry signal. Check that the required curve columns (F1, F2, F3, etc.) exist in the uploaded futures curve file.")
+        st.stop()
+
+    _c8_idx = carry_raw.index.intersection(cf1c.index)
+    carry_raw = carry_raw.reindex(_c8_idx).dropna()
+    _c8_idx = carry_raw.index
+    cf1c_a = cf1c.reindex(_c8_idx)
+
+    carry_sig_arr = np.sign(carry_raw.values)
+    T_c8 = len(carry_sig_arr)
+    carry_pos_np = np.empty(T_c8)
+    if carry_same_day:
+        carry_pos_np[:] = np.where(np.isfinite(carry_sig_arr), carry_sig_arr, 0.0)
+    else:
+        carry_pos_np[0] = 0.0
+        carry_pos_np[1:] = np.where(np.isfinite(carry_sig_arr[:-1]), carry_sig_arr[:-1], 0.0)
+    carry_pos = pd.Series(carry_pos_np, index=_c8_idx)
+
+    c8_delta = cf1c_a.diff()
+    c8_gross_pnl = carry_pos * c8_delta
+    c8_pos_change = carry_pos.diff().abs()
+    c8_pos_change.iloc[0] = abs(carry_pos.iloc[0])
+    c8_tc_cost = c8_pos_change * (carry_tc_bps / 10000.0 / 2.0) * cf1c_a
+    c8_net_pnl = c8_gross_pnl - c8_tc_cost
+    c8_cum_gross = c8_gross_pnl.cumsum()
+    c8_cum_net = c8_net_pnl.cumsum()
+
+    cf1_prev8 = cf1c_a.shift(1)
+    c8_gross_ret_all = (c8_gross_pnl / cf1_prev8).replace([np.inf, -np.inf], np.nan)
+    c8_net_ret_all = (c8_net_pnl / cf1_prev8).replace([np.inf, -np.inf], np.nan)
+
+    # Regime signal series (used by multiple sections below)
+    _c8_sig_bin = pd.Series(np.sign(carry_raw.values), index=_c8_idx)
+    _c8_flip_mask = _c8_sig_bin.diff().abs() > 0
+    _c8_flip_mask.iloc[0] = True
+    _c8_regime_id = _c8_flip_mask.cumsum()
+    _c8_back_mask = (_c8_sig_bin > 0)
+    _c8_cont_mask = (_c8_sig_bin < 0)
+
+    # Regime durations
+    _c8_regime_vals = _c8_sig_bin.groupby(_c8_regime_id).first()
+    _c8_regime_lens = _c8_sig_bin.groupby(_c8_regime_id).count()
+    _back_durs = _c8_regime_lens[_c8_regime_vals > 0].tolist()
+    _cont_durs = _c8_regime_lens[_c8_regime_vals < 0].tolist()
+    avg_back_dur = int(np.mean(_back_durs)) if _back_durs else 0
+    avg_cont_dur = int(np.mean(_cont_durs)) if _cont_durs else 0
+
+    section_header = lambda t: st.markdown(f'<div class="section-header">{t}</div>', unsafe_allow_html=True)
+    def _cmcard(col, label, val, fmt=".2f", suffix=""):
+        if val is None or (isinstance(val, float) and np.isnan(val)):
+            col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">—</p></div>', unsafe_allow_html=True)
+            return
+        col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">{val:{fmt}}{suffix}</p></div>', unsafe_allow_html=True)
+
+    # ── Section 2: Live Regime Badge ──────────────────────────────────────────
+    last_date_c8 = carry_raw.index[-1]
+    last_carry_val = float(carry_raw.iloc[-1])
+    is_back_c8 = last_carry_val > 0
+    _rcolor = "#5BAD72" if is_back_c8 else "#B85450"
+    _rword  = "BACKWARDATION" if is_back_c8 else "CONTANGO"
+    _rsig   = "LONG  (+1)" if is_back_c8 else "SHORT (-1)"
+    _rbg    = "rgba(91,173,114,0.08)" if is_back_c8 else "rgba(184,84,80,0.08)"
+    carry_pct_last = last_carry_val * 100
+
+    _flip_pos_series = _c8_sig_bin[_c8_flip_mask]
+    if len(_flip_pos_series) > 1:
+        last_flip_dt = _flip_pos_series.index[-2]
+        days_since = (last_date_c8 - last_flip_dt).days
+        flip_str = f"{last_flip_dt.strftime('%Y-%m-%d')}  ({days_since}d ago)"
+    else:
+        flip_str = "N/A"
+
+    st.divider()
+    st.markdown(f"""
+    <div style="background:{_rbg}; border:1px solid {_rcolor}; border-left:5px solid {_rcolor};
+                border-radius:4px; padding:18px 24px; margin-bottom:4px;">
+      <div style="display:flex; gap:48px; align-items:center; flex-wrap:wrap;">
+        <div>
+          <div style="color:#7A7068;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px;">Current Regime</div>
+          <div style="color:{_rcolor};font-size:1.6rem;font-weight:700;letter-spacing:0.04em;font-family:'IBM Plex Mono',monospace;">{_rword}</div>
+          <div style="color:#5A5248;font-size:0.72rem;margin-top:3px;">as of {last_date_c8.strftime('%Y-%m-%d')}</div>
+        </div>
+        <div>
+          <div style="color:#7A7068;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px;">Carry Value</div>
+          <div style="color:{_rcolor};font-size:1.6rem;font-weight:700;font-family:'IBM Plex Mono',monospace;">{carry_pct_last:+.3f}%</div>
+          <div style="color:#5A5248;font-size:0.72rem;margin-top:3px;">{carry_sub_label}</div>
+        </div>
+        <div>
+          <div style="color:#7A7068;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px;">Active Signal</div>
+          <div style="color:{_rcolor};font-size:1.6rem;font-weight:700;font-family:'IBM Plex Mono',monospace;">{_rsig}</div>
+          <div style="color:#5A5248;font-size:0.72rem;margin-top:3px;">{carry_timing}</div>
+        </div>
+        <div>
+          <div style="color:#7A7068;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px;">Last Regime Flip</div>
+          <div style="color:#D4CFC8;font-size:1.1rem;font-weight:600;font-family:'IBM Plex Mono',monospace;">{flip_str}</div>
+          <div style="color:#5A5248;font-size:0.72rem;margin-top:3px;">Avg duration: {avg_back_dur}d back / {avg_cont_dur}d cont</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Section 3: Carry Signal History ───────────────────────────────────────
+    st.divider()
+    section_header("CARRY SIGNAL HISTORY")
+
+    carry_pct_series = carry_raw * 100
+    fig_csh = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35],
+        vertical_spacing=0.04,
+    )
+    fig_csh.add_trace(go.Scatter(
+        x=carry_pct_series.index, y=carry_pct_series.values,
+        name="Carry Value (%)", mode="lines",
+        line=dict(color=COLORS["primary"], width=1.5),
+        hovertemplate="%{x|%b %d, %Y}<br>Carry: %{y:.4f}%<extra></extra>",
+    ), row=1, col=1)
+    fig_csh.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1.2, row=1, col=1)
+
+    # Shaded regions for backwardation / contango
+    _back_arr = carry_pct_series.where(_c8_back_mask, np.nan)
+    _cont_arr = carry_pct_series.where(_c8_cont_mask, np.nan)
+    fig_csh.add_trace(go.Scatter(
+        x=_back_arr.index, y=_back_arr.values,
+        name="Backwardation", mode="lines",
+        line=dict(color="#5BAD72", width=0), fill="tozeroy",
+        fillcolor="rgba(91,173,114,0.18)",
+        hovertemplate="%{x|%b %d, %Y}<br>Back.: %{y:.4f}%<extra></extra>",
+    ), row=1, col=1)
+    fig_csh.add_trace(go.Scatter(
+        x=_cont_arr.index, y=_cont_arr.values,
+        name="Contango", mode="lines",
+        line=dict(color="#B85450", width=0), fill="tozeroy",
+        fillcolor="rgba(184,84,80,0.18)",
+        hovertemplate="%{x|%b %d, %Y}<br>Cont.: %{y:.4f}%<extra></extra>",
+    ), row=1, col=1)
+
+    _sig_long_c8  = _c8_sig_bin.where(_c8_sig_bin > 0, 0.0)
+    _sig_short_c8 = _c8_sig_bin.where(_c8_sig_bin < 0, 0.0)
+    fig_csh.add_trace(go.Bar(
+        x=_c8_idx, y=_sig_long_c8.values,
+        name="Long (+1)", marker_color="#00E676", opacity=1.0,
+        hovertemplate="%{x|%b %d, %Y}<br>Long<extra></extra>",
+    ), row=2, col=1)
+    fig_csh.add_trace(go.Bar(
+        x=_c8_idx, y=_sig_short_c8.values,
+        name="Short (-1)", marker_color="#FF1744", opacity=1.0,
+        hovertemplate="%{x|%b %d, %Y}<br>Short<extra></extra>",
+    ), row=2, col=1)
+
+    fig_csh.update_layout(
+        **CHART_LAYOUT, height=500, barmode="overlay",
+        title=dict(text=f"{carry_sub_label} — Raw Carry Value & Binary Signal", font=dict(size=13)),
+        hovermode="x unified", showlegend=True,
+    )
+    fig_csh.update_yaxes(title_text="Carry (%)", row=1, col=1)
+    fig_csh.update_yaxes(title_text="Signal", tickvals=[-1, 0, 1],
+                          ticktext=["Short", "Flat", "Long"], row=2, col=1)
+    fig_csh.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+    st.plotly_chart(fig_csh, use_container_width=True)
+    st.caption("Top: raw carry value (continuous magnitude). Green fill = backwardation (long), Red fill = contango (short). "
+               "Bottom: resulting binary signal. Unlike momentum, carry has an economic magnitude — deep backwardation periods are visually distinct.")
+
+    # ── Section 4: Date Filter + Performance Metrics ──────────────────────────
+    st.divider()
+    pf8_c1, _ = st.columns([3, 1])
+    with pf8_c1:
+        carry_perf_dates = st.date_input(
+            "Performance period  (signal uses full history — only metrics & charts below update)",
+            value=(_c8_idx[0].date(), _c8_idx[-1].date()),
+            min_value=_c8_idx[0].date(), max_value=_c8_idx[-1].date(),
+            key="carry_perf_dates",
+        )
+    cp8_start = pd.Timestamp(carry_perf_dates[0]) if len(carry_perf_dates) >= 1 else _c8_idx[0]
+    cp8_end   = pd.Timestamp(carry_perf_dates[1]) if len(carry_perf_dates) == 2 else _c8_idx[-1]
+    cp8_mask  = (_c8_idx >= cp8_start) & (_c8_idx <= cp8_end)
+
+    c8_gross_pnl_f = c8_gross_pnl[cp8_mask];  c8_net_pnl_f = c8_net_pnl[cp8_mask]
+    c8_pos_f       = carry_pos[cp8_mask]
+    c8_gross_ret_f = c8_gross_ret_all[cp8_mask]; c8_net_ret_f = c8_net_ret_all[cp8_mask]
+
+    def _carry_perf(daily_pnl: pd.Series, daily_ret: pd.Series, position: pd.Series, label: str) -> dict:
+        active  = daily_ret[position != 0].dropna()
+        pnl_act = daily_pnl[position != 0].dropna()
+        n = len(active)
+        if n < 20:
+            return {}
+        ann_r  = float(active.mean() * 252 * 100)
+        ann_sd = float(active.std()  * np.sqrt(252) * 100)
+        sharpe = ann_r / ann_sd if ann_sd > 0 else np.nan
+        down   = active[active < 0]
+        srt_d  = float(down.std() * np.sqrt(252) * 100) if len(down) > 1 else np.nan
+        sortino = ann_r / srt_d if srt_d and srt_d > 0 else np.nan
+        cum_r   = daily_ret.fillna(0).cumsum() * 100
+        mdd_pct = float((cum_r - cum_r.cummax()).min())
+        calmar  = ann_r / abs(mdd_pct) if mdd_pct != 0 else np.nan
+        wins, losses = pnl_act[pnl_act > 0], pnl_act[pnl_act < 0]
+        return {
+            "label": label, "n": n,
+            "sharpe": sharpe, "sortino": sortino,
+            "ann_ret_pct": ann_r, "ann_std_pct": ann_sd,
+            "mdd_pct": mdd_pct, "calmar": calmar,
+            "hit_rate": float((active > 0).mean()) * 100,
+            "profit_factor": abs(wins.sum() / losses.sum()) if len(losses) > 0 else np.nan,
+            "total_pnl_usdmt": float(pnl_act.sum()),
+        }
+
+    cm8_gross = _carry_perf(c8_gross_pnl_f, c8_gross_ret_f, c8_pos_f, "Gross (No TC)")
+    cm8_net   = _carry_perf(c8_net_pnl_f,   c8_net_ret_f,   c8_pos_f, f"Net ({carry_tc_label})")
+
+    st.divider()
+    section_header("PERFORMANCE METRICS")
+    st.caption(f"**Strategy:** {carry_vgroup} / {carry_sub_label}  |  **Entry:** {carry_timing}  |  **TC:** {carry_tc_label}")
+
+    if cm8_gross and cm8_net:
+        _c8_cols1 = st.columns(8)
+        _cmcard(_c8_cols1[0], "Sharpe Gross",    cm8_gross.get("sharpe"),      ".2f")
+        _cmcard(_c8_cols1[1], "Sharpe Net",      cm8_net.get("sharpe"),        ".2f")
+        _cmcard(_c8_cols1[2], "Sortino Gross",   cm8_gross.get("sortino"),     ".2f")
+        _cmcard(_c8_cols1[3], "Sortino Net",     cm8_net.get("sortino"),       ".2f")
+        _cmcard(_c8_cols1[4], "Ann Ret% Gross",  cm8_gross.get("ann_ret_pct"), ".2f", "%")
+        _cmcard(_c8_cols1[5], "Ann Ret% Net",    cm8_net.get("ann_ret_pct"),   ".2f", "%")
+        _cmcard(_c8_cols1[6], "Ann Std Dev%",    cm8_gross.get("ann_std_pct"), ".2f", "%")
+        _cmcard(_c8_cols1[7], "Active Days",     float(cm8_gross.get("n", 0)), ",.0f")
+
+        _c8_cols2 = st.columns(8)
+        _cmcard(_c8_cols2[0], "Max DD% Gross",   cm8_gross.get("mdd_pct"),        ".2f", "%")
+        _cmcard(_c8_cols2[1], "Max DD% Net",     cm8_net.get("mdd_pct"),          ".2f", "%")
+        _cmcard(_c8_cols2[2], "Calmar Gross",    cm8_gross.get("calmar"),         ".2f")
+        _cmcard(_c8_cols2[3], "Calmar Net",      cm8_net.get("calmar"),           ".2f")
+        _cmcard(_c8_cols2[4], "Hit Rate",        cm8_gross.get("hit_rate"),       ".2f", "%")
+        _cmcard(_c8_cols2[5], "Profit Factor",   cm8_gross.get("profit_factor"),  ".2f")
+        _cmcard(_c8_cols2[6], "PnL Gross $/MT",  cm8_gross.get("total_pnl_usdmt"), ",.2f")
+        _cmcard(_c8_cols2[7], "PnL Net $/MT",    cm8_net.get("total_pnl_usdmt"),   ",.2f")
+    else:
+        st.warning("Insufficient active trading days to compute metrics.")
+
+    # ── Section 5: Rolling Sharpe ──────────────────────────────────────────────
+    st.divider()
+    section_header("ROLLING SHARPE RATIO")
+    crs8_c1, crs8_c2 = st.columns([3, 1])
+    with crs8_c2:
+        crs8_win = st.radio("Window", ["1 Year (252d)", "2 Years (504d)", "Both"],
+                             index=2, key="carry_rs_window", horizontal=False)
+    _cdr8 = c8_gross_ret_all.fillna(0)
+    croll8_252 = (_cdr8.rolling(252).mean() / _cdr8.rolling(252).std() * np.sqrt(252))
+    croll8_504 = (_cdr8.rolling(504).mean() / _cdr8.rolling(504).std() * np.sqrt(252))
+    with crs8_c1:
+        fig_crs8 = go.Figure()
+        if crs8_win in ("1 Year (252d)", "Both"):
+            fig_crs8.add_trace(go.Scatter(
+                x=croll8_252.index, y=croll8_252.values, name="Rolling Sharpe (1yr)",
+                mode="lines", line=dict(color=COLORS["primary"], width=1.6),
+                hovertemplate="%{x|%b %Y}<br>Sharpe (1yr): %{y:.2f}<extra></extra>",
+            ))
+        if crs8_win in ("2 Years (504d)", "Both"):
+            fig_crs8.add_trace(go.Scatter(
+                x=croll8_504.index, y=croll8_504.values, name="Rolling Sharpe (2yr)",
+                mode="lines", line=dict(color=COLORS["amber"], width=1.6, dash="dot"),
+                hovertemplate="%{x|%b %Y}<br>Sharpe (2yr): %{y:.2f}<extra></extra>",
+            ))
+        fig_crs8.add_hline(y=0,   line_dash="dash", line_color="#475569", line_width=1)
+        fig_crs8.add_hline(y=0.5, line_dash="dot",  line_color=COLORS["green"],
+                            line_width=0.8, annotation_text="0.5", annotation_position="right")
+        fig_crs8.update_layout(
+            **CHART_LAYOUT, height=320,
+            title=dict(text=f"{carry_sub_label} — Rolling Sharpe ({carry_timing})", font=dict(size=13)),
+            yaxis_title="Annualised Sharpe", xaxis_title=None, hovermode="x unified",
+        )
+        fig_crs8.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+        st.plotly_chart(fig_crs8, use_container_width=True)
+    st.caption("Carry tends to be regime-dependent — performs strongly during sustained backwardation cycles (e.g., 2006-2008, 2021-2022). "
+               "Positive rolling Sharpe validates the strategy over that window.")
+
+    # ── Section 6: Regime Statistics ──────────────────────────────────────────
+    st.divider()
+    section_header("REGIME STATISTICS")
+
+    pct_back_c8 = float(_c8_back_mask.mean()) * 100
+    pct_cont_c8 = float(_c8_cont_mask.mean()) * 100
+
+    _active_back = c8_gross_ret_all[_c8_back_mask & (carry_pos != 0)].dropna()
+    _active_cont = c8_gross_ret_all[_c8_cont_mask & (carry_pos != 0)].dropna()
+    ret_in_back = float(_active_back.mean() * 252 * 100) if len(_active_back) > 5 else np.nan
+    ret_in_cont = float(_active_cont.mean() * 252 * 100) if len(_active_cont) > 5 else np.nan
+    n_flips_c8 = int(_c8_flip_mask.sum()) - 1
+
+    _rs8_cols = st.columns(6)
+    _cmcard(_rs8_cols[0], "% Days Backwardation", pct_back_c8, ".1f", "%")
+    _cmcard(_rs8_cols[1], "% Days Contango",      pct_cont_c8, ".1f", "%")
+    _cmcard(_rs8_cols[2], "Ann Ret in Back.",      ret_in_back, ".1f", "%")
+    _cmcard(_rs8_cols[3], "Ann Ret in Contango",   ret_in_cont, ".1f", "%")
+    _cmcard(_rs8_cols[4], "Avg Back. Duration",    float(avg_back_dur), ".0f", "d")
+    _cmcard(_rs8_cols[5], "Regime Flips (Total)",  float(n_flips_c8), ",.0f")
+    st.caption("Ann Ret in Back./Contango = annualized gross return on active trading days when the carry signal is in that regime.")
+
+    # ── Section 7: Cumulative PnL + Carry vs Carry Comparison ─────────────────
+    st.divider()
+    section_header("CUMULATIVE PnL (USD/MT)")
+
+    _c8_cmp_keys = list(_CARRY_CMP_OPTIONS.keys())
+    cc8_c1, cc8_c2 = st.columns(2)
+    with cc8_c1:
+        carry_cmp_a = st.selectbox("Compare: Strategy A", _c8_cmp_keys, index=0, key="carry_cmp_a")
+    with cc8_c2:
+        carry_cmp_b = st.selectbox("Compare: Strategy B", _c8_cmp_keys, index=0, key="carry_cmp_b")
+
+    fig_c8cum = go.Figure()
+    _C8_CMP_COLORS = [COLORS["primary"], COLORS["amber"]]
+    for _c8_lbl, _c8_ci in [(carry_cmp_a, 0), (carry_cmp_b, 1)]:
+        _c8_spec = _CARRY_CMP_OPTIONS.get(_c8_lbl)
+        if _c8_spec is None:
+            continue
+        _c8_cpnl = _carry_cum_pnl(c8_curve_px, _cash_cu8, cf1c, _c8_spec)
+        if _c8_cpnl.empty:
+            continue
+        fig_c8cum.add_trace(go.Scatter(
+            x=_c8_cpnl.index, y=_c8_cpnl.values, name=_c8_lbl, mode="lines",
+            line=dict(color=_C8_CMP_COLORS[_c8_ci], width=1.8,
+                      dash="dot" if _c8_ci == 1 else "solid"),
+            hovertemplate=f"%{{x|%b %d, %Y}}<br>{_c8_lbl}: $%{{y:,.1f}}/MT<extra></extra>",
+        ))
+
+    fig_c8cum.add_trace(go.Scatter(
+        x=c8_cum_gross.index, y=c8_cum_gross.values,
+        name=f"{carry_sub_label} Gross", mode="lines",
+        line=dict(color="#64748B", width=1.2),
+        hovertemplate="%{x|%b %d, %Y}<br>Gross: $%{y:,.1f}/MT<extra></extra>",
+        visible="legendonly",
+    ))
+    if carry_tc_bps > 0:
+        fig_c8cum.add_trace(go.Scatter(
+            x=c8_cum_net.index, y=c8_cum_net.values,
+            name=f"{carry_sub_label} Net ({carry_tc_label})", mode="lines",
+            line=dict(color="#94A3B8", width=1.2, dash="dot"),
+            hovertemplate="%{x|%b %d, %Y}<br>Net: $%{y:,.1f}/MT<extra></extra>",
+            visible="legendonly",
+        ))
+
+    fig_c8cum.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1)
+    fig_c8cum.update_layout(
+        **CHART_LAYOUT, height=420,
+        title=dict(text="Carry Strategy Comparison — Cumulative PnL (Gross, USD/MT)", font=dict(size=13)),
+        yaxis_title="Cumulative PnL (USD/MT)", xaxis_title=None, hovermode="x unified",
+    )
+    fig_c8cum.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+    st.plotly_chart(fig_c8cum, use_container_width=True)
+
+    # ── Section 8: Annual PnL ─────────────────────────────────────────────────
+    st.divider()
+    section_header("ANNUAL PnL BREAKDOWN (Gross, USD/MT)")
+
+    c8_annual_pnl = c8_gross_pnl.resample("YE").sum()
+    c8_annual_pnl.index = c8_annual_pnl.index.year
+    c8_bar_colors = [COLORS["green"] if v >= 0 else COLORS["red"] for v in c8_annual_pnl.values]
+    fig_c8ann = go.Figure(go.Bar(
+        x=c8_annual_pnl.index.astype(str), y=c8_annual_pnl.values,
+        marker_color=c8_bar_colors,
+        hovertemplate="%{x}<br>PnL: $%{y:,.1f}/MT<extra></extra>",
+    ))
+    fig_c8ann.update_layout(
+        **CHART_LAYOUT, height=300,
+        title=dict(text="Annual PnL (Gross)", font=dict(size=13)),
+        yaxis_title="PnL (USD/MT)", xaxis_title=None, showlegend=False,
+    )
+    st.plotly_chart(fig_c8ann, use_container_width=True)
+
+    # ── Section 9: Tenor Comparison (V3 only) ─────────────────────────────────
+    if carry_vgroup == "V3 — Long Slope":
+        st.divider()
+        section_header("TENOR PAIR COMPARISON — V3 LONG SLOPE")
+        st.caption("Sharpe ratio for all 10 tenor pairs. Shows which part of the curve carries the most predictive power.")
+
+        _v3_pairs = [(3,15),(4,16),(5,17),(6,18),(7,19),(8,20),(9,21),(10,22),(11,23),(12,24)]
+        _v3_labels = [f"F{j}-F{k}" for j, k in _v3_pairs]
+        _v3_sh_lag, _v3_sh_same = [], []
+
+        for _vj, _vk in _v3_pairs:
+            for _vsd, _vlst in [(False, _v3_sh_lag), (True, _v3_sh_same)]:
+                _vsp = {"variant": "v3", "j": _vj, "k": _vk, "same_day": _vsd}
+                _vcr = _carry_raw_signal(c8_curve_px, _cash_cu8, _vsp)
+                if _vcr.empty:
+                    _vlst.append(np.nan); continue
+                _vi = _vcr.index.intersection(cf1c.index)
+                _vcr = _vcr.reindex(_vi).dropna(); _vi = _vcr.index
+                _vf1c = cf1c.reindex(_vi)
+                _vsig = np.sign(_vcr.values); _vT = len(_vsig)
+                _vpos = np.empty(_vT)
+                if _vsd:
+                    _vpos[:] = np.where(np.isfinite(_vsig), _vsig, 0.0)
+                else:
+                    _vpos[0] = 0.0
+                    _vpos[1:] = np.where(np.isfinite(_vsig[:-1]), _vsig[:-1], 0.0)
+                _vpos_s = pd.Series(_vpos, index=_vi)
+                _vgpnl = _vpos_s * _vf1c.diff()
+                _vgret = (_vgpnl / _vf1c.shift(1)).replace([np.inf, -np.inf], np.nan)
+                _vact = _vgret[_vpos_s != 0].dropna()
+                if len(_vact) < 20:
+                    _vlst.append(np.nan); continue
+                _vann_r = float(_vact.mean() * 252 * 100)
+                _vann_sd = float(_vact.std() * np.sqrt(252) * 100)
+                _vlst.append(_vann_r / _vann_sd if _vann_sd > 0 else np.nan)
+
+        def _safe_color(val, pos_col, neg_col):
+            if val is None or (isinstance(val, float) and np.isnan(val)):
+                return "#475569"
+            return pos_col if val >= 0 else neg_col
+
+        fig_tenor = go.Figure()
+        fig_tenor.add_trace(go.Bar(
+            y=_v3_labels, x=_v3_sh_lag, name="Lag-1", orientation="h",
+            marker_color=[_safe_color(v, COLORS["green"], COLORS["red"]) for v in _v3_sh_lag],
+            hovertemplate="%{y}<br>Sharpe Lag-1: %{x:.3f}<extra></extra>",
+        ))
+        fig_tenor.add_trace(go.Bar(
+            y=_v3_labels, x=_v3_sh_same, name="Same-Day", orientation="h",
+            marker_color=[_safe_color(v, COLORS["amber"], "#7A3030") for v in _v3_sh_same],
+            opacity=0.75,
+            hovertemplate="%{y}<br>Sharpe Same-Day: %{x:.3f}<extra></extra>",
+        ))
+        fig_tenor.add_vline(x=0, line_dash="dash", line_color="#475569", line_width=1)
+        fig_tenor.update_layout(
+            **CHART_LAYOUT, height=420, barmode="group",
+            title=dict(text="V3 Long Slope — Sharpe by Tenor Pair (Gross, No TC)", font=dict(size=13)),
+            xaxis_title="Sharpe Ratio", yaxis_title=None,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig_tenor, use_container_width=True)
+        st.caption("Short-to-medium tenors (F3-F15, F4-F16) typically carry more predictive power than long-end pairs (F12-F24), "
+                   "where price noise dominates. A decaying Sharpe across tenor pairs is a structural finding.")
+
+    # ── Section 10: Signal & Position Over Time ────────────────────────────────
+    st.divider()
+    section_header("SIGNAL & POSITION OVER TIME")
+    st.caption("F1_continuous price (USD/MT) with carry-driven position overlay. "
+               "Unlike the Carry History chart above, this shows *which price moves* the position captured.")
+
+    fig_c8sig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35],
+        vertical_spacing=0.04,
+    )
+    fig_c8sig.add_trace(go.Scatter(
+        x=cf1c_a.index, y=cf1c_a.values, name="F1 Continuous ($/MT)",
+        line=dict(color=COLORS["primary"], width=1.5),
+        hovertemplate="%{x|%b %d, %Y}<br>F1_cont: $%{y:,.1f}<extra></extra>",
+    ), row=1, col=1)
+
+    _c8p_long  = carry_pos.where(carry_pos > 0, 0.0)
+    _c8p_short = carry_pos.where(carry_pos < 0, 0.0)
+    fig_c8sig.add_trace(go.Bar(
+        x=carry_pos.index, y=_c8p_long.values,
+        name="Long (+1)", marker_color="#00E676", opacity=1.0,
+        hovertemplate="%{x|%b %d, %Y}<br>Long<extra></extra>",
+    ), row=2, col=1)
+    fig_c8sig.add_trace(go.Bar(
+        x=carry_pos.index, y=_c8p_short.values,
+        name="Short (-1)", marker_color="#FF1744", opacity=1.0,
+        hovertemplate="%{x|%b %d, %Y}<br>Short<extra></extra>",
+    ), row=2, col=1)
+
+    fig_c8sig.update_layout(
+        **CHART_LAYOUT, height=480, barmode="overlay",
+        title=dict(text=f"{carry_sub_label} — F1 Price & Position ({carry_timing})", font=dict(size=13)),
+        hovermode="x unified", showlegend=True,
+    )
+    fig_c8sig.update_yaxes(title_text="F1_cont ($/MT)", row=1, col=1)
+    fig_c8sig.update_yaxes(title_text="Position", tickvals=[-1, 0, 1],
+                             ticktext=["Short", "Flat", "Long"], row=2, col=1)
+    fig_c8sig.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+    st.plotly_chart(fig_c8sig, use_container_width=True)
+
+    # ── Recent Signal Flips ────────────────────────────────────────────────────
+    st.divider()
+    section_header("RECENT SIGNAL FLIPS (Last 20)")
+
+    _c8_flips_mask2 = carry_pos.diff().abs() > 0
+    _c8_flips_mask2.iloc[0] = carry_pos.iloc[0] != 0
+    _c8_flip_dates2 = carry_pos[_c8_flips_mask2].tail(20)
+
+    if not _c8_flip_dates2.empty:
+        _c8_flip_df = pd.DataFrame({
+            "Date":            _c8_flip_dates2.index.strftime("%Y-%m-%d"),
+            "Position":        _c8_flip_dates2.values.astype(int),
+            "Direction":       ["LONG" if v > 0 else "SHORT" for v in _c8_flip_dates2.values],
+            "F1_raw ($/MT)":   cf1r.reindex(_c8_flip_dates2.index).round(1).values,
+            "Carry Value (%)": (carry_raw.reindex(_c8_flip_dates2.index) * 100).round(4).values,
+            "Gross PnL":       c8_gross_pnl.reindex(_c8_flip_dates2.index).round(2).values,
+            "TC cost":         c8_tc_cost.reindex(_c8_flip_dates2.index).round(2).values,
+            "Net PnL":         c8_net_pnl.reindex(_c8_flip_dates2.index).round(2).values,
+        })
+        st.dataframe(_c8_flip_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No signal flips found in data.")
+
+    # ── Methodology Notes ──────────────────────────────────────────────────────
+    st.divider()
+    with st.expander("Methodology Notes", expanded=False):
+        st.markdown("""
+**Economic Intuition**
+Commodity carry (basis) reflects expected convenience yield and storage costs.
+- **Backwardation** (nearby > far): tight nearby supply / positive convenience yield → *Long*
+- **Contango** (nearby < far): excess supply / storage costs dominant → *Short*
+
+**Signal Variant Formulas**
+- **V1 Roll Yield**: `(F1-F2)/F1`, `(F1-F3)/F1`, `(Cash-3M)/Cash`
+  Measures the 1-period roll cost as a fraction of current price.
+- **V2 Annualized**: V1 x 12 (for F1-F2) or x 6 (for F1-F3) — scaled to annual rate.
+  Note: binary signal (sign) is identical to V1; annualization only affects magnitude.
+- **V3 Long Slope**: `(Fj-Fk)/Fk` for j < k (e.g., F3-F15, F4-F16, ... F12-F24)
+  Measures the slope of the forward curve at longer tenors; downward slope = backwardation at the long end = Long signal.
+- **V4 Z-score**: 252-day rolling standardization of (F1-F2)/F1.
+  Filters out permanent level shifts; signal fires when carry is unusually high/low relative to recent history.
+
+**Position Timing**
+- *Same-Day*: `position[t] = sign(carry[t])` — taken at same close as signal
+- *Lag-1*: `position[t] = sign(carry[t-1])` — entered the following day
+
+**Why Same-Day Dominates for Carry**
+Carry is a level-based signal. On flip days (contango→backwardation), a large price move
+occurs in the direction of the new regime. Same-Day captures this move; Lag-1 takes a
+2x swing loss (wrong position the whole day, corrects only the next morning). Unlike
+momentum signals (which flip gradually), carry flips are discrete and high-impact events.
+
+**Transaction Costs**
+`TC[t] = |delta_position[t]| x (bps/10000/2) x F1_cont[t]`
+Flip (+1 to -1): delta=2, cost = 1 full round-trip x price.
+Entry (0 to +/-1): delta=1, cost = 0.5 round-trip x price.
+
+**PnL & Returns**
+All strategies trade F1_continuous regardless of which tenor pair generates the signal.
+`daily_ret[t] = position[t] x delta_F1_cont[t] / F1_cont[t-1]`
+Sharpe, Sortino, Max DD, Calmar all computed from daily_ret in % terms.
+
+**Reference**
+Baz, J., Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Section and Time Series. SSRN.
         """)
