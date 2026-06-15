@@ -1656,6 +1656,23 @@ _MOM_CMP_OPTIONS = {
     "CTA Paper — Same-Day": {"type": "cta_paper", "same_day": True},
 }
 
+_MA_OPT_PATH  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "MA_Crossover_Optimization.csv")
+_CTA_OPT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "CTA_Optimization.csv")
+
+
+@st.cache_data(show_spinner=False)
+def _load_ma_opt() -> pd.DataFrame:
+    if not os.path.exists(_MA_OPT_PATH):
+        return pd.DataFrame()
+    return pd.read_csv(_MA_OPT_PATH)
+
+
+@st.cache_data(show_spinner=False)
+def _load_cta_opt() -> pd.DataFrame:
+    if not os.path.exists(_CTA_OPT_PATH):
+        return pd.DataFrame()
+    return pd.read_csv(_CTA_OPT_PATH)
+
 
 # ══════════════════════════════════════════════════════
 # TAB 7: MOMENTUM SIGNALS
@@ -1729,6 +1746,31 @@ with tab7:
         )
         tc_bps = tc_bps_map[tc_label]   # round-trip cost in basis points
 
+    # ── Custom parameter override ─────────────────────────────────────────────
+    with st.expander("Custom Parameters (override dropdown selection)", expanded=False):
+        if sig_type == "MA Crossover":
+            cp1, cp2, cp3 = st.columns([1, 1, 2])
+            with cp1:
+                m_cust = st.number_input("Fast window m", min_value=1, max_value=124, value=35, step=1, key="cust_m")
+            with cp2:
+                n_cust = st.number_input("Slow window n", min_value=m_cust + 1, max_value=126, value=43, step=1, key="cust_n")
+            with cp3:
+                use_custom = st.checkbox("Use custom MA(m,n)", value=False, key="cust_ma_on")
+            if use_custom and n_cust > m_cust:
+                variant_params = (m_cust, n_cust)
+                variant_label  = f"Custom MA({m_cust},{n_cust})"
+        else:
+            cp1, cp2, cp3 = st.columns([1, 1, 2])
+            with cp1:
+                s_cust = st.number_input("Short EWMA S", min_value=1, max_value=49, value=9,  step=1, key="cust_s")
+            with cp2:
+                l_cust = st.number_input("Long EWMA L",  min_value=s_cust + 1, max_value=100, value=21, step=1, key="cust_l")
+            with cp3:
+                use_custom = st.checkbox("Use custom CTA(S,L)", value=False, key="cust_cta_on")
+            if use_custom and l_cust > s_cust:
+                variant_params = ("cta_single", s_cust, l_cust)
+                variant_label  = f"Custom CTA({s_cust},{l_cust})"
+
     # ── Data loading ──────────────────────────────────────────────────────────
     _f1_df = _load_copper_f1_data()
     if _f1_df.empty:
@@ -1793,13 +1835,35 @@ with tab7:
     cum_pnl_gross = gross_pnl.cumsum()
     cum_pnl_net   = net_pnl.cumsum()
 
+    # ── Pre-compute daily returns (full period, needed for rolling Sharpe) ─────
+    f1_prev_full  = f1c.shift(1)
+    gross_ret_all = (gross_pnl / f1_prev_full).replace([np.inf, -np.inf], np.nan)
+    net_ret_all   = (net_pnl   / f1_prev_full).replace([np.inf, -np.inf], np.nan)
+
+    # ── Date filter for performance metrics ───────────────────────────────────
+    st.divider()
+    pf_c1, pf_c2 = st.columns([3, 1])
+    with pf_c1:
+        perf_dates = st.date_input(
+            "Performance period  (signal uses full history — only metrics & charts below update)",
+            value=(f1r.index[0].date(), f1r.index[-1].date()),
+            min_value=f1r.index[0].date(), max_value=f1r.index[-1].date(),
+            key="mom_perf_dates",
+        )
+    p_start = pd.Timestamp(perf_dates[0]) if len(perf_dates) >= 1 else f1r.index[0]
+    p_end   = pd.Timestamp(perf_dates[1]) if len(perf_dates) == 2 else f1r.index[-1]
+    pmask   = (gross_pnl.index >= p_start) & (gross_pnl.index <= p_end)
+
+    gross_pnl_f = gross_pnl[pmask];   net_pnl_f = net_pnl[pmask]
+    pos_s_f     = pos_s[pmask]
+    gross_ret_f = gross_ret_all[pmask]; net_ret_f = net_ret_all[pmask]
+
     # ── Performance metrics ────────────────────────────────────────────────────
-    def _perf(daily_pnl: pd.Series, position: pd.Series, label: str) -> dict:
-        f1_prev   = f1c.shift(1)
-        daily_ret = daily_pnl / f1_prev
-        active    = daily_ret[position != 0].dropna()
-        pnl_act   = daily_pnl[position != 0].dropna()
-        n         = len(active)
+    def _perf(daily_pnl: pd.Series, daily_ret: pd.Series,
+              position: pd.Series, label: str) -> dict:
+        active  = daily_ret[position != 0].dropna()
+        pnl_act = daily_pnl[position != 0].dropna()
+        n = len(active)
         if n < 20:
             return {}
         ann_r  = float(active.mean() * 252 * 100)
@@ -1808,26 +1872,22 @@ with tab7:
         down   = active[active < 0]
         srt_d  = float(down.std() * np.sqrt(252) * 100) if len(down) > 1 else np.nan
         sortino = ann_r / srt_d if srt_d and srt_d > 0 else np.nan
-        full_ret    = daily_ret.fillna(0)
-        cum_r_pct   = full_ret.cumsum() * 100
-        mdd_pct     = float((cum_r_pct - cum_r_pct.cummax()).min())
-        calmar      = ann_r / abs(mdd_pct) if mdd_pct != 0 else np.nan
-        wins        = pnl_act[pnl_act > 0]
-        losses      = pnl_act[pnl_act < 0]
-        hit_rate    = float((active > 0).mean()) * 100
-        pf          = abs(wins.sum() / losses.sum()) if len(losses) > 0 else np.nan
-        total_pnl   = float(pnl_act.sum())
+        cum_r   = daily_ret.fillna(0).cumsum() * 100
+        mdd_pct = float((cum_r - cum_r.cummax()).min())
+        calmar  = ann_r / abs(mdd_pct) if mdd_pct != 0 else np.nan
+        wins, losses = pnl_act[pnl_act > 0], pnl_act[pnl_act < 0]
         return {
             "label": label, "n": n,
             "sharpe": sharpe, "sortino": sortino,
             "ann_ret_pct": ann_r, "ann_std_pct": ann_sd,
             "mdd_pct": mdd_pct, "calmar": calmar,
-            "hit_rate": hit_rate, "profit_factor": pf,
-            "total_pnl_usdmt": total_pnl,
+            "hit_rate": float((active > 0).mean()) * 100,
+            "profit_factor": abs(wins.sum() / losses.sum()) if len(losses) > 0 else np.nan,
+            "total_pnl_usdmt": float(pnl_act.sum()),
         }
 
-    m_gross = _perf(gross_pnl, pos_s, "Gross (No TC)")
-    m_net   = _perf(net_pnl,   pos_s, f"Net ({tc_label})")
+    m_gross = _perf(gross_pnl_f, gross_ret_f, pos_s_f, "Gross (No TC)")
+    m_net   = _perf(net_pnl_f,   net_ret_f,   pos_s_f, f"Net ({tc_label})")
 
     # ── Metric cards ──────────────────────────────────────────────────────────
     def _mcard(col, label, val, fmt=".2f", suffix="", good_high=True):
@@ -1869,6 +1929,46 @@ with tab7:
         _mcard(cols2[7], "PnL Net $/MT",     m_net.get("total_pnl_usdmt"),   ",.2f")
     else:
         st.warning("Insufficient active trading days to compute metrics.")
+
+    # ── Rolling Sharpe ─────────────────────────────────────────────────────────
+    st.divider()
+    section_header("ROLLING SHARPE RATIO")
+    rs_c1, rs_c2 = st.columns([3, 1])
+    with rs_c2:
+        rs_window = st.radio("Window", ["1 Year (252d)", "2 Years (504d)", "Both"],
+                             index=2, key="rs_window", horizontal=False)
+
+    _dr = gross_ret_all.fillna(0)
+    roll_252 = (_dr.rolling(252).mean() / _dr.rolling(252).std() * np.sqrt(252))
+    roll_504 = (_dr.rolling(504).mean() / _dr.rolling(504).std() * np.sqrt(252))
+
+    with rs_c1:
+        fig_rs = go.Figure()
+        if rs_window in ("1 Year (252d)", "Both"):
+            fig_rs.add_trace(go.Scatter(
+                x=roll_252.index, y=roll_252.values, name="Rolling Sharpe (1yr)",
+                mode="lines", line=dict(color=COLORS["primary"], width=1.6),
+                hovertemplate="%{x|%b %Y}<br>Sharpe (1yr): %{y:.2f}<extra></extra>",
+            ))
+        if rs_window in ("2 Years (504d)", "Both"):
+            fig_rs.add_trace(go.Scatter(
+                x=roll_504.index, y=roll_504.values, name="Rolling Sharpe (2yr)",
+                mode="lines", line=dict(color=COLORS["amber"], width=1.6, dash="dot"),
+                hovertemplate="%{x|%b %Y}<br>Sharpe (2yr): %{y:.2f}<extra></extra>",
+            ))
+        # Shade positive regions
+        fig_rs.add_hline(y=0,  line_dash="dash", line_color="#475569", line_width=1)
+        fig_rs.add_hline(y=0.5, line_dash="dot", line_color=COLORS["green"],
+                         line_width=0.8, annotation_text="0.5", annotation_position="right")
+        fig_rs.update_layout(
+            **CHART_LAYOUT, height=320,
+            title=dict(text=f"{variant_label} — Rolling Sharpe ({timing_label})", font=dict(size=13)),
+            yaxis_title="Annualised Sharpe", xaxis_title=None, hovermode="x unified",
+        )
+        fig_rs.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+        st.plotly_chart(fig_rs, use_container_width=True)
+    st.caption("Signal computed over full 2006-2025 history. Rolling Sharpe uses gross returns. "
+               "Positive/negative swings show regime dependence — a consistently positive curve indicates robustness.")
 
     # ── Cumulative PnL chart ──────────────────────────────────────────────────
     st.divider()
@@ -1951,6 +2051,96 @@ with tab7:
         yaxis_title="PnL (USD/MT)", xaxis_title=None, showlegend=False,
     )
     st.plotly_chart(fig_ann, use_container_width=True)
+
+    # ── Parameter Optimization Heatmap ────────────────────────────────────────
+    st.divider()
+    section_header("PARAMETER OPTIMIZATION SURFACE")
+
+    if sig_type == "MA Crossover":
+        _df_opt = _load_ma_opt()
+        if _df_opt.empty:
+            st.info("MA_Crossover_Optimization.csv not found in data/ folder.")
+        else:
+            hm_c1, hm_c2 = st.columns([3, 1])
+            with hm_c2:
+                hm_metric = st.selectbox("Colour by", ["sharpe", "ann_return", "hit_rate"],
+                                         format_func=lambda x: {"sharpe": "Sharpe Ratio",
+                                                                 "ann_return": "Ann Return ($/MT)",
+                                                                 "hit_rate": "Hit Rate %"}[x],
+                                         key="hm_metric")
+                hm_n_max = st.slider("Max n (slow window)", 20, 126, 80, step=5, key="hm_nmax")
+            _df_filt = _df_opt[_df_opt["n"] <= hm_n_max].copy()
+            _pivot = _df_filt.pivot_table(index="m", columns="n", values=hm_metric)
+            import plotly.express as _px
+            fig_hm = _px.imshow(
+                _pivot,
+                color_continuous_scale="RdYlGn",
+                zmin=_df_filt[hm_metric].quantile(0.05),
+                zmax=_df_filt[hm_metric].quantile(0.95),
+                labels=dict(x="Slow window n", y="Fast window m", color=hm_metric),
+                aspect="auto",
+            )
+            # Mark top-5 pairs
+            _top5 = _df_opt.nlargest(5, "sharpe")
+            fig_hm.add_trace(go.Scatter(
+                x=_top5["n"], y=_top5["m"],
+                mode="markers+text",
+                marker=dict(symbol="star", size=10, color="#FFFFFF", line=dict(color="#B87333", width=1.5)),
+                text=[f"#{i+1}" for i in range(len(_top5))],
+                textposition="top center", textfont=dict(size=8, color="#FFFFFF"),
+                name="Top 5", showlegend=True,
+                hovertemplate="MA(%{y},%{x})<br>Sharpe: %{customdata:.3f}<extra>Top 5</extra>",
+                customdata=_top5["sharpe"].values,
+            ))
+            fig_hm.update_layout(
+                **CHART_LAYOUT, height=480,
+                title=dict(text=f"MA Crossover — Sharpe surface  (m=fast, n=slow, n≤{hm_n_max})", font=dict(size=13)),
+                coloraxis_colorbar=dict(title=hm_metric, thickness=14),
+            )
+            with hm_c1:
+                st.plotly_chart(fig_hm, use_container_width=True)
+            st.caption("White stars = current top-5 by Sharpe (Lag-1). A wide green plateau means the "
+                       "strategy is robust to parameter choice. An isolated peak suggests overfitting.")
+
+    else:  # CTA
+        _df_cta = _load_cta_opt()
+        if _df_cta.empty:
+            st.info("CTA_Optimization.csv not found in data/ folder.")
+        else:
+            hm_c1, hm_c2 = st.columns([3, 1])
+            with hm_c2:
+                cta_metric = st.selectbox("Colour by", ["sharpe", "ann_return", "hit_rate"],
+                                          format_func=lambda x: {"sharpe": "Sharpe Ratio",
+                                                                  "ann_return": "Ann Return ($/MT)",
+                                                                  "hit_rate": "Hit Rate %"}[x],
+                                          key="cta_hm_metric")
+            import plotly.express as _px
+            fig_cta = _px.scatter(
+                _df_cta, x="L", y="S",
+                color=cta_metric,
+                color_continuous_scale="RdYlGn",
+                range_color=[_df_cta[cta_metric].quantile(0.05), _df_cta[cta_metric].quantile(0.95)],
+                size_max=8,
+                labels=dict(S="Short EWMA (S)", L="Long EWMA (L)", color=cta_metric),
+                hover_data={"S": True, "L": True, cta_metric: ":.3f"},
+            )
+            _top5c = _df_cta.nlargest(5, "sharpe")
+            fig_cta.add_trace(go.Scatter(
+                x=_top5c["L"], y=_top5c["S"],
+                mode="markers+text",
+                marker=dict(symbol="star", size=12, color="#FFFFFF", line=dict(color="#B87333", width=1.5)),
+                text=[f"#{i+1}" for i in range(len(_top5c))],
+                textposition="top center", textfont=dict(size=8, color="#FFFFFF"),
+                name="Top 5",
+                hovertemplate="CTA(S=%{y},L=%{x})<extra>Top 5</extra>",
+            ))
+            fig_cta.update_layout(
+                **CHART_LAYOUT, height=460,
+                title=dict(text="CTA (Baz-Granger) — Sharpe scatter  (S=short EWMA, L=long EWMA)", font=dict(size=13)),
+            )
+            with hm_c1:
+                st.plotly_chart(fig_cta, use_container_width=True)
+            st.caption("White stars = top-5 by Sharpe (Lag-1). Each dot is one (S,L) pair.")
 
     # ── Signal & Position chart ────────────────────────────────────────────────
     st.divider()
