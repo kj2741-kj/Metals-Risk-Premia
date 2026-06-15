@@ -671,7 +671,7 @@ ALL_METALS = available_metals + CME_METALS_LIST
 # TABS
 # ═══════════════════════════════════════════════
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "📊 Market Overview",
     "📈 Term Structure",
     "💰 Cash vs 3M (Carry)",
@@ -680,6 +680,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📋 Statistics",
     "⚡ Momentum Signals",
     "📐 Carry Signals",
+    "📏 Value Signals",
 ])
 
 
@@ -1777,6 +1778,86 @@ _CARRY_CMP_OPTIONS = {
     "V2: F12-F24 - Same-Day":        {"variant": "v3", "j": 12, "k": 24, "same_day": True},
     "V3: Z-score (252d) - Lag-1":    {"variant": "v4", "window": 252, "same_day": False},
     "V3: Z-score (252d) - Same-Day": {"variant": "v4", "window": 252, "same_day": True},
+}
+
+
+# ══════════════════════════════════════════════════════
+# VALUE SIGNAL HELPERS  (module-level)
+# ══════════════════════════════════════════════════════
+
+def _value_raw_signal(curve_prices: pd.DataFrame, f1r: pd.Series, spec: dict) -> pd.Series:
+    """
+    Return raw value signal.
+    V1 MA Reversion: deviation = (Fk - MA_N) / MA_N   (positive = expensive)
+    V2 Baz-Granger : reversal  = F1_raw[t-N] - F1_raw[t]  (positive = price fallen = cheap)
+    """
+    v = spec.get("variant", "v1")
+    if v == "v1":
+        k = spec.get("contract", 12)
+        N = spec.get("lookback", 1260)
+        col = f"F{k}"
+        if col not in curve_prices.columns:
+            return pd.Series(dtype=float)
+        price = curve_prices[col].dropna()
+        if len(price) < max(N // 2, 60):
+            return pd.Series(dtype=float)
+        ma  = price.rolling(N, min_periods=max(N // 2, 60)).mean()
+        dev = (price - ma) / ma.replace(0, np.nan)
+        return dev.replace([np.inf, -np.inf], np.nan).dropna()
+    else:
+        N   = spec.get("lookback", 1260)
+        rev = f1r.shift(N) - f1r
+        return rev.replace([np.inf, -np.inf], np.nan).dropna()
+
+
+def _value_cum_pnl(curve_prices: pd.DataFrame, f1r: pd.Series, f1c: pd.Series, spec: dict) -> pd.Series:
+    """Cumulative PnL (USD/MT) for a value spec dict."""
+    raw = _value_raw_signal(curve_prices, f1r, spec)
+    if raw.empty:
+        return pd.Series(dtype=float)
+    v   = spec.get("variant", "v1")
+    thr = spec.get("threshold", 0.10)
+    if v == "v1":
+        sig_bin = np.where(raw.values < -thr,  1.0,
+                  np.where(raw.values >  thr, -1.0, 0.0))
+    else:
+        sig_bin = np.sign(raw.values).astype(float)
+    idx  = raw.index.intersection(f1c.index)
+    sb   = pd.Series(sig_bin, index=raw.index).reindex(idx).values
+    f1ca = f1c.reindex(idx)
+    T    = len(idx)
+    if T == 0:
+        return pd.Series(dtype=float)
+    if spec.get("same_day", False):
+        pos = np.where(np.isfinite(sb), sb, 0.0)
+    else:
+        pos    = np.empty(T); pos[0] = 0.0
+        pos[1:] = np.where(np.isfinite(sb[:-1]), sb[:-1], 0.0)
+    return (pd.Series(pos, index=idx) * f1ca.diff()).cumsum()
+
+
+_VALUE_CMP_OPTIONS: dict = {
+    "N/A": None,
+    # V1 F12 (Mark's default contract)
+    "V1: F12 — 1yr MA":  {"variant": "v1", "contract": 12, "lookback": 252,  "threshold": 0.10, "same_day": False},
+    "V1: F12 — 3yr MA":  {"variant": "v1", "contract": 12, "lookback": 756,  "threshold": 0.10, "same_day": False},
+    "V1: F12 — 5yr MA":  {"variant": "v1", "contract": 12, "lookback": 1260, "threshold": 0.10, "same_day": False},
+    "V1: F12 — 7yr MA":  {"variant": "v1", "contract": 12, "lookback": 1764, "threshold": 0.10, "same_day": False},
+    "V1: F12 — 10yr MA": {"variant": "v1", "contract": 12, "lookback": 2520, "threshold": 0.10, "same_day": False},
+    # V1 F5
+    "V1: F5 — 1yr MA":   {"variant": "v1", "contract": 5,  "lookback": 252,  "threshold": 0.10, "same_day": False},
+    "V1: F5 — 5yr MA":   {"variant": "v1", "contract": 5,  "lookback": 1260, "threshold": 0.10, "same_day": False},
+    "V1: F5 — 10yr MA":  {"variant": "v1", "contract": 5,  "lookback": 2520, "threshold": 0.10, "same_day": False},
+    # V1 F1
+    "V1: F1 — 1yr MA":   {"variant": "v1", "contract": 1,  "lookback": 252,  "threshold": 0.10, "same_day": False},
+    "V1: F1 — 5yr MA":   {"variant": "v1", "contract": 1,  "lookback": 1260, "threshold": 0.10, "same_day": False},
+    "V1: F1 — 10yr MA":  {"variant": "v1", "contract": 1,  "lookback": 2520, "threshold": 0.10, "same_day": False},
+    # V2 Baz-Granger
+    "V2: BG — 1yr rev.":  {"variant": "v2", "lookback": 252,  "same_day": False},
+    "V2: BG — 3yr rev.":  {"variant": "v2", "lookback": 756,  "same_day": False},
+    "V2: BG — 5yr rev.":  {"variant": "v2", "lookback": 1260, "same_day": False},
+    "V2: BG — 7yr rev.":  {"variant": "v2", "lookback": 1764, "same_day": False},
+    "V2: BG — 10yr rev.": {"variant": "v2", "lookback": 2520, "same_day": False},
 }
 
 
@@ -3010,4 +3091,671 @@ Sharpe, Sortino, Max DD, Calmar all computed from daily_ret in % terms.
 
 **Reference**
 Baz, J., Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Section and Time Series. SSRN.
+        """)
+
+
+# ══════════════════════════════════════════════════════
+# TAB 9: VALUE SIGNALS
+# ══════════════════════════════════════════════════════
+
+with tab9:
+    st.markdown("### Value Signals — LME Copper")
+    st.caption("Mean-reversion strategies: long when copper is cheap vs. long-run fair value, short when expensive. "
+               "Signal from forward curve contracts; PnL always from F1_continuous.")
+
+    # ── Variant banner ────────────────────────────────────────────────────────
+    st.markdown("""
+    <div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;border-radius:4px;padding:14px 20px;margin-bottom:8px;">
+      <div style="display:flex;gap:40px;flex-wrap:wrap;">
+        <div style="min-width:220px;">
+          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V1 — MA Reversion</span><br>
+          <span style="color:#8A8278;font-size:0.78rem;">Long-run moving-average reversion on Fk<br>
+          (k = F1–F15). Three states: +1 (cheap), 0 (fair), −1 (expensive).<br>
+          F12 is Mark Bogorad's reference contract for energy risk premia.</span>
+        </div>
+        <div style="min-width:220px;">
+          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V2 — Baz-Granger Reversal</span><br>
+          <span style="color:#8A8278;font-size:0.78rem;">Contrarian N-year return reversal on F1_raw.<br>
+          Signal = sign(F1_raw[t−N] − F1_raw[t]).<br>
+          Always long or short — no flat zone.</span>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Controls ──────────────────────────────────────────────────────────────
+    v9_c1, v9_c2, v9_c3, v9_c4, v9_c5 = st.columns([1.6, 1.4, 1.6, 1.5, 1.5])
+    with v9_c1:
+        val_vgroup = st.selectbox("Variant", ["V1 — MA Reversion", "V2 — Baz-Granger Reversal"],
+                                  key="val_vgroup")
+        val_is_v1 = val_vgroup.startswith("V1")
+    with v9_c2:
+        val_contract = st.selectbox("Contract", [f"F{k}" for k in range(1, 16)],
+                                    index=11, key="val_contract",
+                                    disabled=not val_is_v1)
+        val_k = int(val_contract[1:]) if val_is_v1 else None
+    with v9_c3:
+        _lb_opts = {"1yr  (252d)": 252, "3yr  (756d)": 756, "5yr  (1260d)": 1260,
+                    "7yr  (1764d)": 1764, "10yr (2520d)": 2520}
+        val_lb_label = st.selectbox("Lookback", list(_lb_opts.keys()), index=2, key="val_lb")
+        val_N = _lb_opts[val_lb_label]
+    with v9_c4:
+        _thr_opts = {"±5%": 0.05, "±10% (default)": 0.10, "±15%": 0.15, "±20%": 0.20}
+        val_thr_label = st.selectbox("Threshold (V1 only)", list(_thr_opts.keys()), index=1,
+                                     key="val_thr", disabled=not val_is_v1)
+        val_thr = _thr_opts[val_thr_label] if val_is_v1 else 0.10
+    with v9_c5:
+        val_timing = st.selectbox("Position Entry", ["Lag-1 (Next-Day)", "Same-Day"],
+                                  index=0, key="val_timing")
+        val_same_day = val_timing == "Same-Day"
+
+    # Build spec
+    if val_is_v1:
+        val_spec = {"variant": "v1", "contract": val_k, "lookback": val_N,
+                    "threshold": val_thr, "same_day": val_same_day}
+    else:
+        val_spec = {"variant": "v2", "lookback": val_N, "same_day": val_same_day}
+
+    # ── Data loading ──────────────────────────────────────────────────────────
+    _f1_df_v9 = _load_copper_f1_data()
+    if _f1_df_v9.empty:
+        st.error("LME_Copper_Rolling_F1_v2.csv not found. Place it in the same directory as app.py.")
+        st.stop()
+    vf1c = _f1_df_v9["F1_continuous"]
+    vf1r = _f1_df_v9["F1_raw"]
+
+    _cu_sheet_v9 = _find_curve_sheet("Copper", curve_data) if curve_data else None
+    if not curve_data or _cu_sheet_v9 is None:
+        st.error("Futures Curve data not loaded. Upload Metals Futures Curve file in the sidebar.")
+        st.stop()
+    v9_curve_px = curve_data[_cu_sheet_v9]["prices"].copy()
+    v9_curve_px.index = pd.to_datetime(v9_curve_px.index).normalize()
+    v9_curve_px = v9_curve_px.sort_index()
+
+    # ── Compute signal ─────────────────────────────────────────────────────────
+    val_raw = _value_raw_signal(v9_curve_px, vf1r, val_spec)
+    if val_raw.empty:
+        st.error("Could not compute value signal. Check that the required contract is available in the curve data.")
+        st.stop()
+
+    _v9_idx = val_raw.index
+
+    if val_is_v1:
+        _v9_sig_bin = np.where(val_raw.values < -val_thr,  1.0,
+                      np.where(val_raw.values >  val_thr, -1.0, 0.0))
+    else:
+        _v9_sig_bin = np.sign(val_raw.values).astype(float)
+
+    _v9_T = len(_v9_idx)
+    if val_same_day:
+        val_pos_np = np.where(np.isfinite(_v9_sig_bin), _v9_sig_bin, 0.0)
+    else:
+        val_pos_np = np.empty(_v9_T); val_pos_np[0] = 0.0
+        val_pos_np[1:] = np.where(np.isfinite(_v9_sig_bin[:-1]), _v9_sig_bin[:-1], 0.0)
+
+    val_pos = pd.Series(val_pos_np, index=_v9_idx)
+    vf1c_a  = vf1c.reindex(_v9_idx)
+    vf1r_a  = vf1r.reindex(_v9_idx)
+
+    v9_delta    = vf1c_a.diff()
+    v9_f1c_prev = vf1c_a.shift(1)
+    v9_gross_pnl = val_pos * v9_delta
+    v9_cum_pnl   = v9_gross_pnl.cumsum()
+    with np.errstate(invalid="ignore", divide="ignore"):
+        v9_gross_ret = (v9_gross_pnl / v9_f1c_prev).replace([np.inf, -np.inf], np.nan)
+
+    last_date_v9 = _v9_idx[-1]
+
+    # ── Live Signal Badge ─────────────────────────────────────────────────────
+    _v9_last_raw = float(val_raw.iloc[-1])
+    if val_is_v1:
+        if _v9_last_raw < -val_thr:
+            _v9_state, _v9_scolor, _v9_sbg = "BELOW FAIR VALUE — LONG", "#5BAD72", "rgba(91,173,114,0.08)"
+        elif _v9_last_raw > val_thr:
+            _v9_state, _v9_scolor, _v9_sbg = "ABOVE FAIR VALUE — SHORT", "#B85450", "rgba(184,84,80,0.08)"
+        else:
+            _v9_state, _v9_scolor, _v9_sbg = "NEAR FAIR VALUE — FLAT", "#C9A84C", "rgba(201,168,76,0.06)"
+        _v9_dev_str = f"{_v9_last_raw * 100:+.2f}%"
+        _v9_raw_lbl = f"deviation from {val_N}d MA (F{val_k})"
+    else:
+        if _v9_last_raw > 0:
+            _v9_state, _v9_scolor, _v9_sbg = "PRICE FALLEN — LONG", "#5BAD72", "rgba(91,173,114,0.08)"
+        else:
+            _v9_state, _v9_scolor, _v9_sbg = "PRICE RISEN — SHORT", "#B85450", "rgba(184,84,80,0.08)"
+        _v9_dev_str = f"{_v9_last_raw:+,.1f} $/MT"
+        _v9_raw_lbl = f"{val_N}d price reversal (F1_raw)"
+
+    # Days since last state change
+    _v9_sig_bin_s = pd.Series(_v9_sig_bin, index=_v9_idx)
+    _v9_flip_mask = _v9_sig_bin_s.diff().abs() > 0
+    _v9_flip_mask.iloc[0] = _v9_sig_bin_s.iloc[0] != 0
+    _v9_flip_dates = _v9_sig_bin_s[_v9_flip_mask].index
+    if len(_v9_flip_dates) >= 2:
+        _v9_last_flip = _v9_flip_dates[-1]
+        _v9_days_in_state = (last_date_v9 - _v9_last_flip).days
+        _v9_flip_str = f"{_v9_last_flip.strftime('%Y-%m-%d')}  ({_v9_days_in_state}d ago)"
+    else:
+        _v9_flip_str = "N/A"; _v9_days_in_state = 0
+
+    st.divider()
+    st.markdown(f"""
+    <div style="background:{_v9_sbg}; border:1px solid {_v9_scolor}; border-left:5px solid {_v9_scolor};
+                border-radius:4px; padding:18px 24px; margin-bottom:4px;">
+      <div style="display:flex; gap:48px; align-items:center; flex-wrap:wrap;">
+        <div>
+          <div style="color:#7A7068;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px;">Current State</div>
+          <div style="color:{_v9_scolor};font-size:1.5rem;font-weight:700;letter-spacing:0.04em;font-family:'IBM Plex Mono',monospace;">{_v9_state}</div>
+          <div style="color:#5A5248;font-size:0.72rem;margin-top:3px;">as of {last_date_v9.strftime('%Y-%m-%d')}</div>
+        </div>
+        <div>
+          <div style="color:#7A7068;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px;">Signal Value</div>
+          <div style="color:{_v9_scolor};font-size:1.5rem;font-weight:700;font-family:'IBM Plex Mono',monospace;">{_v9_dev_str}</div>
+          <div style="color:#5A5248;font-size:0.72rem;margin-top:3px;">{_v9_raw_lbl}</div>
+        </div>
+        <div>
+          <div style="color:#7A7068;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px;">Last State Change</div>
+          <div style="color:#D4CFC8;font-size:1.1rem;font-weight:600;font-family:'IBM Plex Mono',monospace;">{_v9_flip_str}</div>
+          <div style="color:#5A5248;font-size:0.72rem;margin-top:3px;">Days in current state: {_v9_days_in_state}</div>
+        </div>
+        <div>
+          <div style="color:#7A7068;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px;">Entry Mode</div>
+          <div style="color:#D4CFC8;font-size:1.1rem;font-weight:600;font-family:'IBM Plex Mono',monospace;">{val_timing}</div>
+          <div style="color:#5A5248;font-size:0.72rem;margin-top:3px;">{'±' + str(int(val_thr*100)) + '% threshold' if val_is_v1 else 'no threshold — always in market'}</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Section 2: Deviation History ──────────────────────────────────────────
+    st.divider()
+    section_header("FAIR VALUE DEVIATION HISTORY")
+
+    if val_is_v1:
+        _dev_pct = val_raw * 100
+        _long_mask  = _dev_pct < -val_thr * 100
+        _flat_mask  = _dev_pct.abs() <= val_thr * 100
+        _short_mask = _dev_pct > val_thr * 100
+
+        fig_v9dev = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                  row_heights=[0.65, 0.35], vertical_spacing=0.04)
+        fig_v9dev.add_trace(go.Scatter(
+            x=_dev_pct.index, y=_dev_pct.values, name="Deviation %", mode="lines",
+            line=dict(color=COLORS["primary"], width=1.5),
+            hovertemplate="%{x|%b %d, %Y}<br>Dev: %{y:.2f}%<extra></extra>",
+        ), row=1, col=1)
+        fig_v9dev.add_hline(y=0,              line_dash="dash", line_color="#475569", line_width=1.2, row=1, col=1)
+        fig_v9dev.add_hline(y=val_thr * 100,  line_dash="dot",  line_color="#B85450", line_width=1.0, row=1, col=1)
+        fig_v9dev.add_hline(y=-val_thr * 100, line_dash="dot",  line_color="#5BAD72", line_width=1.0, row=1, col=1)
+
+        _long_fill  = _dev_pct.where(_long_mask, np.nan)
+        _short_fill = _dev_pct.where(_short_mask, np.nan)
+        fig_v9dev.add_trace(go.Scatter(
+            x=_long_fill.index, y=_long_fill.values, name="Long zone", mode="lines",
+            line=dict(color="#5BAD72", width=0), fill="tozeroy",
+            fillcolor="rgba(91,173,114,0.18)",
+            hovertemplate="%{x|%b %d, %Y}<br>Dev: %{y:.2f}%<extra></extra>",
+        ), row=1, col=1)
+        fig_v9dev.add_trace(go.Scatter(
+            x=_short_fill.index, y=_short_fill.values, name="Short zone", mode="lines",
+            line=dict(color="#B85450", width=0), fill="tozeroy",
+            fillcolor="rgba(184,84,80,0.18)",
+            hovertemplate="%{x|%b %d, %Y}<br>Dev: %{y:.2f}%<extra></extra>",
+        ), row=1, col=1)
+
+        _sig_long_v9  = _v9_sig_bin_s.where(_v9_sig_bin_s > 0, 0.0)
+        _sig_short_v9 = _v9_sig_bin_s.where(_v9_sig_bin_s < 0, 0.0)
+        _sig_flat_v9  = _v9_sig_bin_s.where(_v9_sig_bin_s == 0, 0.5)
+        fig_v9dev.add_trace(go.Bar(x=_v9_idx, y=_sig_long_v9.values,
+            name="Long (+1)", marker_color="#00E676", opacity=1.0,
+            hovertemplate="%{x|%b %d, %Y}<br>Long<extra></extra>"), row=2, col=1)
+        fig_v9dev.add_trace(go.Bar(x=_v9_idx, y=_sig_short_v9.values,
+            name="Short (-1)", marker_color="#FF1744", opacity=1.0,
+            hovertemplate="%{x|%b %d, %Y}<br>Short<extra></extra>"), row=2, col=1)
+        fig_v9dev.add_trace(go.Bar(x=_v9_idx, y=_sig_flat_v9.values,
+            name="Flat (0)", marker_color="#475569", opacity=0.5,
+            hovertemplate="%{x|%b %d, %Y}<br>Flat<extra></extra>"), row=2, col=1)
+
+        fig_v9dev.update_layout(
+            **CHART_LAYOUT, height=500, barmode="overlay",
+            title=dict(text=f"F{val_k} vs {val_N}d MA — Deviation % (±{int(val_thr*100)}% bands)", font=dict(size=13)),
+            hovermode="x unified", showlegend=True,
+        )
+        fig_v9dev.update_yaxes(title_text="Deviation %", row=1, col=1)
+        fig_v9dev.update_yaxes(title_text="Signal", tickvals=[-1, 0, 1],
+                                ticktext=["Short", "Flat", "Long"], row=2, col=1)
+        fig_v9dev.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+        st.plotly_chart(fig_v9dev, use_container_width=True)
+        st.caption(f"Top: deviation of F{val_k} from its {val_N}d rolling mean (positive = expensive, negative = cheap). "
+                   f"Dashed bands at ±{int(val_thr*100)}%: outside bands = active signal, inside = flat zone. "
+                   "Bottom: three-state signal bars (green=Long, grey=Flat, red=Short).")
+    else:
+        # V2: reversal series
+        fig_v9dev = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                  row_heights=[0.65, 0.35], vertical_spacing=0.04)
+        fig_v9dev.add_trace(go.Scatter(
+            x=val_raw.index, y=val_raw.values, name=f"N-yr Reversal ($/MT)", mode="lines",
+            line=dict(color=COLORS["primary"], width=1.5),
+            hovertemplate="%{x|%b %d, %Y}<br>Rev: %{y:,.1f} $/MT<extra></extra>",
+        ), row=1, col=1)
+        fig_v9dev.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1.2, row=1, col=1)
+        _v2_pos = val_raw.where(val_raw > 0, np.nan)
+        _v2_neg = val_raw.where(val_raw < 0, np.nan)
+        fig_v9dev.add_trace(go.Scatter(x=_v2_pos.index, y=_v2_pos.values, name="Long (fallen)",
+            mode="lines", line=dict(color="#5BAD72", width=0), fill="tozeroy",
+            fillcolor="rgba(91,173,114,0.18)"), row=1, col=1)
+        fig_v9dev.add_trace(go.Scatter(x=_v2_neg.index, y=_v2_neg.values, name="Short (risen)",
+            mode="lines", line=dict(color="#B85450", width=0), fill="tozeroy",
+            fillcolor="rgba(184,84,80,0.18)"), row=1, col=1)
+
+        _sig_long_v9  = _v9_sig_bin_s.where(_v9_sig_bin_s > 0, 0.0)
+        _sig_short_v9 = _v9_sig_bin_s.where(_v9_sig_bin_s < 0, 0.0)
+        fig_v9dev.add_trace(go.Bar(x=_v9_idx, y=_sig_long_v9.values,
+            name="Long (+1)", marker_color="#00E676", opacity=1.0), row=2, col=1)
+        fig_v9dev.add_trace(go.Bar(x=_v9_idx, y=_sig_short_v9.values,
+            name="Short (-1)", marker_color="#FF1744", opacity=1.0), row=2, col=1)
+
+        fig_v9dev.update_layout(
+            **CHART_LAYOUT, height=500, barmode="overlay",
+            title=dict(text=f"Baz-Granger {val_N}d Return Reversal (F1_raw)", font=dict(size=13)),
+            hovermode="x unified", showlegend=True,
+        )
+        fig_v9dev.update_yaxes(title_text="Reversal ($/MT)", row=1, col=1)
+        fig_v9dev.update_yaxes(title_text="Position", tickvals=[-1, 0, 1],
+                                ticktext=["Short", "Flat", "Long"], row=2, col=1)
+        fig_v9dev.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+        st.plotly_chart(fig_v9dev, use_container_width=True)
+        st.caption(f"Top: F1_raw[t−{val_N}d] − F1_raw[t]. Positive = price has fallen over {val_N} trading days → contrarian Long. "
+                   "Bottom: resulting binary signal (always in market — no flat zone for V2).")
+
+    # ── Section 3: Date Filter + Performance Metrics ──────────────────────────
+    st.divider()
+    pf9_c1, _ = st.columns([3, 1])
+    with pf9_c1:
+        val_perf_dates = st.date_input(
+            "Performance period  (signal uses full history — only metrics & charts below update)",
+            value=(_v9_idx[0].date(), _v9_idx[-1].date()),
+            min_value=_v9_idx[0].date(), max_value=_v9_idx[-1].date(),
+            key="val_perf_dates",
+        )
+    vp9_start = pd.Timestamp(val_perf_dates[0]) if len(val_perf_dates) >= 1 else _v9_idx[0]
+    vp9_end   = pd.Timestamp(val_perf_dates[1]) if len(val_perf_dates) == 2 else _v9_idx[-1]
+    vp9_mask  = (_v9_idx >= vp9_start) & (_v9_idx <= vp9_end)
+
+    v9_pos_f     = val_pos[vp9_mask]
+    v9_pnl_f     = v9_gross_pnl[vp9_mask]
+    v9_ret_f     = v9_gross_ret[vp9_mask]
+
+    def _val_perf(daily_pnl, daily_ret, position, label):
+        active  = daily_ret[position != 0].dropna()
+        pnl_act = daily_pnl[position != 0].dropna()
+        n = len(active)
+        if n < 20:
+            return {}
+        ann_r   = float(active.mean() * 252 * 100)
+        ann_sd  = float(active.std() * np.sqrt(252) * 100)
+        sharpe  = ann_r / ann_sd if ann_sd > 0 else np.nan
+        down    = active[active < 0]
+        srt_d   = float(down.std() * np.sqrt(252) * 100) if len(down) > 1 else np.nan
+        sortino = ann_r / srt_d if srt_d and srt_d > 0 else np.nan
+        cum_r   = daily_ret.fillna(0).cumsum() * 100
+        mdd_pct = float((cum_r - cum_r.cummax()).min())
+        calmar  = ann_r / abs(mdd_pct) if mdd_pct != 0 else np.nan
+        wins, losses = pnl_act[pnl_act > 0], pnl_act[pnl_act < 0]
+        T   = len(position)
+        return {
+            "label": label, "n": n,
+            "sharpe": sharpe, "sortino": sortino,
+            "ann_ret_pct": ann_r, "ann_std_pct": ann_sd,
+            "mdd_pct": mdd_pct, "calmar": calmar,
+            "hit_rate": float((active > 0).mean()) * 100,
+            "profit_factor": abs(wins.sum() / losses.sum()) if len(losses) > 0 else np.nan,
+            "total_pnl_usdmt": float(pnl_act.sum()),
+            "pct_long":  float((position > 0).sum()) / T * 100,
+            "pct_flat":  float((position == 0).sum()) / T * 100,
+            "pct_short": float((position < 0).sum()) / T * 100,
+        }
+
+    vm9 = _val_perf(v9_pnl_f, v9_ret_f, v9_pos_f, val_vgroup)
+
+    st.divider()
+    section_header("PERFORMANCE METRICS")
+    _v9_title = (f"**Strategy:** {val_vgroup}  |  " +
+                 (f"**Contract:** F{val_k}  |  **Lookback:** {val_lb_label}  |  **Threshold:** {val_thr_label}  |  " if val_is_v1 else f"**Lookback:** {val_lb_label}  |  ") +
+                 f"**Entry:** {val_timing}")
+    st.caption(_v9_title)
+
+    if vm9:
+        _v9_cols1 = st.columns(8)
+        _cmcard(_v9_cols1[0], "Sharpe",         vm9.get("sharpe"),         ".2f")
+        _cmcard(_v9_cols1[1], "Sortino",         vm9.get("sortino"),        ".2f")
+        _cmcard(_v9_cols1[2], "Ann Return %",    vm9.get("ann_ret_pct"),    ".2f", "%")
+        _cmcard(_v9_cols1[3], "Ann Std Dev %",   vm9.get("ann_std_pct"),    ".2f", "%")
+        _cmcard(_v9_cols1[4], "Max DD %",        vm9.get("mdd_pct"),        ".2f", "%")
+        _cmcard(_v9_cols1[5], "Calmar",          vm9.get("calmar"),         ".2f")
+        _cmcard(_v9_cols1[6], "Hit Rate",        vm9.get("hit_rate"),       ".2f", "%")
+        _cmcard(_v9_cols1[7], "Profit Factor",   vm9.get("profit_factor"),  ".2f")
+
+        _v9_cols2 = st.columns(8)
+        _cmcard(_v9_cols2[0], "Total PnL $/MT",  vm9.get("total_pnl_usdmt"), ",.2f")
+        _cmcard(_v9_cols2[1], "Active Days",      float(vm9.get("n", 0)),     ",.0f")
+        _cmcard(_v9_cols2[2], "% Days Long",      vm9.get("pct_long"),         ".1f", "%")
+        _cmcard(_v9_cols2[3], "% Days Flat",      vm9.get("pct_flat"),         ".1f", "%")
+        _cmcard(_v9_cols2[4], "% Days Short",     vm9.get("pct_short"),        ".1f", "%")
+        _cmcard(_v9_cols2[5], "% Time Active",
+                (100.0 - vm9.get("pct_flat", 0)) if val_is_v1 else 100.0,
+                ".1f", "%")
+        _cmcard(_v9_cols2[6], "n Flips",          float(int(_v9_flip_mask.sum())), ",.0f")
+        _cmcard(_v9_cols2[7], "Days In State",    float(_v9_days_in_state),    ",.0f", "d")
+    else:
+        st.warning("Insufficient active trading days to compute metrics.")
+
+    # ── Section 4: Rolling Sharpe ──────────────────────────────────────────────
+    st.divider()
+    section_header("ROLLING SHARPE RATIO")
+    vrs9_c1, vrs9_c2 = st.columns([3, 1])
+    with vrs9_c2:
+        vrs9_win = st.radio("Window", ["1 Year (252d)", "2 Years (504d)", "Both"],
+                             index=2, key="val_rs_window", horizontal=False)
+    _vdr9 = v9_gross_ret.fillna(0)
+    vroll9_252 = _vdr9.rolling(252).mean() / _vdr9.rolling(252).std() * np.sqrt(252)
+    vroll9_504 = _vdr9.rolling(504).mean() / _vdr9.rolling(504).std() * np.sqrt(252)
+    with vrs9_c1:
+        fig_vrs9 = go.Figure()
+        if vrs9_win in ("1 Year (252d)", "Both"):
+            fig_vrs9.add_trace(go.Scatter(
+                x=vroll9_252.index, y=vroll9_252.values, name="Rolling Sharpe (1yr)",
+                mode="lines", line=dict(color=COLORS["primary"], width=1.6),
+                hovertemplate="%{x|%b %Y}<br>Sharpe (1yr): %{y:.2f}<extra></extra>",
+            ))
+        if vrs9_win in ("2 Years (504d)", "Both"):
+            fig_vrs9.add_trace(go.Scatter(
+                x=vroll9_504.index, y=vroll9_504.values, name="Rolling Sharpe (2yr)",
+                mode="lines", line=dict(color=COLORS["amber"], width=1.6, dash="dot"),
+                hovertemplate="%{x|%b %Y}<br>Sharpe (2yr): %{y:.2f}<extra></extra>",
+            ))
+        fig_vrs9.add_hline(y=0,   line_dash="dash", line_color="#475569", line_width=1)
+        fig_vrs9.add_hline(y=0.5, line_dash="dot",  line_color=COLORS["green"],
+                            line_width=0.8, annotation_text="0.5", annotation_position="right")
+        fig_vrs9.add_vline(x="2022-01-01", line_dash="dash", line_color=COLORS["amber"],
+                            line_width=1.2, annotation_text="2022", annotation_position="top right")
+        fig_vrs9.update_layout(
+            **CHART_LAYOUT, height=320,
+            title=dict(text=f"{val_vgroup} — Rolling Sharpe ({val_timing})", font=dict(size=13)),
+            yaxis_title="Annualised Sharpe", xaxis_title=None, hovermode="x unified",
+        )
+        fig_vrs9.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+        st.plotly_chart(fig_vrs9, use_container_width=True)
+    st.caption("Value signals are strongly regime-dependent — COVID-era price dislocations (2020-2021) created a rare "
+               "mean-reversion opportunity. The 2022 vertical line marks the post-COVID sub-period used in Mark Bogorad's paper.")
+
+    # ── Section 5: Sub-period Analysis ────────────────────────────────────────
+    st.divider()
+    section_header("SUB-PERIOD ANALYSIS (Pre-2022 / Post-2022)")
+    st.caption("Replicates Mark Bogorad's sub-period split. Value EW IR (energy) = 0.23 pre-2022, 0.93 post-2022. Do the same patterns hold for copper?")
+
+    _v9_pre22  = _v9_idx < pd.Timestamp("2022-01-01")
+    _v9_post22 = _v9_idx >= pd.Timestamp("2022-01-01")
+
+    vm9_pre  = _val_perf(v9_gross_pnl[_v9_pre22],  v9_gross_ret[_v9_pre22],  val_pos[_v9_pre22],  "Pre-2022")
+    vm9_post = _val_perf(v9_gross_pnl[_v9_post22], v9_gross_ret[_v9_post22], val_pos[_v9_post22], "Post-2022")
+
+    vsp_pre, vsp_post = st.columns(2)
+    with vsp_pre:
+        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Pre-2022</div>', unsafe_allow_html=True)
+        if vm9_pre:
+            _vp9_cols = st.columns(2)
+            _cmcard(_vp9_cols[0], "Sharpe",       vm9_pre.get("sharpe"),      ".3f")
+            _cmcard(_vp9_cols[1], "Ann Ret %",    vm9_pre.get("ann_ret_pct"), ".1f", "%")
+            _vp9_cols2 = st.columns(2)
+            _cmcard(_vp9_cols2[0], "Max DD %",    vm9_pre.get("mdd_pct"),     ".1f", "%")
+            _cmcard(_vp9_cols2[1], "Active Days", float(vm9_pre.get("n", 0)), ",.0f")
+        else:
+            st.info("Insufficient data for Pre-2022 period.")
+    with vsp_post:
+        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Post-2022</div>', unsafe_allow_html=True)
+        if vm9_post:
+            _vp9b_cols = st.columns(2)
+            _cmcard(_vp9b_cols[0], "Sharpe",       vm9_post.get("sharpe"),      ".3f")
+            _cmcard(_vp9b_cols[1], "Ann Ret %",    vm9_post.get("ann_ret_pct"), ".1f", "%")
+            _vp9b_cols2 = st.columns(2)
+            _cmcard(_vp9b_cols2[0], "Max DD %",    vm9_post.get("mdd_pct"),     ".1f", "%")
+            _cmcard(_vp9b_cols2[1], "Active Days", float(vm9_post.get("n", 0)), ",.0f")
+        else:
+            st.info("Insufficient data for Post-2022 period.")
+
+    # ── Section 6: Contract Comparison (V1 only) ───────────────────────────────
+    if val_is_v1:
+        st.divider()
+        section_header("CONTRACT COMPARISON — F1 THROUGH F15 (SHARPE, GROSS)")
+        st.caption(f"Sharpe for each reference contract at {val_lb_label} lookback, ±{int(val_thr*100)}% threshold, {val_timing}. "
+                   "Identifies the empirically optimal contract. Mark Bogorad chose F12 for energy — is the same true for copper?")
+
+        _vc_sharpes = {}
+        for _vk in range(1, 16):
+            _vcol = f"F{_vk}"
+            if _vcol not in v9_curve_px.columns:
+                continue
+            _vspec_k = {"variant": "v1", "contract": _vk, "lookback": val_N,
+                        "threshold": val_thr, "same_day": val_same_day}
+            _vraw_k = _value_raw_signal(v9_curve_px, vf1r, _vspec_k)
+            if _vraw_k.dropna().shape[0] < 200:
+                continue
+            _vsig_k = np.where(_vraw_k.values < -val_thr, 1.0,
+                       np.where(_vraw_k.values > val_thr, -1.0, 0.0))
+            _vidx_k = _vraw_k.index.intersection(vf1c.index)
+            _vf1c_k = vf1c.reindex(_vidx_k)
+            _vsb_k  = pd.Series(_vsig_k, index=_vraw_k.index).reindex(_vidx_k).values
+            _vT_k   = len(_vidx_k)
+            if val_same_day:
+                _vpos_k = np.where(np.isfinite(_vsb_k), _vsb_k, 0.0)
+            else:
+                _vpos_k = np.empty(_vT_k); _vpos_k[0] = 0.0
+                _vpos_k[1:] = np.where(np.isfinite(_vsb_k[:-1]), _vsb_k[:-1], 0.0)
+            _vret_k = (pd.Series(_vpos_k, index=_vidx_k) * _vf1c_k.diff() / _vf1c_k.shift(1)).replace([np.inf,-np.inf],np.nan)
+            _vact_k = _vret_k[_vpos_k != 0].dropna()
+            if len(_vact_k) < 100:
+                continue
+            _vann_r  = float(_vact_k.mean() * 252 * 100)
+            _vann_sd = float(_vact_k.std()  * np.sqrt(252) * 100)
+            _vc_sharpes[f"F{_vk}"] = _vann_r / _vann_sd if _vann_sd > 0 else np.nan
+
+        if _vc_sharpes:
+            _vc_df = pd.DataFrame({"Contract": list(_vc_sharpes.keys()),
+                                   "Sharpe":   list(_vc_sharpes.values())}).dropna()
+            _vc_df["Color"] = _vc_df["Sharpe"].apply(
+                lambda x: "#5BAD72" if x > 0.5 else ("#C9A84C" if x > 0 else "#B85450"))
+            _vc_best = _vc_df.loc[_vc_df["Sharpe"].idxmax(), "Contract"]
+            fig_vcc = go.Figure(go.Bar(
+                x=_vc_df["Sharpe"].round(3), y=_vc_df["Contract"],
+                orientation="h",
+                marker_color=_vc_df["Color"].values,
+                text=_vc_df["Sharpe"].round(3),
+                textposition="outside",
+                hovertemplate="Contract: %{y}<br>Sharpe: %{x:.3f}<extra></extra>",
+            ))
+            fig_vcc.add_vline(x=0, line_dash="dash", line_color="#475569", line_width=1)
+            fig_vcc.update_layout(
+                **CHART_LAYOUT, height=380,
+                title=dict(text=f"Sharpe by Contract — {val_lb_label} MA, ±{int(val_thr*100)}% threshold", font=dict(size=13)),
+                xaxis_title="Sharpe Ratio", yaxis_title=None,
+            )
+            st.plotly_chart(fig_vcc, use_container_width=True)
+            st.caption(f"Best contract at this lookback/threshold: **{_vc_best}** (Sharpe = {_vc_sharpes.get(_vc_best, float('nan')):.3f}). "
+                       "Green = Sharpe > 0.5, amber = 0–0.5, red = negative. "
+                       "Contracts too near (F1-F3) are noisy; very far (F13-F15) may have limited liquidity.")
+
+    # ── Section 7: Cumulative PnL + Comparison ────────────────────────────────
+    st.divider()
+    section_header("CUMULATIVE PnL (USD/MT)")
+
+    _v9_cmp_keys = list(_VALUE_CMP_OPTIONS.keys())
+    vc9_c1, vc9_c2 = st.columns(2)
+    with vc9_c1:
+        val_cmp_a = st.selectbox("Compare: Strategy A", _v9_cmp_keys, index=0, key="val_cmp_a")
+    with vc9_c2:
+        val_cmp_b = st.selectbox("Compare: Strategy B", _v9_cmp_keys, index=0, key="val_cmp_b")
+
+    fig_v9cum = go.Figure()
+    _V9_CMP_COLORS = [COLORS["primary"], COLORS["amber"]]
+    for _v9_lbl, _v9_ci in [(val_cmp_a, 0), (val_cmp_b, 1)]:
+        _v9_cspec = _VALUE_CMP_OPTIONS.get(_v9_lbl)
+        if _v9_cspec is None:
+            continue
+        _v9_cpnl = _value_cum_pnl(v9_curve_px, vf1r, vf1c, _v9_cspec)
+        if _v9_cpnl.empty:
+            continue
+        fig_v9cum.add_trace(go.Scatter(
+            x=_v9_cpnl.index, y=_v9_cpnl.values, name=_v9_lbl, mode="lines",
+            line=dict(color=_V9_CMP_COLORS[_v9_ci], width=1.8,
+                      dash="dot" if _v9_ci == 1 else "solid"),
+            hovertemplate=f"%{{x|%b %d, %Y}}<br>{_v9_lbl}: $%{{y:,.1f}}<extra></extra>",
+        ))
+
+    # Primary series
+    fig_v9cum.add_trace(go.Scatter(
+        x=v9_cum_pnl.index, y=v9_cum_pnl.values,
+        name=f"Selected: {val_vgroup}", mode="lines",
+        line=dict(color="#FFFFFF", width=2.0),
+        hovertemplate="%{x|%b %d, %Y}<br>PnL: $%{y:,.1f}<extra></extra>",
+    ))
+    fig_v9cum.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1)
+    fig_v9cum.add_vline(x="2022-01-01", line_dash="dash", line_color=COLORS["amber"],
+                         line_width=1.2, annotation_text="2022", annotation_position="top right")
+    fig_v9cum.update_layout(
+        **CHART_LAYOUT, height=420,
+        title=dict(text="Cumulative PnL (USD/MT) — Value Strategies", font=dict(size=13)),
+        yaxis_title="Cumulative PnL ($/MT)", hovermode="x unified",
+    )
+    fig_v9cum.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+    st.plotly_chart(fig_v9cum, use_container_width=True)
+    st.caption("White = currently selected variant. Use the dropdowns to compare across contracts, lookbacks, or V1 vs V2. "
+               "The post-2022 acceleration (after the COVID spike mean-reversion) is a critical structural feature to examine.")
+
+    # ── Section 8: Annual PnL ─────────────────────────────────────────────────
+    st.divider()
+    section_header("ANNUAL PnL (USD/MT)")
+
+    _v9_ann = v9_gross_pnl.groupby(v9_gross_pnl.index.year).sum()
+    _v9_ann_colors = ["#5BAD72" if v >= 0 else "#B85450" for v in _v9_ann.values]
+    fig_v9ann = go.Figure(go.Bar(
+        x=_v9_ann.index.astype(str), y=_v9_ann.values.round(1),
+        marker_color=_v9_ann_colors,
+        text=[f"${v:,.0f}" for v in _v9_ann.values],
+        textposition="outside",
+        hovertemplate="Year: %{x}<br>PnL: $%{y:,.1f}<extra></extra>",
+    ))
+    fig_v9ann.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1)
+    fig_v9ann.update_layout(
+        **CHART_LAYOUT, height=300,
+        title=dict(text=f"{val_vgroup} — Annual PnL ($/MT, Gross)", font=dict(size=13)),
+        xaxis_title=None, yaxis_title="PnL ($/MT)",
+    )
+    st.plotly_chart(fig_v9ann, use_container_width=True)
+
+    # ── Section 9: Signal & Position Over Time ────────────────────────────────
+    st.divider()
+    section_header("SIGNAL & POSITION OVER TIME")
+    st.caption("F1_continuous price with three-state value-driven position overlay.")
+
+    fig_v9sig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                               row_heights=[0.65, 0.35], vertical_spacing=0.04)
+    fig_v9sig.add_trace(go.Scatter(
+        x=vf1c_a.index, y=vf1c_a.values, name="F1 Continuous ($/MT)",
+        line=dict(color=COLORS["primary"], width=1.5),
+        hovertemplate="%{x|%b %d, %Y}<br>F1_cont: $%{y:,.1f}<extra></extra>",
+    ), row=1, col=1)
+
+    _v9p_long  = val_pos.where(val_pos > 0, 0.0)
+    _v9p_short = val_pos.where(val_pos < 0, 0.0)
+    _v9p_flat  = val_pos.where(val_pos == 0, 0.5) if val_is_v1 else None
+    fig_v9sig.add_trace(go.Bar(x=val_pos.index, y=_v9p_long.values,
+        name="Long (+1)", marker_color="#00E676", opacity=1.0), row=2, col=1)
+    fig_v9sig.add_trace(go.Bar(x=val_pos.index, y=_v9p_short.values,
+        name="Short (-1)", marker_color="#FF1744", opacity=1.0), row=2, col=1)
+    if _v9p_flat is not None:
+        fig_v9sig.add_trace(go.Bar(x=val_pos.index, y=_v9p_flat.values,
+            name="Flat (0)", marker_color="#475569", opacity=0.4), row=2, col=1)
+
+    fig_v9sig.update_layout(
+        **CHART_LAYOUT, height=480, barmode="overlay",
+        title=dict(text=f"{val_vgroup} — F1 Price & Three-State Position", font=dict(size=13)),
+        hovermode="x unified", showlegend=True,
+    )
+    fig_v9sig.update_yaxes(title_text="F1_cont ($/MT)", row=1, col=1)
+    _tickvals = [-1, 0, 1] if val_is_v1 else [-1, 1]
+    _ticktext  = ["Short", "Flat", "Long"] if val_is_v1 else ["Short", "Long"]
+    fig_v9sig.update_yaxes(title_text="Position", tickvals=_tickvals, ticktext=_ticktext, row=2, col=1)
+    fig_v9sig.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+    st.plotly_chart(fig_v9sig, use_container_width=True)
+
+    # ── Section 10: Recent Signal Changes ─────────────────────────────────────
+    st.divider()
+    section_header("RECENT SIGNAL CHANGES (Last 20)")
+
+    _v9_flips2 = val_pos.diff().abs() > 0
+    _v9_flips2.iloc[0] = val_pos.iloc[0] != 0
+    _v9_flip_dates2 = val_pos[_v9_flips2].tail(20)
+
+    if not _v9_flip_dates2.empty:
+        _v9_flip_df = pd.DataFrame({
+            "Date":          _v9_flip_dates2.index.strftime("%Y-%m-%d"),
+            "Position":      _v9_flip_dates2.values.astype(int),
+            "State":         ["LONG" if v > 0 else ("SHORT" if v < 0 else "FLAT")
+                              for v in _v9_flip_dates2.values],
+            "F1_raw ($/MT)": vf1r_a.reindex(_v9_flip_dates2.index).round(1).values,
+            "Signal Value":  val_raw.reindex(_v9_flip_dates2.index).round(6).values,
+            "Daily PnL":     v9_gross_pnl.reindex(_v9_flip_dates2.index).round(2).values,
+            "Cum PnL":       v9_cum_pnl.reindex(_v9_flip_dates2.index).round(2).values,
+        })
+        st.dataframe(_v9_flip_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No signal changes found in data.")
+
+    # ── Methodology Notes ──────────────────────────────────────────────────────
+    st.divider()
+    with st.expander("Methodology Notes", expanded=False):
+        st.markdown("""
+**V1 — Long-Run MA Reversion**
+
+Signal: `deviation_t = (Fk_t − MA_N(Fk)) / MA_N(Fk)`
+
+Position (three states):
+- `+1` (Long):  `deviation < −threshold`  → price below long-run mean → *cheap*
+- `−1` (Short): `deviation > +threshold`  → price above long-run mean → *expensive*
+- ` 0` (Flat):  deviation within ±threshold → *near fair value*
+
+The flat zone is a distinguishing feature: unlike momentum and carry, value is *not always* in the market. The ±10% default threshold is calibrated to Mark Bogorad's energy paper. For copper (lower realized volatility than crude oil), consider testing ±15–20% as the flat zone may be very small at ±10%.
+
+**V2 — Baz-Granger N-year Reversal**
+
+Signal: `reversal_t = F1_raw[t−N] − F1_raw[t]`
+
+Position (two states):
+- `+1` (Long):  `reversal > 0` → price has *fallen* over N years → contrarian long
+- `−1` (Short): `reversal < 0` → price has *risen* over N years → contrarian short
+
+No flat zone — always in the market. This is a pure reversal bet on medium/long-run mean reversion. Positive reversal means the market is cheaper than it was N years ago, which the strategy treats as a buy signal.
+
+**Why F12 as Reference (V1)?**
+Bogorad chose F12 (1-year-forward contract) because it is:
+1. Far enough from the prompt to avoid roll/squeeze noise
+2. Close enough to have continuous liquidity and price discovery
+3. Closely correlated with long-run supply/demand expectations
+
+For copper, F12 corresponds to the LME 12-month forward, which is well-traded.
+The contract comparison chart above tests F1–F15 to find the empirically optimal contract for copper.
+
+**Position Timing**
+- *Lag-1 (recommended for value)*: `position[t] = signal[t−1]` — entered next day
+- *Same-Day*: `position[t] = signal[t]` — same close as signal
+
+Unlike carry (where Same-Day dominates due to flip-day dynamics), value signals evolve slowly. Lag-1 is preferable as there is no same-day urgency — the deviation has been building for days/months.
+
+**PnL & Returns**
+All strategies trade F1_continuous regardless of which contract or lookback generates the signal.
+`daily_ret[t] = position[t] × ΔF1_cont[t] / F1_cont[t−1]`
+
+**References**
+- Bogorad, M. (2023). *Risk Premia in Diversified Energy Portfolios.* (Unpublished)
+- Baz, J., Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Section and Time Series. SSRN.
         """)
