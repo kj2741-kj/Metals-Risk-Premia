@@ -1873,6 +1873,164 @@ with tab7:
         "Returns expressed as % of notional. Transaction costs applied on every position change."
     )
 
+    # ── Data loading (shared by both sections) ────────────────────────────────
+    _f1_df = _load_copper_f1_data()
+    if _f1_df.empty:
+        st.error(
+            "LME_Copper_Rolling_F1_v2.csv not found. "
+            "Ensure it is in the same directory as app.py."
+        )
+        st.stop()
+    f1r: pd.Series = _f1_df["F1_raw"]
+    f1c: pd.Series = _f1_df["F1_continuous"]
+
+    # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD EVIDENCE ────────────────────────
+    # Precomputed: IS=5yr rolling, OOS=1yr, Lag-1, MA(35,43) fixed (no re-optimisation)
+    _WF_MA35 = {
+        "2010": 0.160,  "2011": -0.692, "2012": -0.110, "2013": 0.957,
+        "2014": 0.617,  "2015": 0.938,  "2016": 0.354,  "2017": 0.284,
+        "2018": 0.628,  "2019": 1.679,  "2020": 0.818,  "2021": 0.184,
+        "2022": 0.584,  "2023": 0.314,  "2024": 0.664,
+        # OOS label = year of window START date (not calendar year of data measured).
+        # "2024" window runs 2024-12-12 to 2025-12-10 (252 days). "2025*" = 13 tail days.
+    }
+    _WF_MA35_AVG = round(sum(_WF_MA35.values()) / len(_WF_MA35), 3)
+    _WF_MA35_P22 = round(np.mean([v for y, v in _WF_MA35.items() if int(y) >= 2022]), 3)
+    _WF_OPT_AVG  = 0.442
+    _WF_N_POS    = sum(1 for v in _WF_MA35.values() if v > 0)
+    _WF_N_GT03   = sum(1 for v in _WF_MA35.values() if v > 0.30)
+    _WF_N_TOTAL  = len(_WF_MA35)
+
+    st.markdown("#### Out-of-Sample Walk-Forward Validation")
+    st.caption(
+        "IS = 5yr rolling window · OOS = 1yr · Lag-1 entry · 15 OOS windows (2010–2024). "
+        "MA(35,43) parameters fixed — selected on full 2006–2025 history, never re-optimised per window."
+    )
+
+    _wf_c1, _wf_c2, _wf_c3 = st.columns(3)
+    _cs   = ("background:#161616;border:1px solid #2A2A2A;"
+             "border-left:4px solid #B87333;border-radius:4px;padding:14px 20px")
+    _csg  = ("background:#161616;border:1px solid #2A2A2A;"
+             "border-left:4px solid #475569;border-radius:4px;padding:14px 20px")
+    _lbl  = ("color:#B87333;font-family:'IBM Plex Mono',monospace;"
+             "font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _lblg = ("color:#94A3B8;font-family:'IBM Plex Mono',monospace;"
+             "font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _big  = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
+             "font-size:1.55rem;font-weight:700;margin:0")
+    _med  = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
+             "font-size:1.15rem;font-weight:600;margin:0")
+    _sub  = "color:#8A8278;font-size:0.75rem;margin:2px 0"
+    _hr   = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
+
+    with _wf_c1:
+        st.markdown(f"""<div style="{_cs}">
+<p style="{_lbl}">MA(35,43) — Fixed Parameter</p>
+<p style="{_big}">+{_WF_MA35_AVG:.3f}</p>
+<p style="{_sub}">Avg OOS Sharpe · 2010–2024 (15 windows)</p>
+<hr style="{_hr}"/>
+<p style="{_sub}">2022–2025 avg (window labeled '2024' runs to Dec 2025)</p>
+<p style="{_med}">+{_WF_MA35_P22:.3f}</p>
+<p style="{_sub}">Zero re-optimisation · 13-day tail excluded</p>
+</div>""", unsafe_allow_html=True)
+
+    with _wf_c2:
+        st.markdown(f"""<div style="{_cs}">
+<p style="{_lbl}">Anchors + IS-Opt Weights</p>
+<p style="{_big}">+{_WF_OPT_AVG:.3f}</p>
+<p style="{_sub}">Avg OOS Sharpe · 2010–2024 (15 windows)</p>
+<hr style="{_hr}"/>
+<p style="{_sub}">MA(10,25) + MA(35,43) + MA(63,100)</p>
+<p style="{_sub}">Max-Sharpe weights re-optimised annually on prior 5yr IS data</p>
+<p style="{_sub}">Optimizer assigns w≈1.0 to MA(35,43) in 9 / 15 windows</p>
+</div>""", unsafe_allow_html=True)
+
+    with _wf_c3:
+        st.markdown(f"""<div style="{_csg}">
+<p style="{_lblg}">OOS Consistency — MA(35,43)</p>
+<p style="{_sub}">Positive OOS Sharpe</p>
+<p style="{_med}">{_WF_N_POS} / {_WF_N_TOTAL} windows</p>
+<hr style="{_hr}"/>
+<p style="{_sub}">OOS Sharpe above +0.30</p>
+<p style="{_med}">{_WF_N_GT03} / {_WF_N_TOTAL} windows</p>
+<hr style="{_hr}"/>
+<p style="{_sub}">Best: 2019 (+1.679)  ·  Worst: 2011 (−0.692)</p>
+</div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    _wf_years   = list(_WF_MA35.keys())
+    _wf_sharpes = list(_WF_MA35.values())
+    _wf_bar_cls = [
+        (COLORS["primary"] if v >= 0 else "#B05030") if int(y) >= 2022
+        else (COLORS["green"] if v >= 0 else COLORS["red"])
+        for y, v in _WF_MA35.items()
+    ]
+    _wf_bar_brd = ["#D4A843" if int(y) >= 2022 else "rgba(0,0,0,0)" for y in _wf_years]
+
+    fig_wf_bar = go.Figure()
+    fig_wf_bar.add_trace(go.Bar(
+        x=_wf_years, y=_wf_sharpes,
+        marker_color=_wf_bar_cls,
+        marker_line_color=_wf_bar_brd,
+        marker_line_width=1.5,
+        name="OOS Sharpe",
+        hovertemplate="%{x}<br>OOS Sharpe: %{y:.3f}<extra></extra>",
+    ))
+    fig_wf_bar.add_hline(y=0, line_dash="solid", line_color="#475569", line_width=1)
+    fig_wf_bar.add_hline(
+        y=_WF_MA35_AVG, line_dash="dot", line_color=COLORS["amber"], line_width=1.5,
+        annotation_text=f"Full avg +{_WF_MA35_AVG:.3f}",
+        annotation_position="top right",
+        annotation_font=dict(size=10, color=COLORS["amber"]),
+    )
+    fig_wf_bar.add_hline(
+        y=_WF_MA35_P22, line_dash="dot", line_color=COLORS["primary"], line_width=1.5,
+        annotation_text=f"2022–25 avg +{_WF_MA35_P22:.3f}",
+        annotation_position="top left",
+        annotation_font=dict(size=10, color=COLORS["primary"]),
+    )
+    fig_wf_bar.update_layout(
+        **CHART_LAYOUT, height=300,
+        title=dict(
+            text="MA(35,43) — Annual OOS Sharpe (Walk-Forward · IS=5yr rolling · Lag-1)",
+            font=dict(size=13),
+        ),
+        yaxis_title="OOS Sharpe", xaxis_title=None, showlegend=False,
+    )
+    st.plotly_chart(fig_wf_bar, use_container_width=True)
+
+    with st.expander("Walk-Forward Annual Detail", expanded=False):
+        _is_labels = [f"{int(y)-5}–{int(y)-1}" for y in _wf_years]
+        _wf_tbl = pd.DataFrame({
+            "OOS Year":             _wf_years,
+            "IS Window (5yr)":      _is_labels,
+            "MA(35,43) OOS Sharpe": [f"{v:+.3f}" for v in _wf_sharpes],
+            "Anchors+Opt OOS":      ["—"] * 12 + ["+0.382", "+0.476", "+0.437"],
+            # Anchors+Opt 2022-2024 from weight_sensitivity.py (IS-opt weights, same walk-forward)
+            "Status":               ["✓ Pos" if v > 0 else "✗ Neg" for v in _wf_sharpes],
+        })
+        st.dataframe(_wf_tbl, use_container_width=True, hide_index=True)
+        st.caption(
+            "Anchors+Opt: MA(10,25)+MA(35,43)+MA(63,100), weights re-optimised each year on prior 5yr IS data "
+            "(max-Sharpe QP). Full-period avg +0.442. Individual years 2022–2024 shown; "
+            "earlier years available in weight_sensitivity.py. 2025 OOS window is partial."
+        )
+
+    st.divider()
+
+    # ── SECTION 2: IS PARAMETER SEARCH (IN-SAMPLE 2006–2025) ──────────────────
+    _mom_is_exp = st.expander("IS Parameter Search (2006–2025 In-Sample)", expanded=False)
+    _mom_is_exp.__enter__()
+
+    st.markdown(
+        '<div style="background:#1A1200;border:1px solid #3A2E00;border-left:4px solid #F59E0B;'
+        'border-radius:4px;padding:8px 14px;margin-bottom:10px;font-size:0.82rem;color:#D4A843;">'
+        '&#9888;  IN-SAMPLE BACKTEST — Results use full 2006–2025 history. '
+        'Not held-out data. See walk-forward section above for OOS estimates.</div>',
+        unsafe_allow_html=True,
+    )
+
     # ── Controls ──────────────────────────────────────────────────────────────
     c1, c2, c3, c4 = st.columns([1.6, 1.8, 1.4, 1.4])
 
@@ -1957,17 +2115,6 @@ with tab7:
             if use_custom and l_cust > s_cust:
                 variant_params = ("cta_single", s_cust, l_cust)
                 variant_label  = f"Custom CTA({s_cust},{l_cust})"
-
-    # ── Data loading ──────────────────────────────────────────────────────────
-    _f1_df = _load_copper_f1_data()
-    if _f1_df.empty:
-        st.error(
-            "LME_Copper_Rolling_F1_v2.csv not found. "
-            "Ensure it is in the same directory as app.py."
-        )
-        st.stop()
-    f1r: pd.Series = _f1_df["F1_raw"]
-    f1c: pd.Series = _f1_df["F1_continuous"]
 
     # ── Signal & position computation ─────────────────────────────────────────
     def _ewma(s: pd.Series, n: int) -> pd.Series:
@@ -2436,6 +2583,7 @@ with tab7:
 - All % metrics (Ann Return, Std Dev, Max DD, Calmar, Sortino) computed from daily_ret
 - Sharpe = Ann_ret / Ann_std (unitless, consistent across gross/net)
         """)
+    _mom_is_exp.__exit__(None, None, None)
 
 
 # ══════════════════════════════════════════════════════
@@ -2487,7 +2635,7 @@ with tab8:
         carry_timing = st.selectbox("Position Entry", ["Same-Day", "Lag-1 (Next-Day)"], index=0, key="carry_timing")
         carry_same_day = carry_timing == "Same-Day"
     with c8_c4:
-        carry_tc_map = {"0 bps (No TC)": 0, "5 bps": 5, "10 bps": 10, "20 bps": 20}
+        carry_tc_map = {"0 bps (No TC)": 0, "5 bps Round Trip": 5, "10 bps Round Trip": 10, "20 bps Round Trip": 20}
         carry_tc_label = st.selectbox("TC (bps, round-trip)", list(carry_tc_map.keys()), index=0, key="carry_tc")
         carry_tc_bps = carry_tc_map[carry_tc_label]
 
@@ -2832,6 +2980,42 @@ with tab8:
     st.caption("Carry tends to be regime-dependent — performs strongly during sustained backwardation cycles (e.g., 2006-2008, 2021-2022). "
                "Positive rolling Sharpe validates the strategy over that window.")
 
+    # ── Section 5b: Sub-Period Analysis ───────────────────────────────────────
+    st.divider()
+    section_header("SUB-PERIOD ANALYSIS (Pre-2022 / Post-2022)")
+    st.caption("Carry risk premia flipped post-2022: sustained contango following the 2021-2022 backwardation spike "
+               "reduced carry returns sharply. No parameters were optimised — IS = OOS for all carry variants.")
+
+    _c8_pre22  = _c8_idx < pd.Timestamp("2022-01-01")
+    _c8_post22 = _c8_idx >= pd.Timestamp("2022-01-01")
+
+    cm8_pre  = _carry_perf(c8_gross_pnl[_c8_pre22],  c8_gross_ret_all[_c8_pre22],  carry_pos[_c8_pre22],  "Pre-2022")
+    cm8_post = _carry_perf(c8_gross_pnl[_c8_post22], c8_gross_ret_all[_c8_post22], carry_pos[_c8_post22], "Post-2022")
+
+    csp_pre, csp_post = st.columns(2)
+    with csp_pre:
+        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Pre-2022 (2006–2021)</div>', unsafe_allow_html=True)
+        if cm8_pre:
+            _cp8_cols = st.columns(2)
+            _cmcard(_cp8_cols[0], "Sharpe",       cm8_pre.get("sharpe"),      ".3f")
+            _cmcard(_cp8_cols[1], "Ann Ret %",    cm8_pre.get("ann_ret_pct"), ".1f", "%")
+            _cp8_cols2 = st.columns(2)
+            _cmcard(_cp8_cols2[0], "Max DD %",    cm8_pre.get("mdd_pct"),     ".1f", "%")
+            _cmcard(_cp8_cols2[1], "Active Days", float(cm8_pre.get("n", 0)), ",.0f")
+        else:
+            st.info("Insufficient data.")
+    with csp_post:
+        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Post-2022 (2022–present)</div>', unsafe_allow_html=True)
+        if cm8_post:
+            _cp8b_cols = st.columns(2)
+            _cmcard(_cp8b_cols[0], "Sharpe",       cm8_post.get("sharpe"),      ".3f")
+            _cmcard(_cp8b_cols[1], "Ann Ret %",    cm8_post.get("ann_ret_pct"), ".1f", "%")
+            _cp8b_cols2 = st.columns(2)
+            _cmcard(_cp8b_cols2[0], "Max DD %",    cm8_post.get("mdd_pct"),     ".1f", "%")
+            _cmcard(_cp8b_cols2[1], "Active Days", float(cm8_post.get("n", 0)), ",.0f")
+        else:
+            st.info("Insufficient data.")
+
     # ── Section 6: Regime Statistics ──────────────────────────────────────────
     st.divider()
     section_header("REGIME STATISTICS")
@@ -3089,6 +3273,12 @@ All strategies trade F1_continuous regardless of which tenor pair generates the 
 `daily_ret[t] = position[t] x delta_F1_cont[t] / F1_cont[t-1]`
 Sharpe, Sortino, Max DD, Calmar all computed from daily_ret in % terms.
 
+**In-Sample vs Out-of-Sample**
+Carry signals have *no optimised parameters* — the signal formula (e.g., (F1-F2)/F1) is a structural
+market measure, not a fitted quantity. There is no parameter search or look-ahead bias.
+Consequently, IS results are representative of OOS performance; the sub-period table above
+(pre/post 2022) reflects genuine regime-conditional performance, not overfitting.
+
 **Reference**
 Baz, J., Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Section and Time Series. SSRN.
         """)
@@ -3124,20 +3314,20 @@ with tab9:
     """, unsafe_allow_html=True)
 
     # ── Controls ──────────────────────────────────────────────────────────────
-    v9_c1, v9_c2, v9_c3, v9_c4, v9_c5 = st.columns([1.6, 1.4, 1.6, 1.5, 1.5])
+    v9_c1, v9_c2, v9_c3, v9_c4, v9_c5, v9_c6 = st.columns([1.5, 1.2, 1.5, 1.3, 1.2, 1.4])
     with v9_c1:
         val_vgroup = st.selectbox("Variant", ["V1 — MA Reversion", "V2 — Baz-Granger Reversal"],
-                                  key="val_vgroup")
+                                  index=1, key="val_vgroup")
         val_is_v1 = val_vgroup.startswith("V1")
     with v9_c2:
         val_contract = st.selectbox("Contract", [f"F{k}" for k in range(1, 16)],
-                                    index=11, key="val_contract",
+                                    index=7, key="val_contract",
                                     disabled=not val_is_v1)
         val_k = int(val_contract[1:]) if val_is_v1 else None
     with v9_c3:
         _lb_opts = {"1yr  (252d)": 252, "3yr  (756d)": 756, "5yr  (1260d)": 1260,
                     "7yr  (1764d)": 1764, "10yr (2520d)": 2520}
-        val_lb_label = st.selectbox("Lookback", list(_lb_opts.keys()), index=2, key="val_lb")
+        val_lb_label = st.selectbox("Lookback", list(_lb_opts.keys()), index=4, key="val_lb")
         val_N = _lb_opts[val_lb_label]
     with v9_c4:
         _thr_opts = {"±5%": 0.05, "±10% (default)": 0.10, "±15%": 0.15, "±20%": 0.20}
@@ -3145,6 +3335,10 @@ with tab9:
                                      key="val_thr", disabled=not val_is_v1)
         val_thr = _thr_opts[val_thr_label] if val_is_v1 else 0.10
     with v9_c5:
+        _val_tc_map = {"0 bps (No TC)": 0, "5 bps Round Trip": 5, "10 bps Round Trip": 10, "20 bps Round Trip": 20}
+        val_tc_label = st.selectbox("TC (bps)", list(_val_tc_map.keys()), index=0, key="val_tc")
+        val_tc_bps = _val_tc_map[val_tc_label]
+    with v9_c6:
         val_timing = st.selectbox("Position Entry", ["Lag-1 (Next-Day)", "Same-Day"],
                                   index=0, key="val_timing")
         val_same_day = val_timing == "Same-Day"
@@ -3200,9 +3394,15 @@ with tab9:
     v9_delta    = vf1c_a.diff()
     v9_f1c_prev = vf1c_a.shift(1)
     v9_gross_pnl = val_pos * v9_delta
+    v9_pos_change = val_pos.diff().abs()
+    v9_pos_change.iloc[0] = abs(val_pos.iloc[0])
+    v9_tc_cost   = v9_pos_change * (val_tc_bps / 10000.0 / 2.0) * vf1c_a
+    v9_net_pnl   = v9_gross_pnl - v9_tc_cost
     v9_cum_pnl   = v9_gross_pnl.cumsum()
+    v9_cum_net   = v9_net_pnl.cumsum()
     with np.errstate(invalid="ignore", divide="ignore"):
         v9_gross_ret = (v9_gross_pnl / v9_f1c_prev).replace([np.inf, -np.inf], np.nan)
+        v9_net_ret   = (v9_net_pnl   / v9_f1c_prev).replace([np.inf, -np.inf], np.nan)
 
     last_date_v9 = _v9_idx[-1]
 
@@ -3381,9 +3581,11 @@ with tab9:
     vp9_end   = pd.Timestamp(val_perf_dates[1]) if len(val_perf_dates) == 2 else _v9_idx[-1]
     vp9_mask  = (_v9_idx >= vp9_start) & (_v9_idx <= vp9_end)
 
-    v9_pos_f     = val_pos[vp9_mask]
-    v9_pnl_f     = v9_gross_pnl[vp9_mask]
-    v9_ret_f     = v9_gross_ret[vp9_mask]
+    v9_pos_f      = val_pos[vp9_mask]
+    v9_pnl_f      = v9_gross_pnl[vp9_mask]
+    v9_ret_f      = v9_gross_ret[vp9_mask]
+    v9_net_pnl_f  = v9_net_pnl[vp9_mask]
+    v9_net_ret_f  = v9_net_ret[vp9_mask]
 
     def _val_perf(daily_pnl, daily_ret, position, label):
         active  = daily_ret[position != 0].dropna()
@@ -3415,16 +3617,37 @@ with tab9:
             "pct_short": float((position < 0).sum()) / T * 100,
         }
 
-    vm9 = _val_perf(v9_pnl_f, v9_ret_f, v9_pos_f, val_vgroup)
+    vm9     = _val_perf(v9_pnl_f,     v9_ret_f,     v9_pos_f, val_vgroup)
+    vm9_net = _val_perf(v9_net_pnl_f, v9_net_ret_f, v9_pos_f, f"Net ({val_tc_label})")
 
     st.divider()
     section_header("PERFORMANCE METRICS")
     _v9_title = (f"**Strategy:** {val_vgroup}  |  " +
                  (f"**Contract:** F{val_k}  |  **Lookback:** {val_lb_label}  |  **Threshold:** {val_thr_label}  |  " if val_is_v1 else f"**Lookback:** {val_lb_label}  |  ") +
-                 f"**Entry:** {val_timing}")
+                 f"**Entry:** {val_timing}  |  **TC:** {val_tc_label}")
     st.caption(_v9_title)
 
-    if vm9:
+    if vm9 and vm9_net:
+        _v9_cols1 = st.columns(8)
+        _cmcard(_v9_cols1[0], "Sharpe Gross",    vm9.get("sharpe"),         ".2f")
+        _cmcard(_v9_cols1[1], "Sharpe Net",      vm9_net.get("sharpe"),     ".2f")
+        _cmcard(_v9_cols1[2], "Ann Ret% Gross",  vm9.get("ann_ret_pct"),    ".2f", "%")
+        _cmcard(_v9_cols1[3], "Ann Ret% Net",    vm9_net.get("ann_ret_pct"),".2f", "%")
+        _cmcard(_v9_cols1[4], "Max DD% Gross",   vm9.get("mdd_pct"),        ".2f", "%")
+        _cmcard(_v9_cols1[5], "Max DD% Net",     vm9_net.get("mdd_pct"),    ".2f", "%")
+        _cmcard(_v9_cols1[6], "Calmar Gross",    vm9.get("calmar"),         ".2f")
+        _cmcard(_v9_cols1[7], "Calmar Net",      vm9_net.get("calmar"),     ".2f")
+
+        _v9_cols2 = st.columns(8)
+        _cmcard(_v9_cols2[0], "Sortino Gross",   vm9.get("sortino"),        ".2f")
+        _cmcard(_v9_cols2[1], "Sortino Net",     vm9_net.get("sortino"),    ".2f")
+        _cmcard(_v9_cols2[2], "Hit Rate",        vm9.get("hit_rate"),       ".2f", "%")
+        _cmcard(_v9_cols2[3], "Profit Factor",   vm9.get("profit_factor"),  ".2f")
+        _cmcard(_v9_cols2[4], "PnL Gross $/MT",  vm9.get("total_pnl_usdmt"), ",.2f")
+        _cmcard(_v9_cols2[5], "PnL Net $/MT",    vm9_net.get("total_pnl_usdmt"), ",.2f")
+        _cmcard(_v9_cols2[6], "n Flips",         float(int(_v9_flip_mask.sum())), ",.0f")
+        _cmcard(_v9_cols2[7], "Days In State",   float(_v9_days_in_state),  ",.0f", "d")
+    elif vm9:
         _v9_cols1 = st.columns(8)
         _cmcard(_v9_cols1[0], "Sharpe",         vm9.get("sharpe"),         ".2f")
         _cmcard(_v9_cols1[1], "Sortino",         vm9.get("sortino"),        ".2f")
@@ -3434,18 +3657,6 @@ with tab9:
         _cmcard(_v9_cols1[5], "Calmar",          vm9.get("calmar"),         ".2f")
         _cmcard(_v9_cols1[6], "Hit Rate",        vm9.get("hit_rate"),       ".2f", "%")
         _cmcard(_v9_cols1[7], "Profit Factor",   vm9.get("profit_factor"),  ".2f")
-
-        _v9_cols2 = st.columns(8)
-        _cmcard(_v9_cols2[0], "Total PnL $/MT",  vm9.get("total_pnl_usdmt"), ",.2f")
-        _cmcard(_v9_cols2[1], "Active Days",      float(vm9.get("n", 0)),     ",.0f")
-        _cmcard(_v9_cols2[2], "% Days Long",      vm9.get("pct_long"),         ".1f", "%")
-        _cmcard(_v9_cols2[3], "% Days Flat",      vm9.get("pct_flat"),         ".1f", "%")
-        _cmcard(_v9_cols2[4], "% Days Short",     vm9.get("pct_short"),        ".1f", "%")
-        _cmcard(_v9_cols2[5], "% Time Active",
-                (100.0 - vm9.get("pct_flat", 0)) if val_is_v1 else 100.0,
-                ".1f", "%")
-        _cmcard(_v9_cols2[6], "n Flips",          float(int(_v9_flip_mask.sum())), ",.0f")
-        _cmcard(_v9_cols2[7], "Days In State",    float(_v9_days_in_state),    ",.0f", "d")
     else:
         st.warning("Insufficient active trading days to compute metrics.")
 
@@ -3490,38 +3701,53 @@ with tab9:
 
     # ── Section 5: Sub-period Analysis ────────────────────────────────────────
     st.divider()
-    section_header("SUB-PERIOD ANALYSIS (Pre-2022 / Post-2022)")
-    st.caption("Replicates Mark Bogorad's sub-period split. Value EW IR (energy) = 0.23 pre-2022, 0.93 post-2022. Do the same patterns hold for copper?")
+    section_header("REGIME ANALYSIS — Pre-COVID / COVID Spike / Post-COVID")
+    st.caption("Value signals are strongly regime-conditional. The 2020-2021 COVID window drove the majority of V2 10yr performance (+0.512 full-period). "
+               "Split: Pre-2020 (normal regime) / 2020-2021 (dislocation) / 2022+ (normalisation). "
+               "Presents the honest attribution — do not present V2 as a systematic signal without this context.")
 
-    _v9_pre22  = _v9_idx < pd.Timestamp("2022-01-01")
-    _v9_post22 = _v9_idx >= pd.Timestamp("2022-01-01")
+    _v9_pre20  = _v9_idx < pd.Timestamp("2020-01-01")
+    _v9_covid  = (_v9_idx >= pd.Timestamp("2020-01-01")) & (_v9_idx < pd.Timestamp("2022-01-01"))
+    _v9_post21 = _v9_idx >= pd.Timestamp("2022-01-01")
 
-    vm9_pre  = _val_perf(v9_gross_pnl[_v9_pre22],  v9_gross_ret[_v9_pre22],  val_pos[_v9_pre22],  "Pre-2022")
-    vm9_post = _val_perf(v9_gross_pnl[_v9_post22], v9_gross_ret[_v9_post22], val_pos[_v9_post22], "Post-2022")
+    vm9_pre20  = _val_perf(v9_gross_pnl[_v9_pre20],  v9_gross_ret[_v9_pre20],  val_pos[_v9_pre20],  "Pre-2020")
+    vm9_covid  = _val_perf(v9_gross_pnl[_v9_covid],  v9_gross_ret[_v9_covid],  val_pos[_v9_covid],  "2020-2021")
+    vm9_post21 = _val_perf(v9_gross_pnl[_v9_post21], v9_gross_ret[_v9_post21], val_pos[_v9_post21], "Post-2021")
 
-    vsp_pre, vsp_post = st.columns(2)
-    with vsp_pre:
-        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Pre-2022</div>', unsafe_allow_html=True)
-        if vm9_pre:
-            _vp9_cols = st.columns(2)
-            _cmcard(_vp9_cols[0], "Sharpe",       vm9_pre.get("sharpe"),      ".3f")
-            _cmcard(_vp9_cols[1], "Ann Ret %",    vm9_pre.get("ann_ret_pct"), ".1f", "%")
-            _vp9_cols2 = st.columns(2)
-            _cmcard(_vp9_cols2[0], "Max DD %",    vm9_pre.get("mdd_pct"),     ".1f", "%")
-            _cmcard(_vp9_cols2[1], "Active Days", float(vm9_pre.get("n", 0)), ",.0f")
+    vsp_pre20, vsp_covid, vsp_post21 = st.columns(3)
+    with vsp_pre20:
+        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Pre-2020 (Normal Regime)</div>', unsafe_allow_html=True)
+        if vm9_pre20:
+            _vp9a_cols = st.columns(2)
+            _cmcard(_vp9a_cols[0], "Sharpe",       vm9_pre20.get("sharpe"),      ".3f")
+            _cmcard(_vp9a_cols[1], "Ann Ret %",    vm9_pre20.get("ann_ret_pct"), ".1f", "%")
+            _vp9a_cols2 = st.columns(2)
+            _cmcard(_vp9a_cols2[0], "Max DD %",    vm9_pre20.get("mdd_pct"),     ".1f", "%")
+            _cmcard(_vp9a_cols2[1], "Active Days", float(vm9_pre20.get("n", 0)), ",.0f")
         else:
-            st.info("Insufficient data for Pre-2022 period.")
-    with vsp_post:
-        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Post-2022</div>', unsafe_allow_html=True)
-        if vm9_post:
+            st.info("Insufficient data.")
+    with vsp_covid:
+        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">2020-2021 (COVID Dislocation)</div>', unsafe_allow_html=True)
+        if vm9_covid:
             _vp9b_cols = st.columns(2)
-            _cmcard(_vp9b_cols[0], "Sharpe",       vm9_post.get("sharpe"),      ".3f")
-            _cmcard(_vp9b_cols[1], "Ann Ret %",    vm9_post.get("ann_ret_pct"), ".1f", "%")
+            _cmcard(_vp9b_cols[0], "Sharpe",       vm9_covid.get("sharpe"),      ".3f")
+            _cmcard(_vp9b_cols[1], "Ann Ret %",    vm9_covid.get("ann_ret_pct"), ".1f", "%")
             _vp9b_cols2 = st.columns(2)
-            _cmcard(_vp9b_cols2[0], "Max DD %",    vm9_post.get("mdd_pct"),     ".1f", "%")
-            _cmcard(_vp9b_cols2[1], "Active Days", float(vm9_post.get("n", 0)), ",.0f")
+            _cmcard(_vp9b_cols2[0], "Max DD %",    vm9_covid.get("mdd_pct"),     ".1f", "%")
+            _cmcard(_vp9b_cols2[1], "Active Days", float(vm9_covid.get("n", 0)), ",.0f")
         else:
-            st.info("Insufficient data for Post-2022 period.")
+            st.info("Insufficient data.")
+    with vsp_post21:
+        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Post-2021 (Post-Normalisation)</div>', unsafe_allow_html=True)
+        if vm9_post21:
+            _vp9c_cols = st.columns(2)
+            _cmcard(_vp9c_cols[0], "Sharpe",       vm9_post21.get("sharpe"),      ".3f")
+            _cmcard(_vp9c_cols[1], "Ann Ret %",    vm9_post21.get("ann_ret_pct"), ".1f", "%")
+            _vp9c_cols2 = st.columns(2)
+            _cmcard(_vp9c_cols2[0], "Max DD %",    vm9_post21.get("mdd_pct"),     ".1f", "%")
+            _cmcard(_vp9c_cols2[1], "Active Days", float(vm9_post21.get("n", 0)), ",.0f")
+        else:
+            st.info("Insufficient data.")
 
     # ── Section 6: Contract Comparison (V1 only) ───────────────────────────────
     if val_is_v1:
@@ -3754,6 +3980,16 @@ Unlike carry (where Same-Day dominates due to flip-day dynamics), value signals 
 **PnL & Returns**
 All strategies trade F1_continuous regardless of which contract or lookback generates the signal.
 `daily_ret[t] = position[t] × ΔF1_cont[t] / F1_cont[t−1]`
+
+**Regime Conditionality Disclosure**
+V2 Baz-Granger 10yr Sharpe (+0.512 gross) is **not a stable systematic signal**. The edge is
+concentrated in the 2020-2021 COVID mean-reversion window, when copper prices dislocated significantly
+below their 10-year trend and then recovered. In normal regimes (pre-2020, post-2021), V2 is weak
+(Sharpe ≈ 0.0 to +0.3). Present this as event-driven risk premia, not a persistent carry-style signal.
+
+V1 MA Reversion (best: F8, 5yr, Sharpe +0.277) is more stable across regimes but still weak for
+copper — the ±10% threshold leaves copper in the flat zone most of the time (60% flat at ±10%).
+This threshold was calibrated for crude oil (higher volatility). Consider ±15-20% for copper.
 
 **References**
 - Bogorad, M. (2023). *Risk Premia in Diversified Energy Portfolios.* (Unpublished)
