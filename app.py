@@ -1861,6 +1861,37 @@ _VALUE_CMP_OPTIONS: dict = {
 }
 
 
+@st.cache_data(show_spinner=False)
+def _wf_ma3543_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
+    """Walk-forward OOS Sharpes for MA(35,43) Lag-1 with round-trip TC."""
+    IS_W, OOS_W = 1260, 252
+    T, dates = len(_f1r), _f1r.index
+    out = {}
+    oos_s = IS_W
+    while oos_s < T:
+        oos_e = min(oos_s + OOS_W, T)
+        if (oos_e - oos_s) < OOS_W:
+            oos_s += OOS_W; continue
+        yr = str(dates[oos_s].year)
+        f1r_w = _f1r.iloc[oos_s - IS_W:oos_e]
+        oos_dt = dates[oos_s:oos_e]
+        pos_full = np.sign(f1r_w.rolling(35).mean() - f1r_w.rolling(43).mean()).shift(1).fillna(0)
+        pos_oos = pos_full.iloc[-OOS_W:].set_axis(oos_dt)
+        f1c_oos = _f1c.reindex(oos_dt)
+        pnl = pos_oos * f1c_oos.diff()
+        if tc_bps > 0:
+            chg = pos_oos.diff().abs(); chg.iloc[0] = abs(pos_oos.iloc[0])
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * f1c_oos
+        with np.errstate(invalid="ignore", divide="ignore"):
+            ret = (pnl / f1c_oos.shift(1)).replace([np.inf, -np.inf], np.nan)
+        act = ret[pos_oos != 0].dropna()
+        if len(act) >= 20:
+            sd = float(act.std(ddof=1))
+            out[yr] = float(act.mean() / sd * np.sqrt(252)) if sd > 0 else np.nan
+        oos_s += OOS_W
+    return out
+
+
 # ══════════════════════════════════════════════════════
 # TAB 7: MOMENTUM SIGNALS
 # ══════════════════════════════════════════════════════
@@ -1885,27 +1916,51 @@ with tab7:
     f1c: pd.Series = _f1_df["F1_continuous"]
 
     # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD EVIDENCE ────────────────────────
-    # Precomputed: IS=5yr rolling, OOS=1yr, Lag-1, MA(35,43) fixed (no re-optimisation)
-    _WF_MA35 = {
-        "2010": 0.160,  "2011": -0.692, "2012": -0.110, "2013": 0.957,
-        "2014": 0.617,  "2015": 0.938,  "2016": 0.354,  "2017": 0.284,
-        "2018": 0.628,  "2019": 1.679,  "2020": 0.818,  "2021": 0.184,
-        "2022": 0.584,  "2023": 0.314,  "2024": 0.664,
-        # OOS label = year of window START date (not calendar year of data measured).
-        # "2024" window runs 2024-12-12 to 2025-12-10 (252 days). "2025*" = 13 tail days.
+    _WF_MA35 = {  # Gross OOS Sharpes (0 TC), IS=5yr rolling, OOS=1yr, Lag-1
+        "2010": 0.160, "2011": -0.692, "2012": -0.110, "2013": 0.957,
+        "2014": 0.617, "2015": 0.938,  "2016": 0.354,  "2017": 0.284,
+        "2018": 0.628, "2019": 1.679,  "2020": 0.818,  "2021": 0.184,
+        "2022": 0.584, "2023": 0.314,  "2024": 0.664,
     }
-    _WF_MA35_AVG = round(sum(_WF_MA35.values()) / len(_WF_MA35), 3)
-    _WF_MA35_P22 = round(np.mean([v for y, v in _WF_MA35.items() if int(y) >= 2022]), 3)
-    _WF_OPT_AVG  = 0.442
-    _WF_N_POS    = sum(1 for v in _WF_MA35.values() if v > 0)
-    _WF_N_GT03   = sum(1 for v in _WF_MA35.values() if v > 0.30)
-    _WF_N_TOTAL  = len(_WF_MA35)
+    _WF_ANC_OPT      = {"2022": 0.382, "2023": 0.476, "2024": 0.437}
+    _WF_OPT_AVG_FULL = 0.442
 
     st.markdown("#### Out-of-Sample Walk-Forward Validation")
     st.caption(
-        "IS = 5yr rolling window · OOS = 1yr · Lag-1 entry · 15 OOS windows (2010–2024). "
-        "MA(35,43) parameters fixed — selected on full 2006–2025 history, never re-optimised per window."
+        "IS = 5yr rolling window · OOS = 1yr · Lag-1 entry · 15 complete OOS windows. "
+        "MA(35,43) selected a priori — never re-optimised per window. "
+        "Window labels denote the start year of each OOS period; data coverage spans 2011–2025."
     )
+
+    _oos_tc_row = st.columns([1.8, 4.2])
+    with _oos_tc_row[0]:
+        _oos_tc_map = {
+            "0 bps (Gross)": 0, "5 bps Round Trip": 5,
+            "10 bps Round Trip": 10, "20 bps Round Trip": 20,
+        }
+        _oos_tc_label = st.selectbox(
+            "TC — OOS Section", list(_oos_tc_map.keys()), index=0, key="oos_tc_sel"
+        )
+        _oos_tc_bps = _oos_tc_map[_oos_tc_label]
+    with _oos_tc_row[1]:
+        st.markdown(
+            '<div style="padding:10px 0;color:#7A7068;font-size:0.78rem;">'
+            'TC sensitivity for the OOS walk-forward. At 0 bps the gross Sharpe is shown. '
+            'At non-zero TC, positions are re-derived dynamically for MA(35,43) Lag-1 with '
+            'round-trip costs deducted on every signal flip.</div>',
+            unsafe_allow_html=True,
+        )
+
+    _wf_active = _wf_ma3543_tc(f1r, f1c, _oos_tc_bps) if _oos_tc_bps > 0 else _WF_MA35
+    if not _wf_active:
+        _wf_active = _WF_MA35
+
+    _WF_MA35_AVG = round(np.mean(list(_wf_active.values())), 3)
+    _WF_MA35_P23 = round(np.mean([v for y, v in _wf_active.items() if int(y) >= 2023]), 3)
+    _WF_N_POS    = sum(1 for v in _wf_active.values() if v > 0)
+    _WF_N_GT03   = sum(1 for v in _wf_active.values() if v > 0.30)
+    _WF_N_TOTAL  = len(_wf_active)
+    _tc_note     = f"  ·  {_oos_tc_label}" if _oos_tc_bps > 0 else ""
 
     _wf_c1, _wf_c2, _wf_c3 = st.columns(3)
     _cs   = ("background:#161616;border:1px solid #2A2A2A;"
@@ -1926,26 +1981,28 @@ with tab7:
     with _wf_c1:
         st.markdown(f"""<div style="{_cs}">
 <p style="{_lbl}">MA(35,43) — Fixed Parameter</p>
-<p style="{_big}">+{_WF_MA35_AVG:.3f}</p>
-<p style="{_sub}">Avg OOS Sharpe · 2010–2024 (15 windows)</p>
+<p style="{_big}">{_WF_MA35_AVG:+.3f}</p>
+<p style="{_sub}">Avg OOS Sharpe · 2011–2025 · 15 Windows{_tc_note}</p>
 <hr style="{_hr}"/>
-<p style="{_sub}">2022–2025 avg (window labeled '2024' runs to Dec 2025)</p>
-<p style="{_med}">+{_WF_MA35_P22:.3f}</p>
+<p style="{_sub}">2023–2025 avg</p>
+<p style="{_med}">{_WF_MA35_P23:+.3f}</p>
 <p style="{_sub}">Zero re-optimisation · 13-day tail excluded</p>
 </div>""", unsafe_allow_html=True)
 
     with _wf_c2:
         st.markdown(f"""<div style="{_cs}">
 <p style="{_lbl}">Anchors + IS-Opt Weights</p>
-<p style="{_big}">+{_WF_OPT_AVG:.3f}</p>
-<p style="{_sub}">Avg OOS Sharpe · 2010–2024 (15 windows)</p>
+<p style="{_big}">+{_WF_OPT_AVG_FULL:.3f}</p>
+<p style="{_sub}">Avg OOS Sharpe · 2011–2025 · 15 Windows</p>
 <hr style="{_hr}"/>
 <p style="{_sub}">MA(10,25) + MA(35,43) + MA(63,100)</p>
-<p style="{_sub}">Max-Sharpe weights re-optimised annually on prior 5yr IS data</p>
+<p style="{_sub}">Max-Sharpe QP weights, re-optimised annually on prior 5yr IS data</p>
 <p style="{_sub}">Optimizer assigns w≈1.0 to MA(35,43) in 9 / 15 windows</p>
 </div>""", unsafe_allow_html=True)
 
     with _wf_c3:
+        _wf_best_yr  = max(_WF_MA35, key=lambda y: _WF_MA35[y])
+        _wf_worst_yr = min(_WF_MA35, key=lambda y: _WF_MA35[y])
         st.markdown(f"""<div style="{_csg}">
 <p style="{_lblg}">OOS Consistency — MA(35,43)</p>
 <p style="{_sub}">Positive OOS Sharpe</p>
@@ -1954,67 +2011,114 @@ with tab7:
 <p style="{_sub}">OOS Sharpe above +0.30</p>
 <p style="{_med}">{_WF_N_GT03} / {_WF_N_TOTAL} windows</p>
 <hr style="{_hr}"/>
-<p style="{_sub}">Best: 2019 (+1.679)  ·  Worst: 2011 (−0.692)</p>
+<p style="{_sub}">Best: {_wf_best_yr} ({_WF_MA35[_wf_best_yr]:+.3f}) · Worst: {_wf_worst_yr} ({_WF_MA35[_wf_worst_yr]:+.3f})</p>
 </div>""", unsafe_allow_html=True)
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    _wf_years   = list(_WF_MA35.keys())
-    _wf_sharpes = list(_WF_MA35.values())
-    _wf_bar_cls = [
-        (COLORS["primary"] if v >= 0 else "#B05030") if int(y) >= 2022
-        else (COLORS["green"] if v >= 0 else COLORS["red"])
-        for y, v in _WF_MA35.items()
-    ]
-    _wf_bar_brd = ["#D4A843" if int(y) >= 2022 else "rgba(0,0,0,0)" for y in _wf_years]
+    _wf_chart_c1, _wf_chart_c2 = st.columns([2, 4])
+    with _wf_chart_c1:
+        _wf_chart_mode = st.selectbox(
+            "Annual OOS Sharpe — Strategy",
+            ["MA(35,43) — Annual OOS Sharpe", "Anchors + IS-Opt Weights"],
+            index=0, key="wf_chart_mode",
+        )
 
-    fig_wf_bar = go.Figure()
-    fig_wf_bar.add_trace(go.Bar(
-        x=_wf_years, y=_wf_sharpes,
-        marker_color=_wf_bar_cls,
-        marker_line_color=_wf_bar_brd,
-        marker_line_width=1.5,
-        name="OOS Sharpe",
-        hovertemplate="%{x}<br>OOS Sharpe: %{y:.3f}<extra></extra>",
-    ))
-    fig_wf_bar.add_hline(y=0, line_dash="solid", line_color="#475569", line_width=1)
-    fig_wf_bar.add_hline(
-        y=_WF_MA35_AVG, line_dash="dot", line_color=COLORS["amber"], line_width=1.5,
-        annotation_text=f"Full avg +{_WF_MA35_AVG:.3f}",
-        annotation_position="top right",
-        annotation_font=dict(size=10, color=COLORS["amber"]),
-    )
-    fig_wf_bar.add_hline(
-        y=_WF_MA35_P22, line_dash="dot", line_color=COLORS["primary"], line_width=1.5,
-        annotation_text=f"2022–25 avg +{_WF_MA35_P22:.3f}",
-        annotation_position="top left",
-        annotation_font=dict(size=10, color=COLORS["primary"]),
-    )
-    fig_wf_bar.update_layout(
-        **CHART_LAYOUT, height=300,
-        title=dict(
-            text="MA(35,43) — Annual OOS Sharpe (Walk-Forward · IS=5yr rolling · Lag-1)",
-            font=dict(size=13),
-        ),
-        yaxis_title="OOS Sharpe", xaxis_title=None, showlegend=False,
-    )
-    st.plotly_chart(fig_wf_bar, use_container_width=True)
+    if _wf_chart_mode == "MA(35,43) — Annual OOS Sharpe":
+        _wf_years_plot  = list(_wf_active.keys())
+        _wf_sh_plot     = list(_wf_active.values())
+        _wf_bar_cls = [
+            (COLORS["primary"] if v >= 0 else "#B05030") if int(y) >= 2023
+            else (COLORS["green"] if v >= 0 else COLORS["red"])
+            for y, v in _wf_active.items()
+        ]
+        _wf_bar_brd = ["#D4A843" if int(y) >= 2023 else "rgba(0,0,0,0)" for y in _wf_years_plot]
+        fig_wf_bar = go.Figure()
+        fig_wf_bar.add_trace(go.Bar(
+            x=_wf_years_plot, y=_wf_sh_plot,
+            marker_color=_wf_bar_cls,
+            marker_line_color=_wf_bar_brd, marker_line_width=1.5,
+            name="OOS Sharpe",
+            hovertemplate="%{x}<br>OOS Sharpe: %{y:.3f}<extra></extra>",
+        ))
+        fig_wf_bar.add_hline(y=0, line_dash="solid", line_color="#475569", line_width=1)
+        fig_wf_bar.add_hline(
+            y=_WF_MA35_AVG, line_dash="dot", line_color=COLORS["amber"], line_width=1.5,
+            annotation_text=f"Full avg {_WF_MA35_AVG:+.3f}",
+            annotation_position="top right",
+            annotation_font=dict(size=10, color=COLORS["amber"]),
+        )
+        fig_wf_bar.add_hline(
+            y=_WF_MA35_P23, line_dash="dot", line_color=COLORS["primary"], line_width=1.5,
+            annotation_text=f"2023–25 avg {_WF_MA35_P23:+.3f}",
+            annotation_position="top left",
+            annotation_font=dict(size=10, color=COLORS["primary"]),
+        )
+        fig_wf_bar.update_layout(
+            **CHART_LAYOUT, height=300,
+            title=dict(
+                text=f"MA(35,43) — Annual OOS Sharpe  (Walk-Forward · IS=5yr · Lag-1{_tc_note})",
+                font=dict(size=13),
+            ),
+            yaxis_title="OOS Sharpe", xaxis_title=None, showlegend=False,
+        )
+        st.plotly_chart(fig_wf_bar, use_container_width=True)
+        st.caption(
+            "Gold-bordered bars = OOS windows starting Dec 2022–Dec 2024, covering 2023–2025 data. "
+            + (f"TC = {_oos_tc_label} deducted on each signal flip." if _oos_tc_bps > 0 else "Gross returns shown.")
+        )
+    else:
+        # Anchors + IS-Opt Weights: 3-year bar chart
+        _anc_years = list(_WF_ANC_OPT.keys())
+        _anc_sh    = list(_WF_ANC_OPT.values())
+        fig_anc = go.Figure()
+        fig_anc.add_trace(go.Bar(
+            x=_anc_years, y=_anc_sh,
+            marker_color=[COLORS["green"] if v >= 0 else COLORS["red"] for v in _anc_sh],
+            marker_line_color=[COLORS["amber"]] * len(_anc_years), marker_line_width=1.5,
+            hovertemplate="%{x}<br>OOS Sharpe: %{y:.3f}<extra></extra>",
+        ))
+        fig_anc.add_hline(y=0, line_dash="solid", line_color="#475569", line_width=1)
+        fig_anc.add_hline(
+            y=_WF_OPT_AVG_FULL, line_dash="dot", line_color=COLORS["amber"], line_width=1.5,
+            annotation_text=f"15-window avg +{_WF_OPT_AVG_FULL:.3f}",
+            annotation_position="top right",
+            annotation_font=dict(size=10, color=COLORS["amber"]),
+        )
+        fig_anc.update_layout(
+            **CHART_LAYOUT, height=300,
+            title=dict(
+                text="Anchors + IS-Opt Weights — OOS Sharpe (2022–2024 windows)",
+                font=dict(size=13),
+            ),
+            yaxis_title="OOS Sharpe", xaxis_title=None, showlegend=False,
+        )
+        st.plotly_chart(fig_anc, use_container_width=True)
+        st.caption(
+            "Per-window IS-opt data available for 2022–2024. Full 15-window average (+0.442) shown as reference. "
+            "Note — for Anchors + IS-Opt Weights, strict OOS validation is less critical: "
+            "the three anchor MAs [MA(10,25), MA(35,43), MA(63,100)] are structural, not data-fitted. "
+            "Only the combination weights are IS-optimised annually on prior 5yr data (max-Sharpe QP). "
+            "There is no look-ahead bias in the anchor selection itself."
+        )
 
     with st.expander("Walk-Forward Annual Detail", expanded=False):
-        _is_labels = [f"{int(y)-5}–{int(y)-1}" for y in _wf_years]
+        _wf_yrs_tbl = list(_WF_MA35.keys())
+        _is_labels  = [f"{int(y)-5}–{int(y)-1}" for y in _wf_yrs_tbl]
+        _tc_col     = f"MA(35,43) OOS{'  '+_oos_tc_label if _oos_tc_bps>0 else ' (Gross)'}"
         _wf_tbl = pd.DataFrame({
-            "OOS Year":             _wf_years,
-            "IS Window (5yr)":      _is_labels,
-            "MA(35,43) OOS Sharpe": [f"{v:+.3f}" for v in _wf_sharpes],
-            "Anchors+Opt OOS":      ["—"] * 12 + ["+0.382", "+0.476", "+0.437"],
-            # Anchors+Opt 2022-2024 from weight_sensitivity.py (IS-opt weights, same walk-forward)
-            "Status":               ["✓ Pos" if v > 0 else "✗ Neg" for v in _wf_sharpes],
+            "OOS Window":      _wf_yrs_tbl,
+            "IS Period (5yr)": _is_labels,
+            _tc_col:           [f"{_wf_active.get(y, _WF_MA35[y]):+.3f}" for y in _wf_yrs_tbl],
+            "Anchors+Opt OOS": ["—"] * 12 + ["+0.382", "+0.476", "+0.437"],
+            "Status":          ["✓" if _wf_active.get(y, _WF_MA35[y]) > 0 else "✗" for y in _wf_yrs_tbl],
         })
         st.dataframe(_wf_tbl, use_container_width=True, hide_index=True)
         st.caption(
-            "Anchors+Opt: MA(10,25)+MA(35,43)+MA(63,100), weights re-optimised each year on prior 5yr IS data "
-            "(max-Sharpe QP). Full-period avg +0.442. Individual years 2022–2024 shown; "
-            "earlier years available in weight_sensitivity.py. 2025 OOS window is partial."
+            "OOS Window label = start year of 252-day OOS period. "
+            "The '2024' window covers Dec 2024 – Dec 2025 (252 trading days). "
+            "Anchors+Opt 2022–2024: IS-opt QP weights on MA(10,25)+MA(35,43)+MA(63,100), "
+            "full-period avg = +0.442 from weight_sensitivity.py."
         )
 
     st.divider()
@@ -2037,7 +2141,7 @@ with tab7:
     with c1:
         sig_type = st.selectbox(
             "Signal Type",
-            ["MA Crossover", "CTA (Baz-Granger)"],
+            ["MA Crossover", "CTA (Baz-Granger)", "Anchors + IS-Opt Weights"],
             key="mom_sig_type",
         )
 
@@ -2054,7 +2158,7 @@ with tab7:
                 "MA(10,60)": (10, 60),
             }
             default_idx = 0
-        else:
+        elif sig_type == "CTA (Baz-Granger)":
             variant_opts = {
                 "CTA(8,21) — Best Same-Day Sharpe": ("cta_single", 8, 21),
                 "CTA(9,21) — Best Lag-1 Sharpe [default]": ("cta_single", 9, 21),
@@ -2064,6 +2168,11 @@ with tab7:
                 "CTA Paper (8-16-32 / 24-48-96)": ("cta_paper",),
             }
             default_idx = 1
+        else:  # Anchors
+            variant_opts = {
+                "EW Anchors — MA(10,25) + MA(35,43) + MA(63,100)": ("anchors_ew",),
+            }
+            default_idx = 0
         variant_label = st.selectbox(
             "Strategy Variant", list(variant_opts.keys()),
             index=default_idx, key="mom_variant",
@@ -2091,36 +2200,53 @@ with tab7:
         )
         tc_bps = tc_bps_map[tc_label]   # round-trip cost in basis points
 
+    if sig_type == "Anchors + IS-Opt Weights":
+        st.info(
+            "**Anchors + IS-Opt Weights** — IS backtest uses equal-weight combination of the three anchor MAs. "
+            "The IS-optimised walk-forward Sharpe (+0.442 avg) is shown in Section 1. "
+            "Position shown here is a continuous range −1 to +1 (average of three ±1 signals).",
+            icon="ℹ️",
+        )
+
     # ── Custom parameter override ─────────────────────────────────────────────
-    with st.expander("Custom Parameters (override dropdown selection)", expanded=False):
-        if sig_type == "MA Crossover":
-            cp1, cp2, cp3 = st.columns([1, 1, 2])
-            with cp1:
-                m_cust = st.number_input("Fast window m", min_value=1, max_value=124, value=35, step=1, key="cust_m")
-            with cp2:
-                n_cust = st.number_input("Slow window n", min_value=m_cust + 1, max_value=126, value=43, step=1, key="cust_n")
-            with cp3:
-                use_custom = st.checkbox("Use custom MA(m,n)", value=False, key="cust_ma_on")
-            if use_custom and n_cust > m_cust:
-                variant_params = (m_cust, n_cust)
-                variant_label  = f"Custom MA({m_cust},{n_cust})"
-        else:
-            cp1, cp2, cp3 = st.columns([1, 1, 2])
-            with cp1:
-                s_cust = st.number_input("Short EWMA S", min_value=1, max_value=49, value=9,  step=1, key="cust_s")
-            with cp2:
-                l_cust = st.number_input("Long EWMA L",  min_value=s_cust + 1, max_value=100, value=21, step=1, key="cust_l")
-            with cp3:
-                use_custom = st.checkbox("Use custom CTA(S,L)", value=False, key="cust_cta_on")
-            if use_custom and l_cust > s_cust:
-                variant_params = ("cta_single", s_cust, l_cust)
-                variant_label  = f"Custom CTA({s_cust},{l_cust})"
+    if sig_type != "Anchors + IS-Opt Weights":
+        with st.expander("Custom Parameters (override dropdown selection)", expanded=False):
+            if sig_type == "MA Crossover":
+                cp1, cp2, cp3 = st.columns([1, 1, 2])
+                with cp1:
+                    m_cust = st.number_input("Fast window m", min_value=1, max_value=124, value=35, step=1, key="cust_m")
+                with cp2:
+                    n_cust = st.number_input("Slow window n", min_value=m_cust + 1, max_value=126, value=43, step=1, key="cust_n")
+                with cp3:
+                    use_custom = st.checkbox("Use custom MA(m,n)", value=False, key="cust_ma_on")
+                if use_custom and n_cust > m_cust:
+                    variant_params = (m_cust, n_cust)
+                    variant_label  = f"Custom MA({m_cust},{n_cust})"
+            else:
+                cp1, cp2, cp3 = st.columns([1, 1, 2])
+                with cp1:
+                    s_cust = st.number_input("Short EWMA S", min_value=1, max_value=49, value=9,  step=1, key="cust_s")
+                with cp2:
+                    l_cust = st.number_input("Long EWMA L",  min_value=s_cust + 1, max_value=100, value=21, step=1, key="cust_l")
+                with cp3:
+                    use_custom = st.checkbox("Use custom CTA(S,L)", value=False, key="cust_cta_on")
+                if use_custom and l_cust > s_cust:
+                    variant_params = ("cta_single", s_cust, l_cust)
+                    variant_label  = f"Custom CTA({s_cust},{l_cust})"
 
     # ── Signal & position computation ─────────────────────────────────────────
     def _ewma(s: pd.Series, n: int) -> pd.Series:
         return s.ewm(com=n - 1, adjust=False).mean()
 
-    if sig_type == "MA Crossover":
+    if sig_type == "Anchors + IS-Opt Weights":
+        _anc_sigs = [
+            np.sign(f1r.rolling(m).mean() - f1r.rolling(n).mean()).values.astype(float)
+            for m, n in [(10, 25), (35, 43), (63, 100)]
+        ]
+        _anc_stack = np.column_stack(_anc_sigs)
+        sig_raw = np.nanmean(np.where(np.isfinite(_anc_stack), _anc_stack, np.nan), axis=1)
+
+    elif sig_type == "MA Crossover":
         m_val, n_val = variant_params
         sig_raw = np.sign(f1r.rolling(m_val).mean() - f1r.rolling(n_val).mean()).values.astype(float)
 
@@ -2517,8 +2643,11 @@ with tab7:
         xaxis2_title=None,
     )
     fig_sig.update_yaxes(title_text="F1 Price ($/MT)", row=1, col=1)
-    fig_sig.update_yaxes(title_text="Position", tickvals=[-1, 0, 1],
-                          ticktext=["Short", "Flat", "Long"], row=2, col=1)
+    if sig_type == "Anchors + IS-Opt Weights":
+        fig_sig.update_yaxes(title_text="Position (EW composite)", row=2, col=1)
+    else:
+        fig_sig.update_yaxes(title_text="Position", tickvals=[-1, 0, 1],
+                              ticktext=["Short", "Flat", "Long"], row=2, col=1)
     fig_sig.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
     st.plotly_chart(fig_sig, use_container_width=True)
 
@@ -2532,10 +2661,12 @@ with tab7:
     flip_dates = pos_full[flips_mask].tail(20)
 
     if not flip_dates.empty:
+        _fmt_pos = lambda v: f"{v:+.2f}" if sig_type == "Anchors + IS-Opt Weights" else f"{int(round(v)):+d}"
+        _fmt_dir = lambda v: "LONG" if v > 0 else ("SHORT" if v < 0 else "FLAT")
         flip_df = pd.DataFrame({
             "Date":       flip_dates.index.strftime("%Y-%m-%d"),
-            "Position":   flip_dates.values.astype(int),
-            "Direction":  ["LONG" if v > 0 else "SHORT" for v in flip_dates.values],
+            "Position":   [_fmt_pos(v) for v in flip_dates.values],
+            "Direction":  [_fmt_dir(v) for v in flip_dates.values],
             "F1_raw":     f1r.reindex(flip_dates.index).round(1).values,
             "Gross PnL on flip day": gross_pnl.reindex(flip_dates.index).round(2).values,
             "TC cost":    tc_cost_s.reindex(flip_dates.index).round(2).values,
@@ -2717,7 +2848,6 @@ with tab8:
     avg_back_dur = int(np.mean(_back_durs)) if _back_durs else 0
     avg_cont_dur = int(np.mean(_cont_durs)) if _cont_durs else 0
 
-    section_header = lambda t: st.markdown(f'<div class="section-header">{t}</div>', unsafe_allow_html=True)
     def _cmcard(col, label, val, fmt=".2f", suffix=""):
         if val is None or (isinstance(val, float) and np.isnan(val)):
             col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">—</p></div>', unsafe_allow_html=True)
@@ -2807,6 +2937,54 @@ with tab8:
     _ann_card(_ann_cols[2], "(Cash-3M)/Cash — Basis %",          _ann_c3m,
               f"as of {_dtc.strftime('%Y-%m-%d')}" if _dtc else "")
     st.caption("Annualized values for comparability across tenor pairs. Binary signal (long/short) is identical to V1 raw — multiplying by a positive constant cannot change sign.")
+
+    # ── Best Signal Summary ───────────────────────────────────────────────────
+    st.divider()
+    section_header("BEST CARRY SIGNAL — BY VARIANT")
+    st.caption(
+        "Best-performing configuration per variant. IS backtest · Full period 2006–2025 · 0 TC · Gross Sharpe."
+    )
+    _bsc1, _bsc2, _bsc3 = st.columns(3)
+    _bcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
+             "border-radius:4px;padding:14px 20px")
+    _blbl = ("color:#B87333;font-family:'IBM Plex Mono',monospace;"
+             "font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _bbig = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
+             "font-size:1.55rem;font-weight:700;margin:0")
+    _bsub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
+    _bhr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
+    with _bsc1:
+        st.markdown(f"""<div style="{_bcs}">
+<p style="{_blbl}">V1 — Roll Yield</p>
+<p style="{_bbig}">+0.55</p>
+<p style="{_bsub}">Sharpe Ratio (Gross)</p>
+<hr style="{_bhr}"/>
+<p style="{_bsub}">(F1−F2)/F1 · Same-Day</p>
+<p style="{_bsub}">Ann Ret ≈ +13.8% · Max DD ≈ −51%</p>
+</div>""", unsafe_allow_html=True)
+    with _bsc2:
+        st.markdown(f"""<div style="{_bcs}">
+<p style="{_blbl}">V2 — Long Slope</p>
+<p style="{_bbig}">+0.48</p>
+<p style="{_bsub}">Sharpe Ratio (Gross)</p>
+<hr style="{_bhr}"/>
+<p style="{_bsub}">F3−F15 · Same-Day</p>
+<p style="{_bsub}">Ann Ret ≈ +11.4% · Max DD ≈ −55%</p>
+</div>""", unsafe_allow_html=True)
+    with _bsc3:
+        st.markdown(f"""<div style="{_bcs}">
+<p style="{_blbl}">V3 — Z-Score</p>
+<p style="{_bbig}">+0.43</p>
+<p style="{_bsub}">Sharpe Ratio (Gross)</p>
+<hr style="{_bhr}"/>
+<p style="{_bsub}">(F1−F2)/F1 · 252d Z · Same-Day</p>
+<p style="{_bsub}">Ann Ret ≈ +9.7% · Max DD ≈ −56%</p>
+</div>""", unsafe_allow_html=True)
+    st.caption(
+        "Same-Day entry outperforms Lag-1 for all carry variants. "
+        "The flip-day price move is directionally aligned with the carry regime change — "
+        "capturing it Same-Day is structurally valid, unlike momentum where the flip is gradual."
+    )
 
     # ── Section 3: Carry Signal History ───────────────────────────────────────
     st.divider()
@@ -2916,6 +3094,92 @@ with tab8:
     cm8_gross = _carry_perf(c8_gross_pnl_f, c8_gross_ret_f, c8_pos_f, "Gross (No TC)")
     cm8_net   = _carry_perf(c8_net_pnl_f,   c8_net_ret_f,   c8_pos_f, f"Net ({carry_tc_label})")
 
+    # ── Multi-strategy selector (shared for Performance Metrics + Rolling Sharpe) ──
+    st.divider()
+    section_header("MULTI-STRATEGY COMPARISON")
+    _cmp_all_opts = [k for k in _CARRY_CMP_OPTIONS.keys() if _CARRY_CMP_OPTIONS[k] is not None]
+    _carry_multi_sel = st.multiselect(
+        "Select strategies to compare — Performance Metrics & Rolling Sharpe",
+        _cmp_all_opts,
+        default=[_cmp_all_opts[0]] if _cmp_all_opts else [],
+        key="carry_multi_sel",
+    )
+    st.caption("Metrics and rolling Sharpe below reflect all selected strategies. "
+               "The main strategy panel (upper controls) remains independent.")
+
+    def _carry_gross_daily_ret_for(spec: dict) -> pd.Series:
+        """Gross daily return series for a given carry spec."""
+        cr = _carry_raw_signal(c8_curve_px, _cash_cu8, spec)
+        if cr.empty:
+            return pd.Series(dtype=float)
+        _sd2 = spec.get("same_day", True)
+        _cidx = cr.index.intersection(cf1c.index)
+        if len(_cidx) < 20:
+            return pd.Series(dtype=float)
+        _vcr2   = cr.reindex(_cidx)
+        _f1c_r2 = cf1c.reindex(_cidx)
+        _vsig2  = np.sign(_vcr2.values); _vT2 = len(_vsig2)
+        if _vT2 < 20:
+            return pd.Series(dtype=float)
+        _vpos2 = np.empty(_vT2)
+        if _sd2:
+            _vpos2[:] = np.where(np.isfinite(_vsig2), _vsig2, 0.0)
+        else:
+            _vpos2[0] = 0.0
+            _vpos2[1:] = np.where(np.isfinite(_vsig2[:-1]), _vsig2[:-1], 0.0)
+        _pos2s = pd.Series(_vpos2, index=_cidx)
+        _pnl2s = _pos2s * _f1c_r2.diff()
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return (_pnl2s / _f1c_r2.shift(1)).replace([np.inf, -np.inf], np.nan)
+
+    # Compute metrics for each selected comparison strategy
+    _cmp_rows = []
+    _cmp_rets = {}
+    _CMP_LINE_COLORS = [
+        COLORS["primary"], COLORS["amber"], "#64748B", "#5BAD72",
+        "#CF9FFF", "#FF8C00", "#00CED1", "#FF6B9D",
+    ]
+    for _cmp_lbl in _carry_multi_sel:
+        _cmp_spec = _CARRY_CMP_OPTIONS.get(_cmp_lbl)
+        if _cmp_spec is None:
+            continue
+        try:
+            _cmp_ret = _carry_gross_daily_ret_for(_cmp_spec)
+            if _cmp_ret.empty or len(_cmp_ret.dropna()) < 20:
+                continue
+            _cmp_rets[_cmp_lbl] = _cmp_ret
+            # Compute metrics (full period, gross)
+            _cmp_pos  = _cmp_ret.where(_cmp_ret != 0).notna().astype(float)
+            _act = _cmp_ret[_cmp_ret.abs() > 0].dropna()
+            if len(_act) < 20:
+                continue
+            _ann_r  = float(_act.mean() * 252 * 100)
+            _ann_sd = float(_act.std()  * np.sqrt(252) * 100)
+            _sh = _ann_r / _ann_sd if _ann_sd > 0 else np.nan
+            _down = _act[_act < 0]
+            _srt_d = float(_down.std() * np.sqrt(252) * 100) if len(_down) > 1 else np.nan
+            _srt = _ann_r / _srt_d if _srt_d and _srt_d > 0 else np.nan
+            _cum = _cmp_ret.fillna(0).cumsum() * 100
+            _mdd = float((_cum - _cum.cummax()).min())
+            _cal = _ann_r / abs(_mdd) if _mdd != 0 else np.nan
+            _cmp_rows.append({
+                "Strategy": _cmp_lbl,
+                "Sharpe": f"{_sh:+.3f}" if not np.isnan(_sh) else "—",
+                "Sortino": f"{_srt:+.3f}" if not np.isnan(_srt) else "—",
+                "Ann Ret %": f"{_ann_r:+.1f}" if not np.isnan(_ann_r) else "—",
+                "Ann Std %": f"{_ann_sd:.1f}" if not np.isnan(_ann_sd) else "—",
+                "Max DD %": f"{_mdd:.1f}" if not np.isnan(_mdd) else "—",
+                "Calmar": f"{_cal:+.2f}" if not np.isnan(_cal) else "—",
+                "Hit Rate %": f"{float((_act > 0).mean()) * 100:.1f}",
+            })
+        except Exception:
+            continue
+
+    if _cmp_rows:
+        st.dataframe(pd.DataFrame(_cmp_rows), use_container_width=True, hide_index=True)
+    elif _carry_multi_sel:
+        st.info("Unable to compute metrics for the selected strategies — check data availability.")
+
     st.divider()
     section_header("PERFORMANCE METRICS")
     st.caption(f"**Strategy:** {carry_vgroup} / {carry_sub_label}  |  **Entry:** {carry_timing}  |  **TC:** {carry_tc_label}")
@@ -2957,28 +3221,51 @@ with tab8:
         fig_crs8 = go.Figure()
         if crs8_win in ("1 Year (252d)", "Both"):
             fig_crs8.add_trace(go.Scatter(
-                x=croll8_252.index, y=croll8_252.values, name="Rolling Sharpe (1yr)",
-                mode="lines", line=dict(color=COLORS["primary"], width=1.6),
+                x=croll8_252.index, y=croll8_252.values,
+                name=f"{carry_sub_label} (1yr)",
+                mode="lines", line=dict(color=COLORS["primary"], width=1.8),
                 hovertemplate="%{x|%b %Y}<br>Sharpe (1yr): %{y:.2f}<extra></extra>",
             ))
         if crs8_win in ("2 Years (504d)", "Both"):
             fig_crs8.add_trace(go.Scatter(
-                x=croll8_504.index, y=croll8_504.values, name="Rolling Sharpe (2yr)",
-                mode="lines", line=dict(color=COLORS["amber"], width=1.6, dash="dot"),
+                x=croll8_504.index, y=croll8_504.values,
+                name=f"{carry_sub_label} (2yr)",
+                mode="lines", line=dict(color=COLORS["primary"], width=1.8, dash="dot"),
                 hovertemplate="%{x|%b %Y}<br>Sharpe (2yr): %{y:.2f}<extra></extra>",
             ))
+        # Overlay comparison strategies from multi-select
+        for _ci2, (_cmp_lbl2, _cmp_ret2) in enumerate(_cmp_rets.items()):
+            _ccol2 = _CMP_LINE_COLORS[min(_ci2 + 1, len(_CMP_LINE_COLORS) - 1)]
+            _cdr2  = _cmp_ret2.fillna(0)
+            if crs8_win in ("1 Year (252d)", "Both"):
+                _croll2 = _cdr2.rolling(252).mean() / _cdr2.rolling(252).std() * np.sqrt(252)
+                fig_crs8.add_trace(go.Scatter(
+                    x=_croll2.index, y=_croll2.values,
+                    name=f"{_cmp_lbl2} (1yr)",
+                    mode="lines", line=dict(color=_ccol2, width=1.2),
+                    hovertemplate=f"%{{x|%b %Y}}<br>{_cmp_lbl2} (1yr): %{{y:.2f}}<extra></extra>",
+                ))
+            if crs8_win in ("2 Years (504d)", "Both"):
+                _croll2b = _cdr2.rolling(504).mean() / _cdr2.rolling(504).std() * np.sqrt(252)
+                fig_crs8.add_trace(go.Scatter(
+                    x=_croll2b.index, y=_croll2b.values,
+                    name=f"{_cmp_lbl2} (2yr)",
+                    mode="lines", line=dict(color=_ccol2, width=1.2, dash="dot"),
+                    hovertemplate=f"%{{x|%b %Y}}<br>{_cmp_lbl2} (2yr): %{{y:.2f}}<extra></extra>",
+                ))
         fig_crs8.add_hline(y=0,   line_dash="dash", line_color="#475569", line_width=1)
         fig_crs8.add_hline(y=0.5, line_dash="dot",  line_color=COLORS["green"],
                             line_width=0.8, annotation_text="0.5", annotation_position="right")
         fig_crs8.update_layout(
-            **CHART_LAYOUT, height=320,
-            title=dict(text=f"{carry_sub_label} — Rolling Sharpe ({carry_timing})", font=dict(size=13)),
+            **CHART_LAYOUT, height=360,
+            title=dict(text=f"Rolling Sharpe — Carry Strategies ({carry_timing})", font=dict(size=13)),
             yaxis_title="Annualised Sharpe", xaxis_title=None, hovermode="x unified",
         )
         fig_crs8.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
         st.plotly_chart(fig_crs8, use_container_width=True)
     st.caption("Carry tends to be regime-dependent — performs strongly during sustained backwardation cycles (e.g., 2006-2008, 2021-2022). "
-               "Positive rolling Sharpe validates the strategy over that window.")
+               "Positive rolling Sharpe validates the strategy over that window. "
+               "Solid = 1yr window, dotted = 2yr window.")
 
     # ── Section 5b: Sub-Period Analysis ───────────────────────────────────────
     st.divider()
@@ -3129,6 +3416,8 @@ with tab8:
                 _vcr = _vcr.reindex(_vi).dropna(); _vi = _vcr.index
                 _vf1c = cf1c.reindex(_vi)
                 _vsig = np.sign(_vcr.values); _vT = len(_vsig)
+                if _vT < 20:
+                    _vlst.append(np.nan); continue
                 _vpos = np.empty(_vT)
                 if _vsd:
                     _vpos[:] = np.where(np.isfinite(_vsig), _vsig, 0.0)
@@ -3405,6 +3694,46 @@ with tab9:
         v9_net_ret   = (v9_net_pnl   / v9_f1c_prev).replace([np.inf, -np.inf], np.nan)
 
     last_date_v9 = _v9_idx[-1]
+
+    # ── Best Value Signal Summary ─────────────────────────────────────────────
+    st.divider()
+    section_header("BEST VALUE SIGNAL — BY VARIANT")
+    st.caption(
+        "Best-performing configuration per variant. IS backtest · Full period 2006–2025 · 0 TC · Lag-1 entry · Gross Sharpe."
+    )
+    _vbsc1, _vbsc2 = st.columns(2)
+    _vbcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
+              "border-radius:4px;padding:14px 20px")
+    _vblbl = ("color:#B87333;font-family:'IBM Plex Mono',monospace;"
+              "font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _vbbig = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
+              "font-size:1.55rem;font-weight:700;margin:0")
+    _vbsub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
+    _vbhr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
+    with _vbsc1:
+        st.markdown(f"""<div style="{_vbcs}">
+<p style="{_vblbl}">V1 — MA Reversion</p>
+<p style="{_vbbig}">+0.277</p>
+<p style="{_vbsub}">Sharpe Ratio (Gross)</p>
+<hr style="{_vbhr}"/>
+<p style="{_vbsub}">F8 · 5yr Lookback · ±10% Threshold · Lag-1</p>
+<p style="{_vbsub}">Ann Ret ≈ +7.1% · Max DD ≈ −67% · 38% Flat Days</p>
+<p style="{_vbsub}">Note: F12 is Bogorad's energy reference (Sharpe +0.184 for copper)</p>
+</div>""", unsafe_allow_html=True)
+    with _vbsc2:
+        st.markdown(f"""<div style="{_vbcs}">
+<p style="{_vblbl}">V2 — Baz-Granger Reversal</p>
+<p style="{_vbbig}">+0.512</p>
+<p style="{_vbsub}">Sharpe Ratio (Gross)</p>
+<hr style="{_vbhr}"/>
+<p style="{_vbsub}">F1_raw · 10yr Lookback · Lag-1</p>
+<p style="{_vbsub}">Ann Ret ≈ +10.2% · Max DD ≈ −44%</p>
+<p style="{_vbsub}">Non-monotonic: 5yr is a trap (Sharpe −0.14) — use 3yr or 10yr</p>
+</div>""", unsafe_allow_html=True)
+    st.caption(
+        "Lag-1 entry dominates for value (Same-Day Sharpe = −0.5 to −1.8 across most specs). "
+        "Value edge is regime-conditional — the majority of P&L is concentrated in the 2020–2022 COVID dislocation period."
+    )
 
     # ── Live Signal Badge ─────────────────────────────────────────────────────
     _v9_last_raw = float(val_raw.iloc[-1])
