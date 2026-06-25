@@ -2135,6 +2135,53 @@ with tab7:
         unsafe_allow_html=True,
     )
 
+    # ── Strategy Preset ───────────────────────────────────────────────────────
+    _MOM_PRESETS = {
+        "MA(35,43) · Lag-1  [WF Best / Default]": {
+            "mom_sig_type": "MA Crossover",
+            "mom_variant":  "MA(35,43) — Best Sharpe [default]",
+            "mom_timing":   "Lag-1 (Next-Day)",
+        },
+        "CTA(9,21) · Lag-1  [Baz-Granger Best]": {
+            "mom_sig_type": "CTA (Baz-Granger)",
+            "mom_variant":  "CTA(9,21) — Best Lag-1 Sharpe [default]",
+            "mom_timing":   "Lag-1 (Next-Day)",
+        },
+        "Anchors EW · Lag-1  [Anchors + IS-Opt]": {
+            "mom_sig_type": "Anchors + IS-Opt Weights",
+            "mom_variant":  "EW Anchors — MA(10,25) + MA(35,43) + MA(63,100)",
+            "mom_timing":   "Lag-1 (Next-Day)",
+        },
+        "MA(35,43) · Same-Day  [Sensitivity Check]": {
+            "mom_sig_type": "MA Crossover",
+            "mom_variant":  "MA(35,43) — Best Sharpe [default]",
+            "mom_timing":   "Same-Day",
+        },
+        "Custom (use controls below)": {},
+    }
+
+    def _apply_mom_preset():
+        cfg = _MOM_PRESETS.get(st.session_state.get("mom_preset", "Custom (use controls below)"), {})
+        for k, v in cfg.items():
+            st.session_state[k] = v
+
+    _mom_preset_col, _mom_preset_info = st.columns([2.5, 3.5])
+    with _mom_preset_col:
+        st.selectbox(
+            "Strategy Preset",
+            list(_MOM_PRESETS.keys()),
+            index=0,
+            key="mom_preset",
+            on_change=_apply_mom_preset,
+        )
+    with _mom_preset_info:
+        st.markdown(
+            '<div style="padding:8px 0;color:#7A7068;font-size:0.78rem;">'
+            'Selecting a preset auto-fills all controls below. '
+            'Switch to <b>Custom</b> to edit individual parameters freely.</div>',
+            unsafe_allow_html=True,
+        )
+
     # ── Controls ──────────────────────────────────────────────────────────────
     c1, c2, c3, c4 = st.columns([1.6, 1.8, 1.4, 1.4])
 
@@ -2173,6 +2220,9 @@ with tab7:
                 "EW Anchors — MA(10,25) + MA(35,43) + MA(63,100)": ("anchors_ew",),
             }
             default_idx = 0
+        # Guard: reset if session value no longer valid for current sig_type
+        if st.session_state.get("mom_variant", "") not in variant_opts:
+            st.session_state["mom_variant"] = list(variant_opts.keys())[default_idx]
         variant_label = st.selectbox(
             "Strategy Variant", list(variant_opts.keys()),
             index=default_idx, key="mom_variant",
@@ -2744,6 +2794,58 @@ with tab8:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Strategy Preset ───────────────────────────────────────────────────────
+    _CARRY_PRESETS = {
+        "V1 · (F1-F2)/F1 · Same-Day  [Best V1]": {
+            "carry_vgroup":  "V1 — Roll Yield",
+            "carry_subv":    "(F1-F2)/F1",
+            "carry_timing":  "Same-Day",
+        },
+        "V2 · F3-F15 Slope · Same-Day  [Best V2]": {
+            "carry_vgroup":  "V2 — Long Slope",
+            "carry_subv":    "F3-F15 Slope",
+            "carry_timing":  "Same-Day",
+        },
+        "V3 · Z-score · Same-Day  [Best V3]": {
+            "carry_vgroup":  "V3 — Z-score",
+            "carry_subv":    "Z-score (252d window)",
+            "carry_timing":  "Same-Day",
+        },
+        "V1 · (F1-F2)/F1 · Lag-1  [Sensitivity Check]": {
+            "carry_vgroup":  "V1 — Roll Yield",
+            "carry_subv":    "(F1-F2)/F1",
+            "carry_timing":  "Lag-1 (Next-Day)",
+        },
+        "V1 · (Cash-3M)/Cash · Same-Day": {
+            "carry_vgroup":  "V1 — Roll Yield",
+            "carry_subv":    "(Cash-3M)/Cash",
+            "carry_timing":  "Same-Day",
+        },
+        "Custom (use controls below)": {},
+    }
+
+    def _apply_carry_preset():
+        cfg = _CARRY_PRESETS.get(st.session_state.get("carry_preset", "Custom (use controls below)"), {})
+        for k, v in cfg.items():
+            st.session_state[k] = v
+
+    _c8_pre_col, _c8_pre_info = st.columns([2.5, 3.5])
+    with _c8_pre_col:
+        st.selectbox(
+            "Strategy Preset",
+            list(_CARRY_PRESETS.keys()),
+            index=0,
+            key="carry_preset",
+            on_change=_apply_carry_preset,
+        )
+    with _c8_pre_info:
+        st.markdown(
+            '<div style="padding:8px 0;color:#7A7068;font-size:0.78rem;">'
+            'Selecting a preset auto-fills all controls below. '
+            'Switch to <b>Custom</b> to edit individual parameters freely.</div>',
+            unsafe_allow_html=True,
+        )
+
     # ── Controls ──────────────────────────────────────────────────────────────
     c8_c1, c8_c2, c8_c3, c8_c4 = st.columns([2, 2, 1.5, 1.5])
     with c8_c1:
@@ -2760,6 +2862,9 @@ with tab8:
                             for j, k in [(3,15),(4,16),(5,17),(6,18),(7,19),(8,20),(9,21),(10,22),(11,23),(12,24)]}
         else:
             _c8_sub_opts = {"Z-score (252d window)": 252}
+        # Guard: reset if session value no longer valid for current carry_vgroup
+        if st.session_state.get("carry_subv", "") not in _c8_sub_opts:
+            st.session_state["carry_subv"] = list(_c8_sub_opts.keys())[0]
         carry_sub_label = st.selectbox("Sub-Variant", list(_c8_sub_opts.keys()), key="carry_subv")
         carry_sub_val = _c8_sub_opts[carry_sub_label]
     with c8_c3:
@@ -3601,6 +3706,64 @@ with tab9:
       </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # ── Strategy Preset ───────────────────────────────────────────────────────
+    _VAL_PRESETS = {
+        "V2 — Baz-Granger · 10yr · Lag-1  [Best Overall]": {
+            "val_vgroup":   "V2 — Baz-Granger Reversal",
+            "val_lb":       "10yr (2520d)",
+            "val_timing":   "Lag-1 (Next-Day)",
+        },
+        "V1 — F8 · 5yr · ±10% · Lag-1  [Empirical Optimum]": {
+            "val_vgroup":   "V1 — MA Reversion",
+            "val_contract": "F8",
+            "val_lb":       "5yr  (1260d)",
+            "val_thr":      "±10% (default)",
+            "val_timing":   "Lag-1 (Next-Day)",
+        },
+        "V1 — F12 · 5yr · ±10% · Lag-1  [Bogorad Reference]": {
+            "val_vgroup":   "V1 — MA Reversion",
+            "val_contract": "F12",
+            "val_lb":       "5yr  (1260d)",
+            "val_thr":      "±10% (default)",
+            "val_timing":   "Lag-1 (Next-Day)",
+        },
+        "V2 — Baz-Granger · 3yr · Lag-1  [Alternative Lookback]": {
+            "val_vgroup":   "V2 — Baz-Granger Reversal",
+            "val_lb":       "3yr  (756d)",
+            "val_timing":   "Lag-1 (Next-Day)",
+        },
+        "V1 — F8 · 7yr · ±10% · Lag-1  [Longer-Window V1]": {
+            "val_vgroup":   "V1 — MA Reversion",
+            "val_contract": "F8",
+            "val_lb":       "7yr  (1764d)",
+            "val_thr":      "±10% (default)",
+            "val_timing":   "Lag-1 (Next-Day)",
+        },
+        "Custom (use controls below)": {},
+    }
+
+    def _apply_val_preset():
+        cfg = _VAL_PRESETS.get(st.session_state.get("val_preset", "Custom (use controls below)"), {})
+        for k, v in cfg.items():
+            st.session_state[k] = v
+
+    _v9_pre_col, _v9_pre_info = st.columns([2.8, 3.2])
+    with _v9_pre_col:
+        st.selectbox(
+            "Strategy Preset",
+            list(_VAL_PRESETS.keys()),
+            index=0,
+            key="val_preset",
+            on_change=_apply_val_preset,
+        )
+    with _v9_pre_info:
+        st.markdown(
+            '<div style="padding:8px 0;color:#7A7068;font-size:0.78rem;">'
+            'Selecting a preset auto-fills all controls below — all sections update together. '
+            'Switch to <b>Custom</b> to edit individual parameters freely.</div>',
+            unsafe_allow_html=True,
+        )
 
     # ── Controls ──────────────────────────────────────────────────────────────
     v9_c1, v9_c2, v9_c3, v9_c4, v9_c5, v9_c6 = st.columns([1.5, 1.2, 1.5, 1.3, 1.2, 1.4])
