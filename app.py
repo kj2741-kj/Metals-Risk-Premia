@@ -2202,7 +2202,7 @@ with tab7:
         )
 
     # ── Controls ──────────────────────────────────────────────────────────────
-    c1, c2, c3, c4 = st.columns([1.6, 1.8, 1.4, 1.4])
+    c1, c2, c3 = st.columns([1.6, 1.8, 1.4])
 
     with c1:
         sig_type = st.selectbox(
@@ -2256,13 +2256,13 @@ with tab7:
         )
         same_day = timing_label == "Same-Day"
 
-    with c4:
-        tc_bps_map = _tc_label_map(float(f1c.dropna().iloc[-1]))
-        tc_label = st.selectbox(
-            "TC (bps, round-trip)", list(tc_bps_map.keys()),
-            index=0, key="mom_tc",
-        )
-        tc_bps = tc_bps_map[tc_label]
+    # TC is shared from Section 1 OOS dropdown — no separate control here
+    tc_bps   = _oos_tc_bps
+    tc_label = _oos_tc_label
+    st.caption(
+        f"TC sensitivity controlled by **Section 1 — OOS TC** dropdown above  ·  "
+        f"Active: **{tc_label}**"
+    )
 
     if sig_type == "Anchors + IS-Opt Weights":
         st.info(
