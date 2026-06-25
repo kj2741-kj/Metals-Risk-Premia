@@ -2519,8 +2519,11 @@ with tab7:
     with rs_c2:
         rs_window = st.radio("Window", ["1 Year (252d)", "2 Years (504d)", "Both"],
                              index=2, key="rs_window", horizontal=False)
+        rs_basis = st.radio("Returns", ["Gross", "Net of TC"], index=0,
+                            key="rs_basis_mom", horizontal=False)
 
-    _dr = gross_ret_all.fillna(0)
+    _rs_net = rs_basis.startswith("Net")
+    _dr = (net_ret_all if _rs_net else gross_ret_all).fillna(0)
     roll_252 = (_dr.rolling(252).mean() / _dr.rolling(252).std() * np.sqrt(252))
     roll_504 = (_dr.rolling(504).mean() / _dr.rolling(504).std() * np.sqrt(252))
 
@@ -2544,12 +2547,13 @@ with tab7:
                          line_width=0.8, annotation_text="0.5", annotation_position="right")
         fig_rs.update_layout(
             **CHART_LAYOUT, height=320,
-            title=dict(text=f"{variant_label} — Rolling Sharpe ({timing_label})", font=dict(size=13)),
+            title=dict(text=f"{variant_label} — Rolling Sharpe ({timing_label}, {'Net of TC' if _rs_net else 'Gross'})", font=dict(size=13)),
             yaxis_title="Annualised Sharpe", xaxis_title=None, hovermode="x unified",
         )
         fig_rs.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
         st.plotly_chart(fig_rs, use_container_width=True)
-    st.caption(f"Signal computed over full {_m_is_yr0}–{_m_is_yr1} history. Rolling Sharpe uses gross returns. "
+    st.caption(f"Signal computed over full {_m_is_yr0}–{_m_is_yr1} history. "
+               f"Rolling Sharpe uses {'net (' + tc_label + ')' if _rs_net else 'gross'} returns. "
                "Positive/negative swings show regime dependence — a consistently positive curve indicates robustness.")
 
     # ── Cumulative PnL chart ──────────────────────────────────────────────────
@@ -3432,7 +3436,10 @@ with tab8:
     with crs8_c2:
         crs8_win = st.radio("Window", ["1 Year (252d)", "2 Years (504d)", "Both"],
                              index=2, key="carry_rs_window", horizontal=False)
-    _cdr8 = c8_gross_ret_all.fillna(0)
+        crs8_basis = st.radio("Returns", ["Gross", "Net of TC"], index=0,
+                              key="carry_rs_basis", horizontal=False)
+    _crs8_net = crs8_basis.startswith("Net")
+    _cdr8 = (c8_net_ret_all if _crs8_net else c8_gross_ret_all).fillna(0)
     croll8_252 = (_cdr8.rolling(252).mean() / _cdr8.rolling(252).std() * np.sqrt(252))
     croll8_504 = (_cdr8.rolling(504).mean() / _cdr8.rolling(504).std() * np.sqrt(252))
     with crs8_c1:
@@ -3476,11 +3483,13 @@ with tab8:
                             line_width=0.8, annotation_text="0.5", annotation_position="right")
         fig_crs8.update_layout(
             **CHART_LAYOUT, height=360,
-            title=dict(text=f"Rolling Sharpe — Carry Strategies ({carry_timing})", font=dict(size=13)),
+            title=dict(text=f"Rolling Sharpe — Carry Strategies ({carry_timing}, {'Net of TC' if _crs8_net else 'Gross'})", font=dict(size=13)),
             yaxis_title="Annualised Sharpe", xaxis_title=None, hovermode="x unified",
         )
         fig_crs8.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
         st.plotly_chart(fig_crs8, use_container_width=True)
+        if _crs8_net:
+            st.caption(f"Main line is net of {carry_tc_label}; overlay comparison strategies remain gross.")
     st.caption("Carry tends to be regime-dependent — performs strongly during sustained backwardation cycles (e.g., 2006-2008, 2021-2022). "
                "Positive rolling Sharpe validates the strategy over that window. "
                "Solid = 1yr window, dotted = 2yr window.")
@@ -4517,7 +4526,10 @@ with tab9:
     with vrs9_c2:
         vrs9_win = st.radio("Window", ["1 Year (252d)", "2 Years (504d)", "Both"],
                              index=2, key="val_rs_window", horizontal=False)
-    _vdr9 = v9_gross_ret.fillna(0)
+        vrs9_basis = st.radio("Returns", ["Gross", "Net of TC"], index=0,
+                              key="val_rs_basis", horizontal=False)
+    _vrs9_net = vrs9_basis.startswith("Net")
+    _vdr9 = (v9_net_ret if _vrs9_net else v9_gross_ret).fillna(0)
     vroll9_252 = _vdr9.rolling(252).mean() / _vdr9.rolling(252).std() * np.sqrt(252)
     vroll9_504 = _vdr9.rolling(504).mean() / _vdr9.rolling(504).std() * np.sqrt(252)
     with vrs9_c1:
@@ -4541,7 +4553,7 @@ with tab9:
                             line_width=1.2, annotation_text="2022", annotation_position="top right")
         fig_vrs9.update_layout(
             **CHART_LAYOUT, height=320,
-            title=dict(text=f"{val_vgroup} — Rolling Sharpe ({val_timing})", font=dict(size=13)),
+            title=dict(text=f"{val_vgroup} — Rolling Sharpe ({val_timing}, {'Net of TC' if _vrs9_net else 'Gross'})", font=dict(size=13)),
             yaxis_title="Annualised Sharpe", xaxis_title=None, hovermode="x unified",
         )
         fig_vrs9.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
@@ -5364,9 +5376,18 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     # ── Section 7: Rolling Sharpe ─────────────────────────────────────────────
     st.divider()
     section_header("ROLLING SHARPE (252-DAY)")
+    _p10_rsh_cc1, _p10_rsh_cc2 = st.columns([4, 1])
+    with _p10_rsh_cc1:
+        st.caption(f"Rolling 1yr Sharpe — {_p10_wt_short.title().replace('-',' ')} portfolio vs each sleeve. "
+                   f"Net uses the selected {_p10_tc_label}.")
+    with _p10_rsh_cc2:
+        _p10_rsh_basis = st.radio("Returns", ["Gross", "Net of TC"], index=0,
+                                  key="p10_rsh_basis", horizontal=False)
+    _p10_rsh_net = _p10_rsh_basis.startswith("Net")
+    _p10_rsh_tc  = _p10_tc_bps if _p10_rsh_net else 0
 
     def _p10_roll_sh(pos: pd.Series, window: int = 252) -> pd.Series:
-        ret = _p10_ret(pos, _p10_tc_bps)
+        ret = _p10_ret(pos, _p10_rsh_tc)
         act = ret.where(pos != 0)
         return act.rolling(window, min_periods=window // 2).apply(
             lambda x: (x.mean() / x.std(ddof=1) * np.sqrt(252)) if x.std(ddof=1) > 0 else np.nan,
@@ -5380,10 +5401,10 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
 
     fig_p10_rsh = go.Figure()
     for _name, _series, _color, _width in [
-        ("EW Portfolio",       _p10_rsh_port, COLORS["primary"], 2.2),
+        (f"{_p10_wt_short.title().replace('-',' ')} Portfolio", _p10_rsh_port, COLORS["primary"], 2.2),
         ("Momentum",           _p10_rsh_mom,  "#5BAD72",         1.0),
-        ("Carry",              _p10_rsh_car,  COLORS["amber"],   1.0),
-        ("Value",              _p10_rsh_val,  "#7B8FC0",         1.0),
+        ("Carry-Mom 20d",      _p10_rsh_car,  COLORS["amber"],   1.0),
+        ("Value V1",           _p10_rsh_val,  "#7B8FC0",         1.0),
     ]:
         fig_p10_rsh.add_trace(go.Scatter(
             x=_series.index, y=_series.values,
