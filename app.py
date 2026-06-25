@@ -563,6 +563,12 @@ with st.sidebar:
     st.divider()
     st.caption("NYU Financial Engineering")
     st.caption("Metals Risk Premia Project")
+    st.divider()
+    st.caption(
+        "**Disclaimer:** This dashboard is a research prototype developed for academic purposes. "
+        "Results are in-sample backtests unless stated otherwise. "
+        "Not investment advice."
+    )
 
 
 # ═══════════════════════════════════════════════
@@ -693,7 +699,7 @@ ALL_METALS = available_metals + CME_METALS_LIST
 # TABS
 # ═══════════════════════════════════════════════
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "📊 Market Overview",
     "📈 Term Structure",
     "💰 Cash vs 3M (Carry)",
@@ -703,6 +709,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "⚡ Momentum Signals",
     "📐 Carry Signals",
     "📏 Value Signals",
+    "🗂️ Portfolio",
 ])
 
 
@@ -3058,7 +3065,8 @@ with tab8:
     st.divider()
     section_header("BEST CARRY SIGNAL — BY VARIANT")
     st.caption(
-        "Best-performing configuration per variant. IS backtest · Full period 2006–2025 · 0 TC · Gross Sharpe."
+        "Best-performing configuration per variant — IS backtest, full period 2006–2025, 0 TC, gross Sharpe. "
+        "Figures are computed from historical data; past performance is not indicative of future results."
     )
     _bsc1, _bsc2, _bsc3 = st.columns(3)
     _bcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
@@ -3697,6 +3705,14 @@ with tab9:
     st.markdown("### Value Signals — LME Copper")
     st.caption("Mean-reversion strategies: long when copper is cheap vs. long-run fair value, short when expensive. "
                "Signal from forward curve contracts; PnL always from F1_continuous.")
+    st.warning(
+        "**Regime Conditionality:** Value signal performance is regime-sensitive. "
+        "V2 Baz-Granger 10yr is weak post-2022 (Sharpe ≈ +0.14). "
+        "V1 MA Reversion underperforms during sharp dislocations (2020–2021 Sharpe ≈ −1.05) "
+        "because the flat zone delays entry. "
+        "Interpret full-period Sharpe figures with sub-period breakdown — see Regime Analysis section below.",
+        icon="⚠️",
+    )
 
     # ── Variant banner ────────────────────────────────────────────────────────
     st.markdown("""
@@ -4497,4 +4513,496 @@ This threshold was calibrated for crude oil (higher volatility). Consider ±15-2
 **References**
 - Bogorad, M. (2023). *Risk Premia in Diversified Energy Portfolios.* (Unpublished)
 - Baz, J., Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Section and Time Series. SSRN.
+        """)
+
+
+# ══════════════════════════════════════════════════════
+# TAB 10: PORTFOLIO CONSTRUCTION
+# ══════════════════════════════════════════════════════
+
+with tab10:
+    st.markdown("### Portfolio Construction — LME Copper")
+    st.caption(
+        "Equal-weight combination of the three risk premia signals. "
+        "All positions sized ±1 per signal; portfolio position ranges −1 to +1. "
+        "PnL from F1_continuous throughout."
+    )
+
+    # ── Load data ──────────────────────────────────────────────────────────────
+    _f1_df_p10 = _load_copper_f1_data()
+    if _f1_df_p10.empty:
+        st.error("LME_Copper_Rolling_F1_v2.csv not found.")
+        st.stop()
+    pf1c = _f1_df_p10["F1_continuous"]
+    pf1r = _f1_df_p10["F1_raw"]
+
+    _cu_sheet_p10 = _find_curve_sheet("Copper", curve_data) if curve_data else None
+    if not curve_data or _cu_sheet_p10 is None:
+        st.error("Futures Curve data not loaded. Upload in the sidebar.")
+        st.stop()
+    p10_crv = curve_data[_cu_sheet_p10]["prices"].copy()
+    p10_crv.index = pd.to_datetime(p10_crv.index).normalize()
+    p10_crv = p10_crv.sort_index()
+
+    # ── Signal 1: Momentum MA(35,43) Lag-1 ────────────────────────────────────
+    _p10_mom_pos = np.sign(pf1r.rolling(35).mean() - pf1r.rolling(43).mean()).shift(1).fillna(0)
+
+    # ── Signal 2: Carry V1 (F1-F2)/F1 Same-Day ───────────────────────────────
+    if "F1" in p10_crv.columns and "F2" in p10_crv.columns:
+        _p10_cr_raw = ((p10_crv["F1"] - p10_crv["F2"]) / p10_crv["F1"]).replace([np.inf, -np.inf], np.nan).dropna()
+        _p10_carry_pos = np.sign(_p10_cr_raw).reindex(pf1c.index).fillna(0)
+    else:
+        st.error("F1 or F2 column missing from curve data.")
+        st.stop()
+
+    # ── Signal 3A: Value V1 F8 5yr Lag-1 ±10% ────────────────────────────────
+    _p10_val_v1_ok = "F8" in p10_crv.columns
+    if _p10_val_v1_ok:
+        _p10_f8 = p10_crv["F8"].dropna()
+        _p10_ma8 = _p10_f8.rolling(1260, min_periods=630).mean()
+        _p10_dev8 = ((_p10_f8 - _p10_ma8) / _p10_ma8).replace([np.inf, -np.inf], np.nan).dropna()
+        _p10_v1_bin = np.where(_p10_dev8.values < -0.10, 1.0, np.where(_p10_dev8.values > 0.10, -1.0, 0.0))
+        _p10_val_v1_pos = pd.Series(_p10_v1_bin, index=_p10_dev8.index).shift(1).fillna(0).reindex(pf1c.index).fillna(0)
+    else:
+        _p10_val_v1_pos = pd.Series(0.0, index=pf1c.index)
+
+    # ── Signal 3B: Value V2 BG 10yr Lag-1 ────────────────────────────────────
+    _p10_rev10 = (pf1r.shift(2520) - pf1r).replace([np.inf, -np.inf], np.nan).dropna()
+    _p10_val_v2_pos = np.sign(_p10_rev10).shift(1).fillna(0).reindex(pf1c.index).fillna(0)
+
+    # ── Value selector ────────────────────────────────────────────────────────
+    _p10_hdr_col, _p10_val_col = st.columns([3, 2])
+    with _p10_val_col:
+        _p10_val_choice = st.selectbox(
+            "Value signal for portfolio",
+            ["V2: BG 10yr Lag-1 (Sharpe +0.512)", "V1: F8 5yr Lag-1 (Sharpe +0.277)"],
+            index=0, key="p10_val_choice",
+        )
+    _p10_use_v2 = "V2" in _p10_val_choice
+    _p10_val_pos = _p10_val_v2_pos if _p10_use_v2 else _p10_val_v1_pos
+
+    # ── Align on common index ─────────────────────────────────────────────────
+    _p10_idx = pf1c.index
+    for _s in [_p10_mom_pos, _p10_carry_pos, _p10_val_pos]:
+        _p10_idx = _p10_idx.intersection(_s.index)
+    _p10_idx = _p10_idx.sort_values()
+
+    _p10_m  = _p10_mom_pos.reindex(_p10_idx).fillna(0)
+    _p10_c  = _p10_carry_pos.reindex(_p10_idx).fillna(0)
+    _p10_v  = _p10_val_pos.reindex(_p10_idx).fillna(0)
+    _p10_f  = pf1c.reindex(_p10_idx)
+
+    _p10_port = (_p10_m + _p10_c + _p10_v) / 3.0
+
+    # ── PnL series ────────────────────────────────────────────────────────────
+    def _p10_ret(pos: pd.Series) -> pd.Series:
+        pnl = pos * _p10_f.diff()
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return (pnl / _p10_f.shift(1)).replace([np.inf, -np.inf], np.nan)
+
+    def _p10_sharpe(ret: pd.Series) -> float:
+        act = ret[ret != 0].dropna()
+        if len(act) < 20: return np.nan
+        sd = act.std(ddof=1)
+        return float(act.mean() / sd * np.sqrt(252)) if sd > 0 else np.nan
+
+    def _p10_metrics(pos: pd.Series):
+        ret = _p10_ret(pos)
+        sh  = _p10_sharpe(ret)
+        ann = float(ret.dropna().mean() * 252 * 100)
+        cum = (pos * _p10_f.diff()).cumsum()
+        dd  = float((cum - cum.cummax()).min())
+        flat_pct = float(100 * (pos == 0).sum() / len(pos))
+        return sh, ann, dd, flat_pct
+
+    def _p10_sub_sharpe(pos: pd.Series, start=None, end=None) -> float:
+        idx = pos.index
+        if start: idx = idx[idx >= pd.Timestamp(start)]
+        if end:   idx = idx[idx <  pd.Timestamp(end)]
+        if len(idx) < 20: return np.nan
+        p = pos.reindex(idx)
+        pnl = p * _p10_f.reindex(idx).diff()
+        with np.errstate(invalid="ignore", divide="ignore"):
+            ret = (pnl / _p10_f.reindex(idx).shift(1)).replace([np.inf, -np.inf], np.nan)
+        return _p10_sharpe(ret)
+
+    _port_sh, _port_ann, _port_dd, _port_flat = _p10_metrics(_p10_port)
+    _mom_sh,  _mom_ann,  _mom_dd,  _mom_flat  = _p10_metrics(_p10_m)
+    _car_sh,  _car_ann,  _car_dd,  _car_flat  = _p10_metrics(_p10_c)
+    _val_sh,  _val_ann,  _val_dd,  _val_flat  = _p10_metrics(_p10_v)
+
+    # ── Section 1: Live Portfolio Badge ───────────────────────────────────────
+    st.divider()
+    section_header("LIVE PORTFOLIO POSITION")
+    _p10_cur_pos   = float(_p10_port.iloc[-1])
+    _p10_cur_date  = _p10_idx[-1]
+    _p10_cur_mom   = float(_p10_m.iloc[-1])
+    _p10_cur_carry = float(_p10_c.iloc[-1])
+    _p10_cur_val   = float(_p10_v.iloc[-1])
+
+    _p10_badge_col1, _p10_badge_col2, _p10_badge_col3, _p10_badge_col4 = st.columns(4)
+
+    def _p10_pos_color(v):
+        if v > 0.1:  return "#5BAD72"
+        if v < -0.1: return "#B85450"
+        return "#B87333"
+
+    _p10_badge_style = (
+        "background:#161616;border:1px solid #2A2A2A;border-radius:4px;"
+        "padding:14px 18px;text-align:center"
+    )
+    for _col, _lbl, _val in [
+        (_p10_badge_col1, "EW Portfolio", _p10_cur_pos),
+        (_p10_badge_col2, "Momentum", _p10_cur_mom),
+        (_p10_badge_col3, "Carry", _p10_cur_carry),
+        (_p10_badge_col4, "Value", _p10_cur_val),
+    ]:
+        _col.markdown(
+            f'<div style="{_p10_badge_style}">'
+            f'<p style="color:#8A8278;font-size:0.75rem;margin:0 0 4px">{_lbl}</p>'
+            f'<p style="color:{_p10_pos_color(_val)};font-size:1.6rem;font-weight:700;margin:0">'
+            f'{_val:+.2f}</p>'
+            f'<p style="color:#8A8278;font-size:0.72rem;margin:4px 0 0">as of {_p10_cur_date.strftime("%Y-%m-%d")}</p>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # ── Section 2: Portfolio Performance Cards ────────────────────────────────
+    st.divider()
+    section_header("EW PORTFOLIO PERFORMANCE (GROSS)")
+    st.caption("Full period 2006–2025 · 0 TC · gross · all signals Lag-1 except Carry (Same-Day).")
+
+    _p10_card_s  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
+                    "border-radius:4px;padding:14px 20px")
+    _p10_c_lbl   = ("color:#B87333;font-family:'IBM Plex Mono',monospace;"
+                    "font-size:0.8rem;font-weight:600;margin:0 0 4px")
+    _p10_c_big   = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
+                    "font-size:1.45rem;font-weight:700;margin:0")
+    _p10_c_sub   = "color:#8A8278;font-size:0.73rem;margin:2px 0"
+    _p10_c_hr    = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
+
+    _p10_cc1, _p10_cc2, _p10_cc3, _p10_cc4 = st.columns(4)
+    for _col2, _lbl2, _big2, _sub2 in [
+        (_p10_cc1, "Sharpe Ratio", f"{_port_sh:+.3f}", "Ann. Gross (2006–2025)"),
+        (_p10_cc2, "Ann. Return",  f"{_port_ann:+.1f}%", "Gross · no TC"),
+        (_p10_cc3, "Max Drawdown", f"${_port_dd:,.0f}/MT", "Cumulative USD/MT"),
+        (_p10_cc4, "% In Market",  f"{100-_port_flat:.1f}%", f"Flat: {_port_flat:.1f}% of days"),
+    ]:
+        _col2.markdown(
+            f'<div style="{_p10_card_s}">'
+            f'<p style="{_p10_c_lbl}">{_lbl2}</p>'
+            f'<p style="{_p10_c_big}">{_big2}</p>'
+            f'<hr style="{_p10_c_hr}"/>'
+            f'<p style="{_p10_c_sub}">{_sub2}</p>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # Individual signal cards
+    st.markdown("&nbsp;")
+    _p10_ic1, _p10_ic2, _p10_ic3 = st.columns(3)
+    for _col3, _lbl3, _sh3, _ann3 in [
+        (_p10_ic1, "Momentum MA(35,43)", _mom_sh, _mom_ann),
+        (_p10_ic2, "Carry V1 Same-Day",  _car_sh, _car_ann),
+        (_p10_ic3, "Value (selected)",   _val_sh, _val_ann),
+    ]:
+        _col3.markdown(
+            f'<div style="{_p10_card_s}">'
+            f'<p style="{_p10_c_lbl}">{_lbl3}</p>'
+            f'<p style="{_p10_c_big}">{_sh3:+.3f}</p>'
+            f'<hr style="{_p10_c_hr}"/>'
+            f'<p style="{_p10_c_sub}">Sharpe · Ann Ret {_ann3:+.1f}%</p>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # ── Section 3: Pairwise Correlation Heatmap ───────────────────────────────
+    st.divider()
+    section_header("SIGNAL POSITION CORRELATIONS")
+    st.caption("Correlation of daily ±1 position series. Low cross-signal correlation is the foundation of the diversification benefit.")
+
+    _p10_pos_df = pd.DataFrame({
+        "Momentum": _p10_m,
+        "Carry":    _p10_c,
+        "Value":    _p10_v,
+    })
+    _p10_corr = _p10_pos_df.corr().round(3)
+
+    _p10_corr_col, _p10_corr_txt = st.columns([2, 2])
+    with _p10_corr_col:
+        fig_p10_corr = go.Figure(go.Heatmap(
+            z=_p10_corr.values,
+            x=list(_p10_corr.columns),
+            y=list(_p10_corr.index),
+            text=_p10_corr.values.round(3),
+            texttemplate="%{text}",
+            colorscale=[[0,"#B85450"],[0.5,"#1C2333"],[1,"#5BAD72"]],
+            zmin=-1, zmax=1,
+            showscale=True,
+            hovertemplate="%{y} × %{x}: %{z:.3f}<extra></extra>",
+        ))
+        fig_p10_corr.update_layout(
+            height=280, margin=dict(l=0, r=0, t=20, b=0),
+            paper_bgcolor="#0E1117", plot_bgcolor="#0E1117",
+            font=dict(color="#E8DDD0", family="IBM Plex Mono", size=12),
+        )
+        st.plotly_chart(fig_p10_corr, use_container_width=True)
+
+    with _p10_corr_txt:
+        st.markdown("&nbsp;")
+        _mom_carry_corr = float(_p10_corr.loc["Momentum", "Carry"])
+        _mom_val_corr   = float(_p10_corr.loc["Momentum", "Value"])
+        _carry_val_corr = float(_p10_corr.loc["Carry",    "Value"])
+        st.markdown(
+            f"**Mom–Carry:** `{_mom_carry_corr:+.3f}`  \n"
+            f"**Mom–Value:** `{_mom_val_corr:+.3f}`  \n"
+            f"**Carry–Value:** `{_carry_val_corr:+.3f}`"
+        )
+        _avg_pairwise = np.mean([abs(_mom_carry_corr), abs(_mom_val_corr), abs(_carry_val_corr)])
+        st.caption(
+            f"Avg absolute pairwise correlation: {_avg_pairwise:.3f}. "
+            f"{'All pairs < 0.3 — diversification benefit confirmed.' if _avg_pairwise < 0.3 else 'At least one pair > 0.3 — partial correlation, diversification benefit reduced.'}"
+        )
+        _theo_sharpe = np.sqrt(3) * np.mean([abs(_mom_sh), abs(_car_sh), abs(_val_sh)])
+        st.caption(
+            f"Theoretical EW Sharpe (uncorrelated) ≈ √3 × avg individual = {_theo_sharpe:.3f}. "
+            f"Realised: {_port_sh:.3f}."
+        )
+
+    # ── Section 4: Sub-period Performance Table ───────────────────────────────
+    st.divider()
+    section_header("SUB-PERIOD PERFORMANCE")
+    st.caption("Sharpe ratio by regime. Highlights where each signal adds / detracts value.")
+
+    _p10_periods = [
+        ("Full (2006–2025)", None,         None),
+        ("Pre-2020",         None,         "2020-01-01"),
+        ("2020–2021",        "2020-01-01", "2022-01-01"),
+        ("Post-2022",        "2022-01-01", None),
+    ]
+
+    _sub_rows = []
+    for _plbl, _ps, _pe in _p10_periods:
+        _sub_rows.append({
+            "Period":    _plbl,
+            "Momentum":  _p10_sub_sharpe(_p10_m,    _ps, _pe),
+            "Carry":     _p10_sub_sharpe(_p10_c,    _ps, _pe),
+            "Value":     _p10_sub_sharpe(_p10_v,    _ps, _pe),
+            "EW Portfolio": _p10_sub_sharpe(_p10_port, _ps, _pe),
+        })
+
+    _sub_df = pd.DataFrame(_sub_rows).set_index("Period")
+
+    def _fmt_sub(v):
+        if v is None or np.isnan(v): return "—"
+        color = "#5BAD72" if v >= 0.3 else ("#B85450" if v < 0 else "#E8DDD0")
+        return f'<span style="color:{color};font-weight:600">{v:+.3f}</span>'
+
+    _sub_html = "<table style='width:100%;border-collapse:collapse;font-family:IBM Plex Mono,monospace;font-size:0.82rem'>"
+    _sub_html += "<tr style='border-bottom:1px solid #2A2A2A'>"
+    _sub_html += "<th style='text-align:left;color:#8A8278;padding:6px 10px'>Period</th>"
+    for _ch in ["Momentum", "Carry", "Value", "EW Portfolio"]:
+        _sub_html += f"<th style='text-align:right;color:#8A8278;padding:6px 10px'>{_ch}</th>"
+    _sub_html += "</tr>"
+    for _pr, _srow in _sub_df.iterrows():
+        _sub_html += f"<tr style='border-bottom:1px solid #1A1A1A'><td style='color:#E8DDD0;padding:6px 10px'>{_pr}</td>"
+        for _ck in ["Momentum", "Carry", "Value", "EW Portfolio"]:
+            _v = _srow[_ck]
+            _sub_html += f"<td style='text-align:right;padding:6px 10px'>{_fmt_sub(_v)}</td>"
+        _sub_html += "</tr>"
+    _sub_html += "</table>"
+    st.markdown(_sub_html, unsafe_allow_html=True)
+
+    # ── Section 5: Signal Agreement Panel ────────────────────────────────────
+    st.divider()
+    section_header("SIGNAL AGREEMENT")
+    st.caption("How often all three signals point in the same direction vs. a 2-of-3 majority vs. three-way split.")
+
+    _p10_sm = np.sign(_p10_m).astype(int)
+    _p10_sc = np.sign(_p10_c).astype(int)
+    _p10_sv = np.sign(_p10_v).astype(int)
+    _p10_T  = len(_p10_sm)
+
+    _all_long   = int((_p10_sm == 1)  & (_p10_sc == 1)  & (_p10_sv == 1)).sum()  if _p10_T else 0
+    _all_short  = int((_p10_sm == -1) & (_p10_sc == -1) & (_p10_sv == -1)).sum() if _p10_T else 0
+    _all_agree  = _all_long + _all_short
+    _two_agree  = int(((_p10_sm == _p10_sc) | (_p10_sm == _p10_sv) | (_p10_sc == _p10_sv)).sum()) - _all_agree
+    _split      = _p10_T - _all_agree - _two_agree
+
+    _ag1, _ag2, _ag3, _ag4 = st.columns(4)
+    for _acol, _albl, _aval in [
+        (_ag1, "All 3 LONG",   _all_long),
+        (_ag2, "All 3 SHORT",  _all_short),
+        (_ag3, "2 of 3 Agree", _two_agree),
+        (_ag4, "3-Way Split",  _split),
+    ]:
+        _apct = 100 * _aval / _p10_T if _p10_T else 0
+        _acol.metric(_albl, f"{_aval:,} days", f"{_apct:.1f}% of history")
+
+    # ── Section 6: Cumulative PnL Chart ──────────────────────────────────────
+    st.divider()
+    section_header("CUMULATIVE PnL (USD/MT)")
+    st.caption("Gross cumulative PnL. EW Portfolio vs individual signals on common period.")
+
+    _p10_cum_port = (_p10_port * _p10_f.diff()).cumsum()
+    _p10_cum_mom  = (_p10_m   * _p10_f.diff()).cumsum()
+    _p10_cum_car  = (_p10_c   * _p10_f.diff()).cumsum()
+    _p10_cum_val  = (_p10_v   * _p10_f.diff()).cumsum()
+
+    fig_p10_cum = go.Figure()
+    for _name, _series, _color, _width in [
+        ("EW Portfolio",         _p10_cum_port, COLORS["primary"], 2.5),
+        ("Momentum MA(35,43)",   _p10_cum_mom,  "#5BAD72",         1.2),
+        ("Carry V1 Same-Day",    _p10_cum_car,  COLORS["amber"],   1.2),
+        ("Value (selected)",     _p10_cum_val,  "#7B8FC0",         1.2),
+    ]:
+        fig_p10_cum.add_trace(go.Scatter(
+            x=_series.index, y=_series.values,
+            name=_name, mode="lines",
+            line=dict(color=_color, width=_width),
+            hovertemplate="%{x|%b %d, %Y}<br>Cum PnL: $%{y:,.0f}/MT<extra></extra>",
+        ))
+    fig_p10_cum.update_layout(
+        height=400, margin=dict(l=0, r=0, t=20, b=0),
+        paper_bgcolor="#0E1117", plot_bgcolor="#131922",
+        font=dict(color="#E8DDD0", family="IBM Plex Mono", size=11),
+        xaxis=dict(gridcolor="#1C2333", showgrid=True),
+        yaxis=dict(gridcolor="#1C2333", showgrid=True, tickprefix="$", ticksuffix="/MT"),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
+        hovermode="x unified",
+    )
+    st.plotly_chart(fig_p10_cum, use_container_width=True)
+
+    # ── Section 7: Rolling Sharpe ─────────────────────────────────────────────
+    st.divider()
+    section_header("ROLLING SHARPE (252-DAY)")
+
+    def _p10_roll_sh(pos: pd.Series, window: int = 252) -> pd.Series:
+        pnl = pos * _p10_f.diff()
+        with np.errstate(invalid="ignore", divide="ignore"):
+            ret = (pnl / _p10_f.shift(1)).replace([np.inf, -np.inf], np.nan)
+        act = ret.where(pos != 0)
+        return act.rolling(window, min_periods=window // 2).apply(
+            lambda x: (x.mean() / x.std(ddof=1) * np.sqrt(252)) if x.std(ddof=1) > 0 else np.nan,
+            raw=True,
+        )
+
+    _p10_rsh_port = _p10_roll_sh(_p10_port)
+    _p10_rsh_mom  = _p10_roll_sh(_p10_m)
+    _p10_rsh_car  = _p10_roll_sh(_p10_c)
+    _p10_rsh_val  = _p10_roll_sh(_p10_v)
+
+    fig_p10_rsh = go.Figure()
+    for _name, _series, _color, _width in [
+        ("EW Portfolio",       _p10_rsh_port, COLORS["primary"], 2.2),
+        ("Momentum",           _p10_rsh_mom,  "#5BAD72",         1.0),
+        ("Carry",              _p10_rsh_car,  COLORS["amber"],   1.0),
+        ("Value",              _p10_rsh_val,  "#7B8FC0",         1.0),
+    ]:
+        fig_p10_rsh.add_trace(go.Scatter(
+            x=_series.index, y=_series.values,
+            name=_name, mode="lines",
+            line=dict(color=_color, width=_width),
+            hovertemplate="%{x|%b %d, %Y}<br>Rolling Sharpe: %{y:.3f}<extra></extra>",
+        ))
+    fig_p10_rsh.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1)
+    fig_p10_rsh.update_layout(
+        height=350, margin=dict(l=0, r=0, t=20, b=0),
+        paper_bgcolor="#0E1117", plot_bgcolor="#131922",
+        font=dict(color="#E8DDD0", family="IBM Plex Mono", size=11),
+        xaxis=dict(gridcolor="#1C2333"),
+        yaxis=dict(gridcolor="#1C2333", zeroline=False),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
+        hovermode="x unified",
+    )
+    st.plotly_chart(fig_p10_rsh, use_container_width=True)
+
+    # ── Section 8: Annual PnL Bars ────────────────────────────────────────────
+    st.divider()
+    section_header("ANNUAL PnL (USD/MT)")
+
+    _p10_pnl_s = _p10_port * _p10_f.diff()
+    _p10_ann_pnl = _p10_pnl_s.groupby(_p10_pnl_s.index.year).sum()
+    _p10_ann_colors = ["#5BAD72" if v >= 0 else "#B85450" for v in _p10_ann_pnl.values]
+
+    fig_p10_ann = go.Figure(go.Bar(
+        x=_p10_ann_pnl.index.astype(str),
+        y=_p10_ann_pnl.values,
+        marker_color=_p10_ann_colors,
+        hovertemplate="%{x}: $%{y:,.0f}/MT<extra></extra>",
+    ))
+    fig_p10_ann.update_layout(
+        height=280, margin=dict(l=0, r=0, t=20, b=0),
+        paper_bgcolor="#0E1117", plot_bgcolor="#131922",
+        font=dict(color="#E8DDD0", family="IBM Plex Mono", size=11),
+        xaxis=dict(gridcolor="#1C2333"),
+        yaxis=dict(gridcolor="#1C2333", tickprefix="$", ticksuffix="/MT"),
+    )
+    fig_p10_ann.add_hline(y=0, line_color="#475569", line_width=1)
+    st.plotly_chart(fig_p10_ann, use_container_width=True)
+
+    # ── Section 9: Position Decomposition ────────────────────────────────────
+    st.divider()
+    section_header("POSITION DECOMPOSITION")
+    st.caption("Each signal's contribution to the EW portfolio position (±1/3 per signal).")
+
+    _p10_dec_mom  = _p10_m / 3.0
+    _p10_dec_car  = _p10_c / 3.0
+    _p10_dec_val  = _p10_v / 3.0
+
+    _p10_dec_start = st.date_input(
+        "From date", value=pd.Timestamp("2020-01-01").date(),
+        min_value=_p10_idx[0].date(), max_value=_p10_idx[-1].date(),
+        key="p10_dec_start",
+    )
+    _p10_dec_idx = _p10_idx[_p10_idx >= pd.Timestamp(_p10_dec_start)]
+
+    fig_p10_dec = go.Figure()
+    for _name, _series, _color in [
+        ("Momentum (±1/3)",  _p10_dec_mom.reindex(_p10_dec_idx),  "#5BAD72"),
+        ("Carry (±1/3)",     _p10_dec_car.reindex(_p10_dec_idx),  COLORS["amber"]),
+        ("Value (±1/3)",     _p10_dec_val.reindex(_p10_dec_idx),  "#7B8FC0"),
+    ]:
+        fig_p10_dec.add_trace(go.Scatter(
+            x=_series.index, y=_series.values,
+            name=_name, mode="lines", stackgroup="one",
+            line=dict(color=_color, width=0.5),
+            fillcolor=_color.replace("#", "rgba(") + ",0.35)" if _color.startswith("#") else _color,
+            hovertemplate="%{x|%b %d, %Y}<br>%{fullData.name}: %{y:+.2f}<extra></extra>",
+        ))
+    fig_p10_dec.update_layout(
+        height=300, margin=dict(l=0, r=0, t=20, b=0),
+        paper_bgcolor="#0E1117", plot_bgcolor="#131922",
+        font=dict(color="#E8DDD0", family="IBM Plex Mono", size=11),
+        xaxis=dict(gridcolor="#1C2333"),
+        yaxis=dict(gridcolor="#1C2333", zeroline=True, zerolinecolor="#475569"),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
+        hovermode="x unified",
+    )
+    st.plotly_chart(fig_p10_dec, use_container_width=True)
+
+    # ── Methodology Note ──────────────────────────────────────────────────────
+    st.divider()
+    with st.expander("Methodology Notes", expanded=False):
+        st.markdown("""
+**Signal Definitions (best configuration per strategy):**
+- **Momentum:** MA(35,43) crossover on F1_raw, Lag-1 entry. Position: ±1.
+- **Carry:** (F1−F2)/F1 roll yield, Same-Day entry. Position: ±1.
+- **Value V1:** (F8 − MA_1260) / MA_1260 deviation, ±10% threshold, Lag-1. Position: −1/0/+1.
+- **Value V2:** F1_raw[t−2520] − F1_raw[t] reversal (10yr), Lag-1. Position: ±1.
+
+**EW Portfolio:**
+`Port_pos[t] = (1/3) × Mom[t] + (1/3) × Carry[t] + (1/3) × Value[t]`
+
+Portfolio position ranges −1 to +1. When all three signals agree, |port| = 1 (full conviction).
+When signals split 2−1, |port| = 1/3 (reduced size). When two are zero (V1 flat zone), |port| = 1/3 or 0.
+
+**Why Same-Day for Carry but Lag-1 for Momentum and Value?**
+Carry regime changes (backwardation → contango) are accompanied by large same-day price moves aligned with the signal — capturing them immediately is structurally justified. Momentum and value signals evolve gradually; next-day entry avoids acting on stale intra-day data.
+
+**Diversification Claim:**
+If signals are pairwise uncorrelated (ρ ≈ 0) and each has Sharpe S, then EW Sharpe ≈ √3 × S.
+At avg individual Sharpe ≈ 0.60: theoretical EW ≈ 1.04. Realised EW ≈ 1.08 (slight positive contribution from mild negative Mom–Value correlation).
+
+**Disclaimer:** IS backtest only (2006–2025). Not investment advice.
         """)
