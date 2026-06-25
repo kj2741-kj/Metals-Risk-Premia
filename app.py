@@ -3697,6 +3697,38 @@ Baz, J., Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Se
         """)
 
 
+@st.cache_data(show_spinner=False)
+def _wf_value_oos_tc(_pos: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
+    """Walk-forward OOS Sharpes (IS=5yr, OOS=1yr) for a fixed value position series with TC."""
+    IS_W, OOS_W = 1260, 252
+    idx  = _pos.index.intersection(_f1c.index)
+    pos  = _pos.reindex(idx).fillna(0)
+    f1cs = _f1c.reindex(idx)
+    T    = len(idx)
+    out  = {}
+    oos_s = IS_W
+    while oos_s < T:
+        oos_e   = min(oos_s + OOS_W, T)
+        if (oos_e - oos_s) < OOS_W // 2:
+            break
+        yr      = str(idx[oos_s].year) + ("*" if (oos_e - oos_s) < OOS_W else "")
+        p_oos   = pos.iloc[oos_s:oos_e]
+        c_oos   = f1cs.iloc[oos_s:oos_e]
+        pnl     = p_oos * c_oos.diff()
+        if tc_bps > 0:
+            chg = p_oos.diff().abs()
+            chg.iloc[0] = abs(p_oos.iloc[0])
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * c_oos
+        with np.errstate(invalid="ignore", divide="ignore"):
+            ret = (pnl / c_oos.shift(1)).replace([np.inf, -np.inf], np.nan)
+        act = ret[p_oos != 0].dropna()
+        if len(act) >= 20:
+            sd = float(act.std(ddof=1))
+            out[yr] = float(act.mean() / sd * np.sqrt(252)) if sd > 0 else np.nan
+        oos_s += OOS_W
+    return out
+
+
 # ══════════════════════════════════════════════════════
 # TAB 9: VALUE SIGNALS
 # ══════════════════════════════════════════════════════
@@ -3713,6 +3745,21 @@ with tab9:
         "Interpret full-period Sharpe figures with sub-period breakdown — see Regime Analysis section below.",
         icon="⚠️",
     )
+
+    # ── Data loading (shared by Section 1 and 2) ─────────────────────────────
+    _f1_df_v9 = _load_copper_f1_data()
+    if _f1_df_v9.empty:
+        st.error("LME_Copper_Rolling_F1_v2.csv not found.")
+        st.stop()
+    vf1c = _f1_df_v9["F1_continuous"]
+    vf1r = _f1_df_v9["F1_raw"]
+    _cu_sheet_v9 = _find_curve_sheet("Copper", curve_data) if curve_data else None
+    if not curve_data or _cu_sheet_v9 is None:
+        st.error("Futures Curve data not loaded. Upload Metals Futures Curve file in the sidebar.")
+        st.stop()
+    v9_curve_px = curve_data[_cu_sheet_v9]["prices"].copy()
+    v9_curve_px.index = pd.to_datetime(v9_curve_px.index).normalize()
+    v9_curve_px = v9_curve_px.sort_index()
 
     # ── Variant banner ────────────────────────────────────────────────────────
     st.markdown("""
@@ -3733,6 +3780,212 @@ with tab9:
       </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD ────────────────────────────────
+    st.markdown("#### Out-of-Sample Walk-Forward Validation")
+    st.caption(
+        "IS = 5yr rolling window · OOS = 1yr · Lag-1 entry · Fixed parameters — no re-optimisation per window. "
+        "Window labels denote the start year of each OOS period. "
+        "V1 F8 and F12 use ±10% threshold throughout. "
+        "V2 BG 10yr: signal first valid Jan 2016; only 5 complete OOS windows available."
+    )
+
+    # Hardcoded gross OOS Sharpes (IS=5yr, OOS=1yr, 0 TC) from value_oos.py
+    _V9_WF_GROSS = {
+        "V1: F8 · 5yr · Lag-1  [OOS Validated — +0.364 avg]": {
+            "2013": 1.326, "2014": -0.655, "2015": -0.788, "2016": 3.260,
+            "2017": 0.474, "2019": 1.221,  "2020": -1.793, "2021": -0.454,
+            "2022": 2.245, "2023": 0.335,  "2024": 1.494,  "2025*": -2.297,
+        },
+        "V1: F12 · 5yr · Lag-1  [Bogorad Reference — +0.260 avg]": {
+            "2013": 1.413, "2014": -0.655, "2015": -0.788, "2016": 2.824,
+            "2017": 0.384, "2019": 0.947,  "2020": -1.572, "2021": -0.454,
+            "2022": 2.082, "2023": 0.298,  "2024": 1.057,  "2025*": -2.415,
+        },
+        "V2: BG 3yr · Lag-1  [Fully Testable — +0.147 avg]": {
+            "2013": -0.631, "2014": -1.192, "2015": 0.918, "2016": 1.623,
+            "2017": 0.648,  "2018": -0.080, "2019": 0.424, "2020": -1.331,
+            "2021": 0.336,  "2022": 0.246,  "2023": 1.486, "2024": -0.681,
+        },
+        "V2: BG 10yr · Lag-1  [5 windows only, 2020–2024]": {
+            "2020": 0.857, "2021": 1.827, "2022": 0.246, "2023": -0.166, "2024": -1.389,
+        },
+    }
+
+    # Position builders for TC adjustment
+    def _v9_build_pos(sig_key: str) -> pd.Series:
+        if "F8" in sig_key:
+            k, N = 8, 1260
+            if f"F{k}" not in v9_curve_px.columns:
+                return pd.Series(dtype=float)
+            p = v9_curve_px[f"F{k}"].dropna()
+            ma = p.rolling(N, min_periods=N // 2).mean()
+            dev = ((p - ma) / ma).replace([np.inf, -np.inf], np.nan).dropna()
+            sig = np.where(dev < -0.10, 1.0, np.where(dev > 0.10, -1.0, 0.0))
+            return pd.Series(sig, index=dev.index).shift(1).fillna(0)
+        elif "F12" in sig_key:
+            k, N = 12, 1260
+            if f"F{k}" not in v9_curve_px.columns:
+                return pd.Series(dtype=float)
+            p = v9_curve_px[f"F{k}"].dropna()
+            ma = p.rolling(N, min_periods=N // 2).mean()
+            dev = ((p - ma) / ma).replace([np.inf, -np.inf], np.nan).dropna()
+            sig = np.where(dev < -0.10, 1.0, np.where(dev > 0.10, -1.0, 0.0))
+            return pd.Series(sig, index=dev.index).shift(1).fillna(0)
+        elif "3yr" in sig_key:
+            rev = vf1r.shift(756) - vf1r
+            return np.sign(rev.replace([np.inf, -np.inf], np.nan).dropna()).shift(1).fillna(0)
+        else:  # BG 10yr
+            rev = vf1r.shift(2520) - vf1r
+            return np.sign(rev.replace([np.inf, -np.inf], np.nan).dropna()).shift(1).fillna(0)
+
+    _v9_oos_ctrl1, _v9_oos_ctrl2 = st.columns([2.8, 1.2])
+    with _v9_oos_ctrl1:
+        _v9_oos_sig = st.selectbox(
+            "Signal — OOS Walk-Forward", list(_V9_WF_GROSS.keys()),
+            index=0, key="v9_oos_sig",
+        )
+    with _v9_oos_ctrl2:
+        _v9_oos_tc_map = _tc_label_map(float(vf1c.dropna().iloc[-1]))
+        _v9_oos_tc_label = st.selectbox(
+            "TC — OOS Section", list(_v9_oos_tc_map.keys()),
+            index=0, key="v9_oos_tc",
+        )
+        _v9_oos_tc_bps = _v9_oos_tc_map[_v9_oos_tc_label]
+
+    if _v9_oos_tc_bps > 0:
+        _v9_pos_built = _v9_build_pos(_v9_oos_sig)
+        _v9_wf_active = _wf_value_oos_tc(_v9_pos_built, vf1c, _v9_oos_tc_bps) if not _v9_pos_built.empty else _V9_WF_GROSS[_v9_oos_sig]
+    else:
+        _v9_wf_active = _V9_WF_GROSS[_v9_oos_sig]
+
+    _v9_wf_vals    = [v for v in _v9_wf_active.values() if v is not None and not np.isnan(v)]
+    _v9_wf_avg     = np.nanmean(_v9_wf_vals) if _v9_wf_vals else np.nan
+    _v9_wf_n_pos   = sum(1 for v in _v9_wf_vals if v > 0)
+    _v9_wf_n_tot   = len(_v9_wf_vals)
+    _v9_tc_note    = f"  ·  {_v9_oos_tc_label}" if _v9_oos_tc_bps > 0 else ""
+    _v9_recent_yrs = sorted(k for k in _v9_wf_active if not k.endswith("*"))[-3:]
+    _v9_recent_avg = np.nanmean([_v9_wf_active[y] for y in _v9_recent_yrs])
+    _v9_is_10yr    = "10yr" in _v9_oos_sig
+
+    # Summary cards (same style as Momentum Section 1)
+    _v9wf_c1, _v9wf_c2, _v9wf_c3 = st.columns(3)
+    _v9_cs  = ("background:#161616;border:1px solid #2A2A2A;"
+               "border-left:4px solid #B87333;border-radius:4px;padding:14px 20px")
+    _v9_csg = ("background:#161616;border:1px solid #2A2A2A;"
+               "border-left:4px solid #475569;border-radius:4px;padding:14px 20px")
+    _v9_lbl = ("color:#B87333;font-family:'IBM Plex Mono',monospace;"
+               "font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _v9_lblg= ("color:#94A3B8;font-family:'IBM Plex Mono',monospace;"
+               "font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _v9_big = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
+               "font-size:1.55rem;font-weight:700;margin:0")
+    _v9_med = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
+               "font-size:1.15rem;font-weight:600;margin:0")
+    _v9_sub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
+    _v9_hr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
+
+    with _v9wf_c1:
+        _win_lbl = f"{_v9_wf_n_tot} Windows" + (" (2020–2024)" if _v9_is_10yr else " (2013–2025)")
+        st.markdown(f"""<div style="{_v9_cs}">
+<p style="{_v9_lbl}">{_v9_oos_sig.split('·')[0].strip()} — Fixed Parameter</p>
+<p style="{_v9_big}">{_v9_wf_avg:+.3f}</p>
+<p style="{_v9_sub}">Avg OOS Sharpe · {_win_lbl}{_v9_tc_note}</p>
+<hr style="{_v9_hr}"/>
+<p style="{_v9_sub}">Recent 3 windows ({", ".join(_v9_recent_yrs)}) avg</p>
+<p style="{_v9_med}">{_v9_recent_avg:+.3f}</p>
+<p style="{_v9_sub}">Zero re-optimisation across all windows</p>
+</div>""", unsafe_allow_html=True)
+
+    with _v9wf_c2:
+        if _v9_is_10yr:
+            st.markdown(f"""<div style="{_v9_cs}">
+<p style="{_v9_lbl}">V2 BG 10yr — Data Constraint</p>
+<p style="{_v9_big}">5</p>
+<p style="{_v9_sub}">OOS windows available (2020–2024)</p>
+<hr style="{_v9_hr}"/>
+<p style="{_v9_sub}">Signal first valid: Jan 2016</p>
+<p style="{_v9_sub}">IS window (5yr) consumes 2016–2021 data</p>
+<p style="{_v9_sub}">Full-period Sharpe = entire signal history — no true IS holdout</p>
+</div>""", unsafe_allow_html=True)
+        else:
+            _v9_wf_n_gt03 = sum(1 for v in _v9_wf_vals if v > 0.30)
+            st.markdown(f"""<div style="{_v9_cs}">
+<p style="{_v9_lbl}">OOS Performance vs IS</p>
+<p style="{_v9_big}">{'Higher' if _v9_wf_avg > 0.20 else 'Lower'}</p>
+<p style="{_v9_sub}">OOS avg vs IS full-period Sharpe</p>
+<hr style="{_v9_hr}"/>
+<p style="{_v9_sub}">OOS above +0.30 Sharpe</p>
+<p style="{_v9_med}">{_v9_wf_n_gt03} / {_v9_wf_n_tot} windows</p>
+<p style="{_v9_sub}">IS Sharpe shown in Section 2 below</p>
+</div>""", unsafe_allow_html=True)
+
+    with _v9wf_c3:
+        st.markdown(f"""<div style="{_v9_csg}">
+<p style="{_v9_lblg}">OOS Consistency</p>
+<p style="{_v9_sub}">Positive OOS Sharpe</p>
+<p style="{_v9_med}">{_v9_wf_n_pos} / {_v9_wf_n_tot} windows</p>
+<hr style="{_v9_hr}"/>
+<p style="{_v9_sub}">Best window</p>
+<p style="{_v9_med}">{max(_v9_wf_vals):+.3f} ({max(_v9_wf_active, key=lambda y: _v9_wf_active[y])})</p>
+<hr style="{_v9_hr}"/>
+<p style="{_v9_sub}">Worst window</p>
+<p style="{_v9_med}">{min(_v9_wf_vals):+.3f} ({min(_v9_wf_active, key=lambda y: _v9_wf_active[y])})</p>
+</div>""", unsafe_allow_html=True)
+
+    # OOS bar chart
+    _v9_wf_yrs  = list(_v9_wf_active.keys())
+    _v9_wf_shps = [_v9_wf_active[y] for y in _v9_wf_yrs]
+    _v9_bar_clr = ["#5BAD72" if (v is not None and not np.isnan(v) and v >= 0) else "#B85450"
+                   for v in _v9_wf_shps]
+    _v9_border  = ["gold" if y in ("2022", "2023", "2024") else "rgba(0,0,0,0)" for y in _v9_wf_yrs]
+
+    fig_v9_oos = go.Figure(go.Bar(
+        x=_v9_wf_yrs,
+        y=[v if (v is not None and not np.isnan(v)) else 0 for v in _v9_wf_shps],
+        marker_color=_v9_bar_clr,
+        marker_line_color=_v9_border,
+        marker_line_width=2,
+        text=[f"{v:+.2f}" if (v is not None and not np.isnan(v)) else "—" for v in _v9_wf_shps],
+        textposition="outside",
+        hovertemplate="%{x}: Sharpe %{y:+.3f}<extra></extra>",
+    ))
+    fig_v9_oos.add_hline(y=0, line_color="#475569", line_width=1.2)
+    fig_v9_oos.add_hline(y=_v9_wf_avg, line_dash="dot", line_color="#B87333", line_width=1.5,
+                         annotation_text=f"Avg {_v9_wf_avg:+.3f}", annotation_position="right")
+    fig_v9_oos.update_layout(
+        height=320, margin=dict(l=0, r=60, t=30, b=0),
+        paper_bgcolor="#0E1117", plot_bgcolor="#131922",
+        font=dict(color="#E8DDD0", family="IBM Plex Mono", size=11),
+        xaxis=dict(gridcolor="#1C2333", title="OOS Window Start Year"),
+        yaxis=dict(gridcolor="#1C2333", title="OOS Sharpe Ratio", zeroline=False),
+        showlegend=False,
+    )
+    st.plotly_chart(fig_v9_oos, use_container_width=True)
+
+    if _v9_is_10yr:
+        st.info(
+            "**V2 BG 10yr data note:** Signal first computable in Jan 2016 (requires 10yr of price history). "
+            "With a 5yr IS window, first OOS window begins 2020. Only 5 windows exist — "
+            "the full-period Sharpe (+0.512) is the entire track record of this signal. "
+            "Strong 2020–2021 performance is COVID mean-reversion; 2023–2024 is negative.",
+            icon="ℹ️",
+        )
+    else:
+        st.caption(
+            f"Gold-bordered bars = most recent 3 OOS windows (2022–2024). "
+            + (f"TC = {_v9_oos_tc_label} deducted on each position change." if _v9_oos_tc_bps > 0 else "Gross returns shown (0 TC).")
+            + " 2025* is a partial window."
+        )
+
+    # ── SECTION 2: IS PARAMETER SEARCH ───────────────────────────────────────
+    st.divider()
+    st.markdown("#### IS Parameter Search (Full Period 2006–2025)")
+    _v9_s2_tc_label = st.session_state.get("val_tc", "0 bps  (Gross)")
+    st.caption(
+        "Full in-sample backtest. Use controls to explore contract, lookback, threshold, and timing. "
+        f"TC applied to all metrics below: **{_v9_s2_tc_label}** — change via the TC dropdown in controls below."
+    )
 
     # ── Strategy Preset ───────────────────────────────────────────────────────
     _VAL_PRESETS = {
@@ -3828,22 +4081,6 @@ with tab9:
                     "threshold": val_thr, "same_day": val_same_day}
     else:
         val_spec = {"variant": "v2", "lookback": val_N, "same_day": val_same_day}
-
-    # ── Data loading ──────────────────────────────────────────────────────────
-    _f1_df_v9 = _load_copper_f1_data()
-    if _f1_df_v9.empty:
-        st.error("LME_Copper_Rolling_F1_v2.csv not found. Place it in the same directory as app.py.")
-        st.stop()
-    vf1c = _f1_df_v9["F1_continuous"]
-    vf1r = _f1_df_v9["F1_raw"]
-
-    _cu_sheet_v9 = _find_curve_sheet("Copper", curve_data) if curve_data else None
-    if not curve_data or _cu_sheet_v9 is None:
-        st.error("Futures Curve data not loaded. Upload Metals Futures Curve file in the sidebar.")
-        st.stop()
-    v9_curve_px = curve_data[_cu_sheet_v9]["prices"].copy()
-    v9_curve_px.index = pd.to_datetime(v9_curve_px.index).normalize()
-    v9_curve_px = v9_curve_px.sort_index()
 
     # ── Compute signal ─────────────────────────────────────────────────────────
     val_raw = _value_raw_signal(v9_curve_px, vf1r, val_spec)
