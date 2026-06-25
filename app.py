@@ -474,6 +474,28 @@ def _load_copper_f1_data() -> pd.DataFrame:
     return df[["F1_raw", "F1_continuous"]]
 
 
+def _tc_label_map(last_price: float) -> dict:
+    """TC selectbox options with bps and $/MT per-flip equivalent in each label."""
+    def _lbl(bps):
+        flip_cost = (bps / 10000.0) * last_price
+        return f"{bps} bps  (~${flip_cost:.0f}/MT per flip)"
+    return {
+        "0 bps  (Gross)": 0,
+        _lbl(5):  5,
+        _lbl(10): 10,
+        _lbl(20): 20,
+    }
+
+
+@st.cache_data(show_spinner=False)
+def _get_last_f1_price() -> float:
+    """Last available F1_continuous price ($/MT). Used for TC label display."""
+    df = _load_copper_f1_data()
+    if df.empty or "F1_continuous" not in df.columns:
+        return 9500.0
+    return float(df["F1_continuous"].dropna().iloc[-1])
+
+
 # ═══════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════
@@ -1934,10 +1956,7 @@ with tab7:
 
     _oos_tc_row = st.columns([1.8, 4.2])
     with _oos_tc_row[0]:
-        _oos_tc_map = {
-            "0 bps (Gross)": 0, "5 bps Round Trip": 5,
-            "10 bps Round Trip": 10, "20 bps Round Trip": 20,
-        }
+        _oos_tc_map = _tc_label_map(float(f1c.dropna().iloc[-1]))
         _oos_tc_label = st.selectbox(
             "TC — OOS Section", list(_oos_tc_map.keys()), index=0, key="oos_tc_sel"
         )
@@ -2238,17 +2257,12 @@ with tab7:
         same_day = timing_label == "Same-Day"
 
     with c4:
-        tc_bps_map = {
-            "0 bps  (No TC)":   0,
-            "5 bps  Round Trip":  5,
-            "10 bps Round Trip": 10,
-            "20 bps Round Trip": 20,
-        }
+        tc_bps_map = _tc_label_map(float(f1c.dropna().iloc[-1]))
         tc_label = st.selectbox(
             "TC (bps, round-trip)", list(tc_bps_map.keys()),
             index=0, key="mom_tc",
         )
-        tc_bps = tc_bps_map[tc_label]   # round-trip cost in basis points
+        tc_bps = tc_bps_map[tc_label]
 
     if sig_type == "Anchors + IS-Opt Weights":
         st.info(
@@ -2871,7 +2885,7 @@ with tab8:
         carry_timing = st.selectbox("Position Entry", ["Same-Day", "Lag-1 (Next-Day)"], index=0, key="carry_timing")
         carry_same_day = carry_timing == "Same-Day"
     with c8_c4:
-        carry_tc_map = {"0 bps (No TC)": 0, "5 bps Round Trip": 5, "10 bps Round Trip": 10, "20 bps Round Trip": 20}
+        carry_tc_map = _tc_label_map(_get_last_f1_price())
         carry_tc_label = st.selectbox("TC (bps, round-trip)", list(carry_tc_map.keys()), index=0, key="carry_tc")
         carry_tc_bps = carry_tc_map[carry_tc_label]
 
@@ -3787,7 +3801,7 @@ with tab9:
                                      key="val_thr", disabled=not val_is_v1)
         val_thr = _thr_opts[val_thr_label] if val_is_v1 else 0.10
     with v9_c5:
-        _val_tc_map = {"0 bps (No TC)": 0, "5 bps Round Trip": 5, "10 bps Round Trip": 10, "20 bps Round Trip": 20}
+        _val_tc_map = _tc_label_map(_get_last_f1_price())
         val_tc_label = st.selectbox("TC (bps)", list(_val_tc_map.keys()), index=0, key="val_tc")
         val_tc_bps = _val_tc_map[val_tc_label]
     with v9_c6:
