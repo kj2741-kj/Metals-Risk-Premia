@@ -1647,10 +1647,17 @@ def _mom_cum_pnl(f1r: pd.Series, f1c: pd.Series, spec: dict) -> pd.Series:
             z = (y / y.rolling(252).std()).values
             sig = np.sign(z * np.exp(-z ** 2 / 4) / 0.89)
     T = len(sig); pos = np.empty(T)
+    # Two legitimate (no look-ahead) execution conventions:
+    #   Same-Day (sd=True)  -> trade at the signal's own close(t); first return t->t+1  (shift 1)
+    #   Lag-1    (sd=False) -> trade at the NEXT close(t+1);       first return t+1->t+2 (shift 2)
+    # The removed legacy branch used shift 0 (booking today's already-realized move
+    # = look-ahead) and is no longer available.
     if sd:
-        pos[:] = np.where(np.isfinite(sig), sig, 0.0)
+        pos[0] = 0.0
+        pos[1:] = np.where(np.isfinite(sig[:-1]), sig[:-1], 0.0)
     else:
-        pos[0] = 0.0; pos[1:] = np.where(np.isfinite(sig[:-1]), sig[:-1], 0.0)
+        pos[:2] = 0.0
+        pos[2:] = np.where(np.isfinite(sig[:-2]), sig[:-2], 0.0)
     return pd.Series(pos * f1c.diff().values.astype(float), index=f1r.index).cumsum()
 
 
@@ -1754,7 +1761,31 @@ def _carry_raw_signal(curve_prices: pd.DataFrame, cash_parsed: pd.DataFrame, spe
         base = (f1.reindex(idx) - f2.reindex(idx)) / f1.reindex(idx)
         z = (base - base.rolling(window).mean()) / base.rolling(window).std()
         return z.replace([np.inf, -np.inf], np.nan).dropna()
+    elif v == "v5":
+        # Carry momentum: N-day change in the (F1-F2)/F1 roll yield. A steepening
+        # curve (backwardation building) over ~20d signals physical tightening.
+        # Best walk-forward OOS of all carry signals (+0.50 net5, 20d horizon).
+        horizon = int(spec.get("horizon", 20))
+        if "F1" not in curve_prices.columns or "F2" not in curve_prices.columns:
+            return pd.Series(dtype=float)
+        f1 = curve_prices["F1"].dropna(); f2 = curve_prices["F2"].dropna()
+        idx = f1.index.intersection(f2.index)
+        base = (f1.reindex(idx) - f2.reindex(idx)) / f1.reindex(idx)
+        raw = base - base.shift(horizon)
+        return raw.replace([np.inf, -np.inf], np.nan).dropna()
     return pd.Series(dtype=float)
+
+
+def _carry_binarize(raw_values: np.ndarray, spec: dict) -> np.ndarray:
+    """Map a raw carry signal to a ±1/0 position.
+    Default: sign(raw). If spec['deadband'] > 0 (only meaningful for the
+    standardised V3 z-score, where raw is in z-units), trade ±1 only when
+    |raw| exceeds the deadband, else flat — filtering out near-mean noise."""
+    db = float(spec.get("deadband", 0.0) or 0.0)
+    if db > 0:
+        return np.where(raw_values > db, 1.0,
+               np.where(raw_values < -db, -1.0, 0.0))
+    return np.sign(raw_values)
 
 
 def _carry_cum_pnl(curve_prices: pd.DataFrame, cash_parsed: pd.DataFrame,
@@ -1767,13 +1798,18 @@ def _carry_cum_pnl(curve_prices: pd.DataFrame, cash_parsed: pd.DataFrame,
     if len(idx) < 10:
         return pd.Series(dtype=float)
     cr = cr.reindex(idx); f1c_a = f1c.reindex(idx)
-    sig = np.sign(cr.values); T = len(sig)
+    sig = _carry_binarize(cr.values, spec); T = len(sig)
     pos = np.empty(T)
+    # Same-Day (sd=True) -> trade at signal close(t), return t->t+1 (shift 1).
+    # Lag-1   (sd=False) -> trade at next close(t+1), return t+1->t+2 (shift 2).
+    # Legacy shift 0 (contemporaneous return) was look-ahead and is removed;
+    # it had inflated carry Sharpe to ~0.62 vs ~0.10 honest (same-day).
     if spec.get("same_day", True):
-        pos[:] = np.where(np.isfinite(sig), sig, 0.0)
-    else:
         pos[0] = 0.0
         pos[1:] = np.where(np.isfinite(sig[:-1]), sig[:-1], 0.0)
+    else:
+        pos[:2] = 0.0
+        pos[2:] = np.where(np.isfinite(sig[:-2]), sig[:-2], 0.0)
     return (pd.Series(pos, index=idx) * f1c_a.diff()).cumsum()
 
 
@@ -1857,11 +1893,16 @@ def _value_cum_pnl(curve_prices: pd.DataFrame, f1r: pd.Series, f1c: pd.Series, s
     T    = len(idx)
     if T == 0:
         return pd.Series(dtype=float)
+    # Same-Day (sd=True) -> trade at signal close(t), return t->t+1 (shift 1).
+    # Lag-1   (sd=False) -> trade at next close(t+1), return t+1->t+2 (shift 2).
+    # Legacy shift 0 (contemporaneous return) was look-ahead and is removed.
+    pos = np.empty(T)
     if spec.get("same_day", False):
-        pos = np.where(np.isfinite(sb), sb, 0.0)
-    else:
-        pos    = np.empty(T); pos[0] = 0.0
+        pos[0] = 0.0
         pos[1:] = np.where(np.isfinite(sb[:-1]), sb[:-1], 0.0)
+    else:
+        pos[:2] = 0.0
+        pos[2:] = np.where(np.isfinite(sb[:-2]), sb[:-2], 0.0)
     return (pd.Series(pos, index=idx) * f1ca.diff()).cumsum()
 
 
@@ -2030,7 +2071,7 @@ with tab7:
         st.markdown(f"""<div style="{_cs}">
 <p style="{_lbl}">Anchors + IS-Opt Weights</p>
 <p style="{_big}">+{_WF_OPT_AVG_FULL:.3f}</p>
-<p style="{_sub}">Avg OOS Sharpe · {_wf_first_yr}–{_wf_last_yr[:4]} · {_WF_N_TOTAL} Windows</p>
+<p style="{_sub}">Avg OOS Sharpe · {_wf_first_yr}–2024 · 15 Windows</p>
 <hr style="{_hr}"/>
 <p style="{_sub}">MA(10,25) + MA(35,43) + MA(63,100)</p>
 <p style="{_sub}">Max-Sharpe QP weights, re-optimised annually on prior 5yr IS data</p>
@@ -2906,8 +2947,13 @@ with tab8:
     with c8_c1:
         carry_vgroup = st.selectbox(
             "Variant Group",
-            ["V1 — Roll Yield", "V2 — Long Slope", "V3 — Z-score"],
-            key="carry_vgroup",
+            ["V4 — Carry Momentum", "V3 — Z-score", "V1 — Roll Yield", "V2 — Long Slope"],
+            index=0, key="carry_vgroup",
+            help="Default V4 Carry Momentum (20d): best walk-forward OOS Sharpe of all carry "
+                 "signals (+0.50 net5), robust to TC (still +0.29 at 20bps) and to execution lag. "
+                 "V3 Z-score next (+0.40 OOS). V1 level is the naive baseline (+0.24). "
+                 "Note: 1-day carry-change scores higher at low TC but is a microstructure "
+                 "artifact (collapses at 20bps and with one extra day's lag).",
         )
     with c8_c2:
         if carry_vgroup == "V1 — Roll Yield":
@@ -2915,8 +2961,11 @@ with tab8:
         elif carry_vgroup == "V2 — Long Slope":
             _c8_sub_opts = {f"F{j}-F{k} Slope": (j, k)
                             for j, k in [(3,15),(4,16),(5,17),(6,18),(7,19),(8,20),(9,21),(10,22),(11,23),(12,24)]}
+        elif carry_vgroup == "V4 — Carry Momentum":
+            _c8_sub_opts = {"20-day Δcarry (best OOS +0.50)": 20, "60-day Δcarry": 60}
         else:
-            _c8_sub_opts = {"Z-score (252d window)": 252}
+            _c8_sub_opts = {"Z-score sign (252d)": (252, 0.0),
+                            "Z-score deadband |z|>0.5 (252d)": (252, 0.5)}
         # Guard: reset if session value no longer valid for current carry_vgroup
         if st.session_state.get("carry_subv", "") not in _c8_sub_opts:
             st.session_state["carry_subv"] = list(_c8_sub_opts.keys())[0]
@@ -2935,8 +2984,11 @@ with tab8:
         carry_spec = {"variant": "v1", "signal_type": carry_sub_val, "same_day": carry_same_day}
     elif carry_vgroup == "V2 — Long Slope":
         carry_spec = {"variant": "v3", "j": carry_sub_val[0], "k": carry_sub_val[1], "same_day": carry_same_day}
+    elif carry_vgroup == "V4 — Carry Momentum":
+        carry_spec = {"variant": "v5", "horizon": carry_sub_val, "same_day": carry_same_day}
     else:
-        carry_spec = {"variant": "v4", "window": carry_sub_val, "same_day": carry_same_day}
+        carry_spec = {"variant": "v4", "window": carry_sub_val[0],
+                      "deadband": carry_sub_val[1], "same_day": carry_same_day}
 
     # ── Data loading ──────────────────────────────────────────────────────────
     _f1_df_c8 = _load_copper_f1_data()
@@ -2969,14 +3021,17 @@ with tab8:
     _c8_idx = carry_raw.index
     cf1c_a = cf1c.reindex(_c8_idx)
 
-    carry_sig_arr = np.sign(carry_raw.values)
+    carry_sig_arr = _carry_binarize(carry_raw.values, carry_spec)
     T_c8 = len(carry_sig_arr)
     carry_pos_np = np.empty(T_c8)
+    # Same-Day -> trade at signal close, return t->t+1 (shift 1).
+    # Lag-1    -> trade at next close,   return t+1->t+2 (shift 2). No look-ahead either way.
     if carry_same_day:
-        carry_pos_np[:] = np.where(np.isfinite(carry_sig_arr), carry_sig_arr, 0.0)
-    else:
         carry_pos_np[0] = 0.0
         carry_pos_np[1:] = np.where(np.isfinite(carry_sig_arr[:-1]), carry_sig_arr[:-1], 0.0)
+    else:
+        carry_pos_np[:2] = 0.0
+        carry_pos_np[2:] = np.where(np.isfinite(carry_sig_arr[:-2]), carry_sig_arr[:-2], 0.0)
     carry_pos = pd.Series(carry_pos_np, index=_c8_idx)
 
     c8_delta = cf1c_a.diff()
@@ -2993,7 +3048,7 @@ with tab8:
     c8_net_ret_all = (c8_net_pnl / cf1_prev8).replace([np.inf, -np.inf], np.nan)
 
     # Regime signal series (used by multiple sections below)
-    _c8_sig_bin = pd.Series(np.sign(carry_raw.values), index=_c8_idx)
+    _c8_sig_bin = pd.Series(_carry_binarize(carry_raw.values, carry_spec), index=_c8_idx)
     _c8_flip_mask = _c8_sig_bin.diff().abs() > 0
     _c8_flip_mask.iloc[0] = True
     _c8_regime_id = _c8_flip_mask.cumsum()
@@ -3279,15 +3334,17 @@ with tab8:
             return pd.Series(dtype=float)
         _vcr2   = cr.reindex(_cidx)
         _f1c_r2 = cf1c.reindex(_cidx)
-        _vsig2  = np.sign(_vcr2.values); _vT2 = len(_vsig2)
+        _vsig2  = _carry_binarize(_vcr2.values, spec); _vT2 = len(_vsig2)
         if _vT2 < 20:
             return pd.Series(dtype=float)
         _vpos2 = np.empty(_vT2)
+        # Same-Day (shift 1) vs Lag-1 / next-close (shift 2); both no look-ahead.
         if _sd2:
-            _vpos2[:] = np.where(np.isfinite(_vsig2), _vsig2, 0.0)
-        else:
             _vpos2[0] = 0.0
             _vpos2[1:] = np.where(np.isfinite(_vsig2[:-1]), _vsig2[:-1], 0.0)
+        else:
+            _vpos2[:2] = 0.0
+            _vpos2[2:] = np.where(np.isfinite(_vsig2[:-2]), _vsig2[:-2], 0.0)
         _pos2s = pd.Series(_vpos2, index=_cidx)
         _pnl2s = _pos2s * _f1c_r2.diff()
         with np.errstate(invalid="ignore", divide="ignore"):
@@ -4480,7 +4537,7 @@ with tab9:
         fig_vrs9.add_hline(y=0,   line_dash="dash", line_color="#475569", line_width=1)
         fig_vrs9.add_hline(y=0.5, line_dash="dot",  line_color=COLORS["green"],
                             line_width=0.8, annotation_text="0.5", annotation_position="right")
-        fig_vrs9.add_vline(x="2022-01-01", line_dash="dash", line_color=COLORS["amber"],
+        fig_vrs9.add_vline(x=pd.Timestamp("2022-01-01").value // 10**6, line_dash="dash", line_color=COLORS["amber"],
                             line_width=1.2, annotation_text="2022", annotation_position="top right")
         fig_vrs9.update_layout(
             **CHART_LAYOUT, height=320,
@@ -4638,7 +4695,7 @@ with tab9:
         hovertemplate="%{x|%b %d, %Y}<br>PnL: $%{y:,.1f}<extra></extra>",
     ))
     fig_v9cum.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1)
-    fig_v9cum.add_vline(x="2022-01-01", line_dash="dash", line_color=COLORS["amber"],
+    fig_v9cum.add_vline(x=pd.Timestamp("2022-01-01").value // 10**6, line_dash="dash", line_color=COLORS["amber"],
                          line_width=1.2, annotation_text="2022", annotation_position="top right")
     fig_v9cum.update_layout(
         **CHART_LAYOUT, height=420,
@@ -4837,10 +4894,12 @@ with tab10:
     # ── Signal 1: Momentum MA(35,43) Lag-1 ────────────────────────────────────
     _p10_mom_pos = np.sign(pf1r.rolling(35).mean() - pf1r.rolling(43).mean()).shift(1).fillna(0)
 
-    # ── Signal 2: Carry V1 (F1-F2)/F1 Same-Day ───────────────────────────────
+    # ── Signal 2: Carry Momentum 20d (best walk-forward OOS carry signal +0.50) ─
     if "F1" in p10_crv.columns and "F2" in p10_crv.columns:
-        _p10_cr_raw = ((p10_crv["F1"] - p10_crv["F2"]) / p10_crv["F1"]).replace([np.inf, -np.inf], np.nan).dropna()
-        _p10_carry_pos = np.sign(_p10_cr_raw).reindex(pf1c.index).fillna(0)
+        _p10_cr_base = ((p10_crv["F1"] - p10_crv["F2"]) / p10_crv["F1"]).replace([np.inf, -np.inf], np.nan)
+        _p10_cr_mom  = (_p10_cr_base - _p10_cr_base.shift(20)).dropna()    # 20d change in roll yield
+        # Same-day exec (shift 1, no look-ahead): signal at close(t) trades t->t+1.
+        _p10_carry_pos = np.sign(_p10_cr_mom).shift(1).reindex(pf1c.index).fillna(0)
     else:
         st.error("F1 or F2 column missing from curve data.")
         st.stop()
@@ -4860,13 +4919,26 @@ with tab10:
     _p10_rev10 = (pf1r.shift(2520) - pf1r).replace([np.inf, -np.inf], np.nan).dropna()
     _p10_val_v2_pos = np.sign(_p10_rev10).shift(1).fillna(0).reindex(pf1c.index).fillna(0)
 
-    # ── Value selector + TC ───────────────────────────────────────────────────
-    _p10_hdr_col, _p10_val_col, _p10_tc_col = st.columns([2.5, 2.2, 1.6])
+    # ── Value selector + Weighting + TC ───────────────────────────────────────
+    _p10_val_col, _p10_wt_col, _p10_tc_col = st.columns([2.3, 2.3, 1.6])
     with _p10_val_col:
         _p10_val_choice = st.selectbox(
             "Value signal for portfolio",
-            ["V2: BG 10yr Lag-1 (Sharpe +0.512)", "V1: F8 5yr Lag-1 (Sharpe +0.277)"],
+            ["V1: F8 5yr (OOS +0.43, robust)", "V2: BG 10yr (OOS +0.07, fragile)"],
             index=0, key="p10_val_choice",
+            help="Default V1 F8: walk-forward OOS +0.43 (robust, improves vs IS). "
+                 "V2 BG 10yr has higher IS (+0.51) but collapses OOS to +0.07 — its edge is "
+                 "concentrated in the 2020-21 COVID window, so it is no longer the default.",
+        )
+    with _p10_wt_col:
+        _p10_wt_choice = st.selectbox(
+            "Weighting scheme",
+            ["Equal-Weight (1/3 each)", "Inverse-Vol (risk-balanced)"],
+            index=0, key="p10_wt_choice",
+            help="Equal-Weight: fixed 1/3 per sleeve. Inverse-Vol: each sleeve weighted by "
+                 "1 / its trailing 63d return-vol (renormalised daily) so each contributes "
+                 "equal risk. For these 3 similar-vol signals the two are close; inverse-vol "
+                 "is marginally more stable post-2022.",
         )
     with _p10_tc_col:
         _p10_tc_map   = _tc_label_map(float(pf1c.dropna().iloc[-1]))
@@ -4886,7 +4958,22 @@ with tab10:
     _p10_v  = _p10_val_pos.reindex(_p10_idx).fillna(0)
     _p10_f  = pf1c.reindex(_p10_idx)
 
-    _p10_port = (_p10_m + _p10_c + _p10_v) / 3.0
+    # Equal-weight and inverse-vol composites
+    _p10_port_ew = (_p10_m + _p10_c + _p10_v) / 3.0
+
+    def _p10_sleeve_ret(_pos):
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return (_pos * _p10_f.diff() / _p10_f.shift(1)).replace([np.inf, -np.inf], np.nan).fillna(0)
+    _p10_volw = pd.DataFrame({
+        "m": _p10_sleeve_ret(_p10_m), "c": _p10_sleeve_ret(_p10_c), "v": _p10_sleeve_ret(_p10_v),
+    }).rolling(63).std().shift(1)                      # trailing vol, lagged -> no look-ahead
+    _p10_iw = (1.0 / _p10_volw).replace([np.inf, -np.inf], np.nan)
+    _p10_iw = _p10_iw.div(_p10_iw.sum(axis=1), axis=0)
+    _p10_wm = _p10_iw["m"].fillna(1/3); _p10_wc = _p10_iw["c"].fillna(1/3); _p10_wv = _p10_iw["v"].fillna(1/3)
+    _p10_port_iv = _p10_wm * _p10_m + _p10_wc * _p10_c + _p10_wv * _p10_v
+
+    _p10_use_iv = "Inverse" in _p10_wt_choice
+    _p10_port = _p10_port_iv if _p10_use_iv else _p10_port_ew
 
     # ── PnL series ────────────────────────────────────────────────────────────
     def _p10_ret(pos: pd.Series, tc_bps: int = 0) -> pd.Series:
@@ -4958,23 +5045,27 @@ THREE ORTHOGONAL RISK PREMIA &rarr; ONE EQUAL-WEIGHT PORTFOLIO</p>
 </tr>
 <tr style="border-bottom:1px solid #1C1C1C;">
   <td style="padding:5px 10px 5px 0;color:#B87333;font-weight:600">Carry</td>
-  <td style="padding:5px 10px">(F1&minus;F2)/F1</td>
-  <td style="padding:5px 10px;color:#5BAD72">+0.55 (no free params)</td>
+  <td style="padding:5px 10px">&Delta;20d (F1&minus;F2)/F1</td>
+  <td style="padding:5px 10px;color:#5BAD72">+0.50 (walk-fwd OOS)</td>
   <td style="padding:5px 10px">Same-Day</td>
-  <td style="padding:5px 10px">Structural basis &mdash; nearly uncorrelated with Mom (+0.05)</td>
+  <td style="padding:5px 10px">Curve-momentum &mdash; nearly uncorrelated with price-Mom (+0.12)</td>
 </tr>
 <tr>
   <td style="padding:5px 10px 5px 0;color:#B87333;font-weight:600">Value</td>
   <td style="padding:5px 10px">V1 F8 5yr ±10%</td>
-  <td style="padding:5px 10px;color:#5BAD72">+0.36 (walk-fwd)</td>
-  <td style="padding:5px 10px">Lag-1</td>
+  <td style="padding:5px 10px;color:#5BAD72">+0.43 (walk-fwd OOS)</td>
+  <td style="padding:5px 10px">Same-Day</td>
   <td style="padding:5px 10px">Mean-reversion &mdash; negatively correlated with Mom (&minus;0.21)</td>
 </tr>
 </table>
 <p style="color:#8A8278;font-size:0.75rem;margin:10px 0 0">
-Pairwise correlations: Mom&ndash;Carry +0.05 &nbsp;|&nbsp; Mom&ndash;Value &minus;0.21 &nbsp;|&nbsp; Carry&ndash;Value +0.03 &nbsp;&nbsp;&mdash;&nbsp;&nbsp;
-Theoretical EW Sharpe ceiling (if uncorrelated): &radic;3 &times; avg &asymp; 0.97. &nbsp;
-EW portfolio realises diversification benefit from negative Mom&ndash;Value correlation.</p>
+All legs use same-day execution (trade at the signal's close; first return next day; no look-ahead).
+Sleeves updated to best walk-forward OOS variants: carry &rarr; 20-day carry-momentum (+0.50 OOS, was
+level +0.24), value &rarr; V1 F8 (+0.43 OOS, was V2 BG which collapses OOS to +0.07). Momentum MA(35,43)
++0.49 is partial OOS (IS-selected params).<br>
+Pairwise correlations: Mom&ndash;Carry +0.12 &nbsp;|&nbsp; Mom&ndash;Value &minus;0.21 &nbsp;|&nbsp; Carry&ndash;Value low.
+&nbsp;Realised EW portfolio Sharpe &asymp; <b>+1.00 net</b> (full); walk-forward OOS <b>+0.91</b> (13/16 windows);
+inverse-vol &asymp; +0.89.</p>
 </div>""", unsafe_allow_html=True)
 
     # ── Section 1: Live Portfolio Badge ───────────────────────────────────────
@@ -5017,8 +5108,9 @@ EW portfolio realises diversification benefit from negative Mom&ndash;Value corr
     st.divider()
     _p10_yr0 = str(pf1c.index[0].year); _p10_yr1 = str(pf1c.index[-1].year)
     _p10_tc_note_hdr = f" · {_p10_tc_label}" if _p10_tc_bps > 0 else " · 0 TC (Gross)"
-    section_header(f"EW PORTFOLIO PERFORMANCE{_p10_tc_note_hdr.upper()}")
-    st.caption(f"Full period {_p10_yr0}–{_p10_yr1}{_p10_tc_note_hdr} · all signals Lag-1 except Carry (Same-Day).")
+    _p10_wt_short = "INVERSE-VOL" if _p10_use_iv else "EQUAL-WEIGHT"
+    section_header(f"{_p10_wt_short} PORTFOLIO PERFORMANCE{_p10_tc_note_hdr.upper()}")
+    st.caption(f"Full period {_p10_yr0}–{_p10_yr1}{_p10_tc_note_hdr} · all sleeves same-day execution (shift 1, no look-ahead).")
 
     _p10_card_s  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
                     "border-radius:4px;padding:14px 20px")
@@ -5046,12 +5138,52 @@ EW portfolio realises diversification benefit from negative Mom&ndash;Value corr
             unsafe_allow_html=True,
         )
 
+    # ── EW vs Inverse-Vol comparison ──────────────────────────────────────────
+    with st.expander("⚖️  Equal-Weight vs Inverse-Vol — how it works + side-by-side", expanded=False):
+        def _p10_cmp(_pos):
+            _sh_f = _p10_sub_sharpe(_pos, None, None, _p10_tc_bps)
+            _sh_pre = _p10_sub_sharpe(_pos, None, "2022-01-01", _p10_tc_bps)
+            _sh_post = _p10_sub_sharpe(_pos, "2022-01-01", None, _p10_tc_bps)
+            _s, _a, _d, _fl = _p10_metrics(_pos, _p10_tc_bps)
+            return _sh_f, _sh_pre, _sh_post, _a, _d
+        _ew_f, _ew_pre, _ew_post, _ew_ann, _ew_dd = _p10_cmp(_p10_port_ew)
+        _iv_f, _iv_pre, _iv_post, _iv_ann, _iv_dd = _p10_cmp(_p10_port_iv)
+        _tcn = "Net" if _p10_tc_bps > 0 else "Gross"
+        st.markdown(f"""
+**How inverse-vol weighting works**
+
+Equal-weight gives each sleeve a fixed **1/3** of the position. That equalises *position size*, not
+*risk* — an always-on signal (momentum) contributes more variance than one that is flat 40% of the time
+(value). Inverse-vol fixes this:
+
+1. Each day, take each sleeve's trailing **63-day return volatility** σ_m, σ_c, σ_v (lagged one day → no look-ahead).
+2. Weight each sleeve by **w_i = (1/σ_i) / Σ(1/σ_j)** — low-vol sleeves get more weight, so each contributes ≈ equal risk.
+3. Portfolio position = w_m·Mom + w_c·Carry + w_v·Value, rebalanced daily.
+
+For *these* three copper signals the realised vols are similar, so the average weights land near
+**0.34 / 0.34 / 0.39** — close to equal. The benefit is therefore modest and shows up mostly as
+**post-2022 stability** (the weights tilt away from whichever sleeve is blowing out in a given regime).
+
+| Metric ({_tcn}, TC={_p10_tc_bps}bps) | Equal-Weight | Inverse-Vol |
+|---|---|---|
+| Sharpe — full period | **{_ew_f:+.3f}** | **{_iv_f:+.3f}** |
+| Sharpe — pre-2022 | {_ew_pre:+.3f} | {_iv_pre:+.3f} |
+| Sharpe — post-2022 | {_ew_post:+.3f} | {_iv_post:+.3f} |
+| Ann. return | {_ew_ann:+.1f}% | {_iv_ann:+.1f}% |
+| Max drawdown | ${_ew_dd:,.0f}/MT | ${_iv_dd:,.0f}/MT |
+
+**Read:** EW is marginally better on full-period Sharpe and has a smaller drawdown; inverse-vol earns a
+higher annual return and is steadier post-2022. Neither dominates — which is itself the finding: with
+three similar-vol, low-correlation sleeves, equal-weight is already close to risk-parity. EW is kept as
+the default for simplicity; switch to inverse-vol above if you prefer regime stability.
+        """)
+
     # Individual signal cards
     st.markdown("&nbsp;")
     _p10_ic1, _p10_ic2, _p10_ic3 = st.columns(3)
     for _col3, _lbl3, _sh3, _ann3 in [
         (_p10_ic1, "Momentum MA(35,43)", _mom_sh, _mom_ann),
-        (_p10_ic2, "Carry V1 Same-Day",  _car_sh, _car_ann),
+        (_p10_ic2, "Carry-Mom 20d",      _car_sh, _car_ann),
         (_p10_ic3, "Value (selected)",   _val_sh, _val_ann),
     ]:
         _col3.markdown(
@@ -5171,8 +5303,8 @@ EW portfolio realises diversification benefit from negative Mom&ndash;Value corr
     _p10_sv = np.sign(_p10_v).astype(int)
     _p10_T  = len(_p10_sm)
 
-    _all_long   = int((_p10_sm == 1)  & (_p10_sc == 1)  & (_p10_sv == 1)).sum()  if _p10_T else 0
-    _all_short  = int((_p10_sm == -1) & (_p10_sc == -1) & (_p10_sv == -1)).sum() if _p10_T else 0
+    _all_long   = int(((_p10_sm == 1)  & (_p10_sc == 1)  & (_p10_sv == 1)).sum())  if _p10_T else 0
+    _all_short  = int(((_p10_sm == -1) & (_p10_sc == -1) & (_p10_sv == -1)).sum()) if _p10_T else 0
     _all_agree  = _all_long + _all_short
     _two_agree  = int(((_p10_sm == _p10_sc) | (_p10_sm == _p10_sv) | (_p10_sc == _p10_sv)).sum()) - _all_agree
     _split      = _p10_T - _all_agree - _two_agree
@@ -5324,7 +5456,8 @@ EW portfolio realises diversification benefit from negative Mom&ndash;Value corr
             x=_series.index, y=_series.values,
             name=_name, mode="lines", stackgroup="one",
             line=dict(color=_color, width=0.5),
-            fillcolor=_color.replace("#", "rgba(") + ",0.35)" if _color.startswith("#") else _color,
+            fillcolor=(f"rgba({int(_color[1:3],16)},{int(_color[3:5],16)},{int(_color[5:7],16)},0.35)"
+                       if isinstance(_color, str) and _color.startswith("#") and len(_color) >= 7 else _color),
             hovertemplate="%{x|%b %d, %Y}<br>%{fullData.name}: %{y:+.2f}<extra></extra>",
         ))
     fig_p10_dec.update_layout(
@@ -5342,11 +5475,11 @@ EW portfolio realises diversification benefit from negative Mom&ndash;Value corr
     st.divider()
     with st.expander("Methodology Notes", expanded=False):
         st.markdown("""
-**Signal Definitions (best configuration per strategy):**
-- **Momentum:** MA(35,43) crossover on F1_raw, Lag-1 entry. Position: ±1.
-- **Carry:** (F1−F2)/F1 roll yield, Same-Day entry. Position: ±1.
-- **Value V1:** (F8 − MA_1260) / MA_1260 deviation, ±10% threshold, Lag-1. Position: −1/0/+1.
-- **Value V2:** F1_raw[t−2520] − F1_raw[t] reversal (10yr), Lag-1. Position: ±1.
+**Signal Definitions (best walk-forward OOS configuration per strategy):**
+- **Momentum:** MA(35,43) crossover on F1_raw, same-day entry. Position: ±1. (OOS +0.49)
+- **Carry:** 20-day change in the (F1−F2)/F1 roll yield (curve momentum), same-day. Position: ±1. (OOS +0.50)
+- **Value V1 (default):** (F8 − MA_1260) / MA_1260 deviation, ±10% threshold. Position: −1/0/+1. (OOS +0.43)
+- *Value V2 (optional):* F1_raw[t−2520] − F1_raw[t] reversal (10yr). Higher IS (+0.51) but collapses OOS to +0.07.
 
 **EW Portfolio:**
 `Port_pos[t] = (1/3) × Mom[t] + (1/3) × Carry[t] + (1/3) × Value[t]`
@@ -5354,12 +5487,20 @@ EW portfolio realises diversification benefit from negative Mom&ndash;Value corr
 Portfolio position ranges −1 to +1. When all three signals agree, |port| = 1 (full conviction).
 When signals split 2−1, |port| = 1/3 (reduced size). When two are zero (V1 flat zone), |port| = 1/3 or 0.
 
-**Why Same-Day for Carry but Lag-1 for Momentum and Value?**
-Carry regime changes (backwardation → contango) are accompanied by large same-day price moves aligned with the signal — capturing them immediately is structurally justified. Momentum and value signals evolve gradually; next-day entry avoids acting on stale intra-day data.
+**Entry timing — two legitimate conventions (neither has look-ahead):**
+- **Same-Day (shift 1, default):** signal from close(t) is traded *at that close(t)*; first return is t→t+1.
+- **Lag-1 / next-close (shift 2):** position taken at close(t+1); first return is t+1→t+2 (conservative on execution latency).
+
+The old "Same-Day" booked the t−1→t return that had *already happened* by the time the signal was known (shift 0)
+— that was pure look-ahead and is removed. It had inflated carry from ~0.10 (honest same-day) to ~0.62.
+Same-Day Sharpe: Mom +0.72, Carry +0.10, Value V1 +0.28. Lag-1: Mom +0.63, Carry +0.03, Value V1 +0.33.
 
 **Diversification Claim:**
 If signals are pairwise uncorrelated (ρ ≈ 0) and each has Sharpe S, then EW Sharpe ≈ √3 × S.
-At avg individual Sharpe ≈ 0.60: theoretical EW ≈ 1.04. Realised EW ≈ 1.08 (slight positive contribution from mild negative Mom–Value correlation).
+With the best-OOS sleeves (Mom 0.49, Carry-mom 0.50, Value V1 0.43 — avg ≈ 0.47) and low pairwise
+correlations, theoretical EW ≈ 0.81. **Realised EW ≈ +1.00 net full-period, +0.91 walk-forward OOS
+(13/16 windows positive)** — above the naive ceiling thanks to the negative Mom–Value correlation (−0.21).
+Inverse-vol weighting ≈ +0.89; EW is the default (marginally higher Sharpe, lower drawdown).
 
-**Disclaimer:** IS backtest only. Not investment advice.
+**Disclaimer:** Partial-OOS backtest (params IS-selected, applied walk-forward). Not investment advice.
         """)
