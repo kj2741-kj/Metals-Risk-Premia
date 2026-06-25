@@ -2256,13 +2256,10 @@ with tab7:
         )
         same_day = timing_label == "Same-Day"
 
-    # TC is shared from Section 1 OOS dropdown — no separate control here
+    # TC inherited from Section 1 OOS dropdown
     tc_bps   = _oos_tc_bps
     tc_label = _oos_tc_label
-    st.caption(
-        f"TC sensitivity controlled by **Section 1 — OOS TC** dropdown above  ·  "
-        f"Active: **{tc_label}**"
-    )
+    st.caption(f"TC applied to all metrics below: **{tc_label}** — change via the OOS TC selector in Section 1.")
 
     if sig_type == "Anchors + IS-Opt Weights":
         st.info(
