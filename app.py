@@ -1927,6 +1927,16 @@ def _wf_ma3543_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
 
 with tab7:
     st.markdown("### Momentum Signals — LME Copper")
+    st.markdown(
+        '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
+        'border-radius:4px;padding:10px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px;">'
+        '<span style="color:#B87333;font-family:\'IBM Plex Mono\',monospace;font-size:0.78rem;'
+        'font-weight:700;white-space:nowrap;">SIGNAL 1 OF 3</span>'
+        '<span style="color:#8A8278;font-size:0.8rem;">Price trends persist in short-to-medium horizons. '
+        'The MA(35,43) signal is validated OOS and feeds directly into the equal-weight portfolio (Tab 10). '
+        'Carry and Value signals follow in Tabs 8–9.</span></div>',
+        unsafe_allow_html=True,
+    )
     st.caption(
         "Baz-Granger CTA trend signal (Eqs 29-33) and MA Crossover. "
         "Signal computed from F1_raw only; PnL from F1_continuous (roll costs captured). "
@@ -1945,21 +1955,9 @@ with tab7:
     f1c: pd.Series = _f1_df["F1_continuous"]
 
     # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD EVIDENCE ────────────────────────
-    _WF_MA35 = {  # Gross OOS Sharpes (0 TC), IS=5yr rolling, OOS=1yr, Lag-1
-        "2010": 0.160, "2011": -0.692, "2012": -0.110, "2013": 0.957,
-        "2014": 0.617, "2015": 0.938,  "2016": 0.354,  "2017": 0.284,
-        "2018": 0.628, "2019": 1.679,  "2020": 0.818,  "2021": 0.184,
-        "2022": 0.584, "2023": 0.314,  "2024": 0.664,
-    }
+    # Anchors+IS-Opt reference values from bucket_weight_opt.py (separate research run)
     _WF_ANC_OPT      = {"2022": 0.382, "2023": 0.476, "2024": 0.437}
     _WF_OPT_AVG_FULL = 0.442
-
-    st.markdown("#### Out-of-Sample Walk-Forward Validation")
-    st.caption(
-        "IS = 5yr rolling window · OOS = 1yr · Lag-1 entry · 15 complete OOS windows. "
-        "MA(35,43) selected a priori — never re-optimised per window. "
-        "Window labels denote the start year of each OOS period; data coverage spans 2011–2025."
-    )
 
     _oos_tc_row = st.columns([1.8, 4.2])
     with _oos_tc_row[0]:
@@ -1977,16 +1975,29 @@ with tab7:
             unsafe_allow_html=True,
         )
 
-    _wf_active = _wf_ma3543_tc(f1r, f1c, _oos_tc_bps) if _oos_tc_bps > 0 else _WF_MA35
-    if not _wf_active:
-        _wf_active = _WF_MA35
+    _wf_active     = _wf_ma3543_tc(f1r, f1c, _oos_tc_bps)
+    _wf_yrs_all    = sorted(k for k in _wf_active if not k.endswith("*"))
+    _wf_recent_yrs = _wf_yrs_all[-3:] if len(_wf_yrs_all) >= 3 else _wf_yrs_all
+    _wf_first_yr   = _wf_yrs_all[0] if _wf_yrs_all else "N/A"
+    _wf_last_yr    = sorted(_wf_active.keys())[-1] if _wf_active else "N/A"
+    _recent_label  = f"{_wf_recent_yrs[0]}–{_wf_recent_yrs[-1]}" if _wf_recent_yrs else "—"
 
-    _WF_MA35_AVG = round(np.mean(list(_wf_active.values())), 3)
-    _WF_MA35_P23 = round(np.mean([v for y, v in _wf_active.items() if int(y) >= 2023]), 3)
-    _WF_N_POS    = sum(1 for v in _wf_active.values() if v > 0)
-    _WF_N_GT03   = sum(1 for v in _wf_active.values() if v > 0.30)
-    _WF_N_TOTAL  = len(_wf_active)
-    _tc_note     = f"  ·  {_oos_tc_label}" if _oos_tc_bps > 0 else ""
+    st.markdown("#### Out-of-Sample Walk-Forward Validation")
+    st.caption(
+        f"IS = 5yr rolling window · OOS = 1yr · Lag-1 entry · {len(_wf_active)} OOS windows. "
+        "MA(35,43) selected a priori — never re-optimised per window. "
+        f"Window labels denote the start year of each OOS period; "
+        f"data coverage spans {_wf_first_yr}–{_wf_last_yr[:4]}."
+    )
+
+    _wf_vals_all  = [v for v in _wf_active.values() if v is not None and not np.isnan(v)]
+    _WF_MA35_AVG  = round(np.nanmean(_wf_vals_all), 3) if _wf_vals_all else np.nan
+    _WF_MA35_P23  = round(np.nanmean([_wf_active[y] for y in _wf_recent_yrs
+                                       if y in _wf_active and not np.isnan(_wf_active[y])]), 3)
+    _WF_N_POS     = sum(1 for v in _wf_vals_all if v > 0)
+    _WF_N_GT03    = sum(1 for v in _wf_vals_all if v > 0.30)
+    _WF_N_TOTAL   = len(_wf_active)
+    _tc_note      = f"  ·  {_oos_tc_label}" if _oos_tc_bps > 0 else ""
 
     _wf_c1, _wf_c2, _wf_c3 = st.columns(3)
     _cs   = ("background:#161616;border:1px solid #2A2A2A;"
@@ -2008,9 +2019,9 @@ with tab7:
         st.markdown(f"""<div style="{_cs}">
 <p style="{_lbl}">MA(35,43) — Fixed Parameter</p>
 <p style="{_big}">{_WF_MA35_AVG:+.3f}</p>
-<p style="{_sub}">Avg OOS Sharpe · 2011–2025 · 15 Windows{_tc_note}</p>
+<p style="{_sub}">Avg OOS Sharpe · {_wf_first_yr}–{_wf_last_yr[:4]} · {_WF_N_TOTAL} Windows{_tc_note}</p>
 <hr style="{_hr}"/>
-<p style="{_sub}">2023–2025 avg</p>
+<p style="{_sub}">{_recent_label} avg</p>
 <p style="{_med}">{_WF_MA35_P23:+.3f}</p>
 <p style="{_sub}">Zero re-optimisation · 13-day tail excluded</p>
 </div>""", unsafe_allow_html=True)
@@ -2019,7 +2030,7 @@ with tab7:
         st.markdown(f"""<div style="{_cs}">
 <p style="{_lbl}">Anchors + IS-Opt Weights</p>
 <p style="{_big}">+{_WF_OPT_AVG_FULL:.3f}</p>
-<p style="{_sub}">Avg OOS Sharpe · 2011–2025 · 15 Windows</p>
+<p style="{_sub}">Avg OOS Sharpe · {_wf_first_yr}–{_wf_last_yr[:4]} · {_WF_N_TOTAL} Windows</p>
 <hr style="{_hr}"/>
 <p style="{_sub}">MA(10,25) + MA(35,43) + MA(63,100)</p>
 <p style="{_sub}">Max-Sharpe QP weights, re-optimised annually on prior 5yr IS data</p>
@@ -2027,8 +2038,8 @@ with tab7:
 </div>""", unsafe_allow_html=True)
 
     with _wf_c3:
-        _wf_best_yr  = max(_WF_MA35, key=lambda y: _WF_MA35[y])
-        _wf_worst_yr = min(_WF_MA35, key=lambda y: _WF_MA35[y])
+        _wf_best_yr  = max(_wf_active, key=lambda y: _wf_active[y])
+        _wf_worst_yr = min(_wf_active, key=lambda y: _wf_active[y])
         st.markdown(f"""<div style="{_csg}">
 <p style="{_lblg}">OOS Consistency — MA(35,43)</p>
 <p style="{_sub}">Positive OOS Sharpe</p>
@@ -2037,7 +2048,7 @@ with tab7:
 <p style="{_sub}">OOS Sharpe above +0.30</p>
 <p style="{_med}">{_WF_N_GT03} / {_WF_N_TOTAL} windows</p>
 <hr style="{_hr}"/>
-<p style="{_sub}">Best: {_wf_best_yr} ({_WF_MA35[_wf_best_yr]:+.3f}) · Worst: {_wf_worst_yr} ({_WF_MA35[_wf_worst_yr]:+.3f})</p>
+<p style="{_sub}">Best: {_wf_best_yr} ({_wf_active[_wf_best_yr]:+.3f}) · Worst: {_wf_worst_yr} ({_wf_active[_wf_worst_yr]:+.3f})</p>
 </div>""", unsafe_allow_html=True)
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
@@ -2054,11 +2065,11 @@ with tab7:
         _wf_years_plot  = list(_wf_active.keys())
         _wf_sh_plot     = list(_wf_active.values())
         _wf_bar_cls = [
-            (COLORS["primary"] if v >= 0 else "#B05030") if int(y) >= 2023
+            (COLORS["primary"] if v >= 0 else "#B05030") if y in _wf_recent_yrs
             else (COLORS["green"] if v >= 0 else COLORS["red"])
             for y, v in _wf_active.items()
         ]
-        _wf_bar_brd = ["#D4A843" if int(y) >= 2023 else "rgba(0,0,0,0)" for y in _wf_years_plot]
+        _wf_bar_brd = ["#D4A843" if y in _wf_recent_yrs else "rgba(0,0,0,0)" for y in _wf_years_plot]
         fig_wf_bar = go.Figure()
         fig_wf_bar.add_trace(go.Bar(
             x=_wf_years_plot, y=_wf_sh_plot,
@@ -2076,7 +2087,7 @@ with tab7:
         )
         fig_wf_bar.add_hline(
             y=_WF_MA35_P23, line_dash="dot", line_color=COLORS["primary"], line_width=1.5,
-            annotation_text=f"2023–25 avg {_WF_MA35_P23:+.3f}",
+            annotation_text=f"{_recent_label} avg {_WF_MA35_P23:+.3f}",
             annotation_position="top left",
             annotation_font=dict(size=10, color=COLORS["primary"]),
         )
@@ -2089,8 +2100,9 @@ with tab7:
             yaxis_title="OOS Sharpe", xaxis_title=None, showlegend=False,
         )
         st.plotly_chart(fig_wf_bar, use_container_width=True)
+        _gold_lbl = ", ".join(_wf_recent_yrs) if _wf_recent_yrs else "recent"
         st.caption(
-            "Gold-bordered bars = OOS windows starting Dec 2022–Dec 2024, covering 2023–2025 data. "
+            f"Gold-bordered bars = most recent {len(_wf_recent_yrs)} complete OOS windows ({_gold_lbl}). "
             + (f"TC = {_oos_tc_label} deducted on each signal flip." if _oos_tc_bps > 0 else "Gross returns shown.")
         )
     else:
@@ -2129,34 +2141,35 @@ with tab7:
         )
 
     with st.expander("Walk-Forward Annual Detail", expanded=False):
-        _wf_yrs_tbl = list(_WF_MA35.keys())
-        _is_labels  = [f"{int(y)-5}–{int(y)-1}" for y in _wf_yrs_tbl]
+        _wf_yrs_tbl = list(_wf_active.keys())
+        _is_labels  = [f"{int(y.rstrip('*'))-5}–{int(y.rstrip('*'))-1}" for y in _wf_yrs_tbl]
         _tc_col     = f"MA(35,43) OOS{'  '+_oos_tc_label if _oos_tc_bps>0 else ' (Gross)'}"
+        _anc_map    = {y: f"+{v:.3f}" for y, v in _WF_ANC_OPT.items()}
         _wf_tbl = pd.DataFrame({
             "OOS Window":      _wf_yrs_tbl,
             "IS Period (5yr)": _is_labels,
-            _tc_col:           [f"{_wf_active.get(y, _WF_MA35[y]):+.3f}" for y in _wf_yrs_tbl],
-            "Anchors+Opt OOS": ["—"] * 12 + ["+0.382", "+0.476", "+0.437"],
-            "Status":          ["✓" if _wf_active.get(y, _WF_MA35[y]) > 0 else "✗" for y in _wf_yrs_tbl],
+            _tc_col:           [f"{_wf_active.get(y, float('nan')):+.3f}" for y in _wf_yrs_tbl],
+            "Anchors+Opt OOS": [_anc_map.get(y, "—") for y in _wf_yrs_tbl],
+            "Status":          ["✓" if _wf_active.get(y, float("nan")) > 0 else "✗" for y in _wf_yrs_tbl],
         })
         st.dataframe(_wf_tbl, use_container_width=True, hide_index=True)
         st.caption(
             "OOS Window label = start year of 252-day OOS period. "
-            "The '2024' window covers Dec 2024 – Dec 2025 (252 trading days). "
             "Anchors+Opt 2022–2024: IS-opt QP weights on MA(10,25)+MA(35,43)+MA(63,100), "
-            "full-period avg = +0.442 from weight_sensitivity.py."
+            f"full-period avg = +{_WF_OPT_AVG_FULL:.3f} (from bucket_weight_opt.py)."
         )
 
     st.divider()
 
-    # ── SECTION 2: IS PARAMETER SEARCH (IN-SAMPLE 2006–2025) ──────────────────
-    _mom_is_exp = st.expander("IS Parameter Search (2006–2025 In-Sample)", expanded=False)
+    # ── SECTION 2: IS PARAMETER SEARCH (IN-SAMPLE) ────────────────────────────
+    _m_is_yr0 = str(f1r.index[0].year); _m_is_yr1 = str(f1r.index[-1].year)
+    _mom_is_exp = st.expander(f"IS Parameter Search ({_m_is_yr0}–{_m_is_yr1} In-Sample)", expanded=False)
     _mom_is_exp.__enter__()
 
     st.markdown(
         '<div style="background:#1A1200;border:1px solid #3A2E00;border-left:4px solid #F59E0B;'
         'border-radius:4px;padding:8px 14px;margin-bottom:10px;font-size:0.82rem;color:#D4A843;">'
-        '&#9888;  IN-SAMPLE BACKTEST — Results use full 2006–2025 history. '
+        f'&#9888;  IN-SAMPLE BACKTEST — Results use full {_m_is_yr0}–{_m_is_yr1} history. '
         'Not held-out data. See walk-forward section above for OOS estimates.</div>',
         unsafe_allow_html=True,
     )
@@ -2495,7 +2508,7 @@ with tab7:
         )
         fig_rs.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
         st.plotly_chart(fig_rs, use_container_width=True)
-    st.caption("Signal computed over full 2006-2025 history. Rolling Sharpe uses gross returns. "
+    st.caption(f"Signal computed over full {_m_is_yr0}–{_m_is_yr1} history. Rolling Sharpe uses gross returns. "
                "Positive/negative swings show regime dependence — a consistently positive curve indicates robustness.")
 
     # ── Cumulative PnL chart ──────────────────────────────────────────────────
@@ -2784,6 +2797,20 @@ with tab7:
         """)
     _mom_is_exp.__exit__(None, None, None)
 
+    st.markdown(
+        '<div style="background:#0D1117;border:1px solid #2A2A2A;border-left:4px solid #475569;'
+        'border-radius:4px;padding:12px 20px;margin-top:20px;">'
+        '<span style="color:#94A3B8;font-size:0.78rem;font-family:\'IBM Plex Mono\',monospace;font-weight:600;">'
+        'NEXT &rarr; </span>'
+        '<span style="color:#B87333;font-size:0.82rem;font-family:\'IBM Plex Mono\',monospace;font-weight:700;">'
+        'Tab 8: Carry Signals</span>'
+        '<span style="color:#8A8278;font-size:0.78rem;"> &nbsp;&mdash;&nbsp; '
+        'Backwardation / contango premium from the term structure. '
+        'Complements momentum: carry is a <em>level</em> signal; momentum is <em>trend</em>-based. '
+        'Low historical correlation confirms diversification value.</span></div>',
+        unsafe_allow_html=True,
+    )
+
 
 # ══════════════════════════════════════════════════════
 # TAB 8: CARRY SIGNALS
@@ -2791,6 +2818,16 @@ with tab7:
 
 with tab8:
     st.markdown("### Carry Signals — LME Copper")
+    st.markdown(
+        '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
+        'border-radius:4px;padding:10px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px;">'
+        '<span style="color:#B87333;font-family:\'IBM Plex Mono\',monospace;font-size:0.78rem;'
+        'font-weight:700;white-space:nowrap;">SIGNAL 2 OF 3</span>'
+        '<span style="color:#8A8278;font-size:0.8rem;">Structural backwardation / contango premium from the forward curve. '
+        'No free parameters — the signal is a market structural measure, not fitted data. '
+        'IS performance is representative of OOS. Combines with momentum in the portfolio (Tab 10).</span></div>',
+        unsafe_allow_html=True,
+    )
     st.caption("Term structure carry: Long in backwardation, Short in contango. Signal from curve shape; PnL always from F1_continuous.")
 
     st.markdown("""
@@ -3065,7 +3102,7 @@ with tab8:
     st.divider()
     section_header("BEST CARRY SIGNAL — BY VARIANT")
     st.caption(
-        "Best-performing configuration per variant — IS backtest, full period 2006–2025, 0 TC, gross Sharpe. "
+        f"Best-performing configuration per variant — IS backtest, full period {cf1c.index[0].year}–{cf1c.index[-1].year}, 0 TC, gross Sharpe. "
         "Figures are computed from historical data; past performance is not indicative of future results."
     )
     _bsc1, _bsc2, _bsc3 = st.columns(3)
@@ -3696,6 +3733,20 @@ Consequently, IS results are representative of OOS performance; the sub-period t
 Baz, J., Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Section and Time Series. SSRN.
         """)
 
+    st.markdown(
+        '<div style="background:#0D1117;border:1px solid #2A2A2A;border-left:4px solid #475569;'
+        'border-radius:4px;padding:12px 20px;margin-top:20px;">'
+        '<span style="color:#94A3B8;font-size:0.78rem;font-family:\'IBM Plex Mono\',monospace;font-weight:600;">'
+        'NEXT &rarr; </span>'
+        '<span style="color:#B87333;font-size:0.82rem;font-family:\'IBM Plex Mono\',monospace;font-weight:700;">'
+        'Tab 9: Value Signals</span>'
+        '<span style="color:#8A8278;font-size:0.78rem;"> &nbsp;&mdash;&nbsp; '
+        'Mean-reversion toward long-run equilibrium price levels. '
+        'Regime-conditional and negatively correlated with momentum — the third orthogonal source of return '
+        'in the equal-weight portfolio.</span></div>',
+        unsafe_allow_html=True,
+    )
+
 
 @st.cache_data(show_spinner=False)
 def _wf_value_oos_tc(_pos: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
@@ -3735,6 +3786,16 @@ def _wf_value_oos_tc(_pos: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
 
 with tab9:
     st.markdown("### Value Signals — LME Copper")
+    st.markdown(
+        '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
+        'border-radius:4px;padding:10px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px;">'
+        '<span style="color:#B87333;font-family:\'IBM Plex Mono\',monospace;font-size:0.78rem;'
+        'font-weight:700;white-space:nowrap;">SIGNAL 3 OF 3</span>'
+        '<span style="color:#8A8278;font-size:0.8rem;">Mean-reversion toward long-run price equilibrium. '
+        'Regime-sensitive and negatively correlated with momentum (&minus;0.21 historically). '
+        'With all three signals validated, the Portfolio tab (Tab 10) shows the combined EW strategy.</span></div>',
+        unsafe_allow_html=True,
+    )
     st.caption("Mean-reversion strategies: long when copper is cheap vs. long-run fair value, short when expensive. "
                "Signal from forward curve contracts; PnL always from F1_continuous.")
     st.warning(
@@ -3790,74 +3851,46 @@ with tab9:
         "V2 BG 10yr: signal first valid Jan 2016; only 5 complete OOS windows available."
     )
 
-    # Hardcoded gross OOS Sharpes (IS=5yr, OOS=1yr, 0 TC) from value_oos.py
-    _V9_WF_GROSS = {
-        "V1: F8 · 5yr · Lag-1  [OOS Validated — +0.364 avg]": {
-            "2013": 1.326, "2014": -0.655, "2015": -0.788, "2016": 3.260,
-            "2017": 0.474, "2019": 1.221,  "2020": -1.793, "2021": -0.454,
-            "2022": 2.245, "2023": 0.335,  "2024": 1.494,  "2025*": -2.297,
-        },
-        "V1: F12 · 5yr · Lag-1  [Bogorad Reference — +0.260 avg]": {
-            "2013": 1.413, "2014": -0.655, "2015": -0.788, "2016": 2.824,
-            "2017": 0.384, "2019": 0.947,  "2020": -1.572, "2021": -0.454,
-            "2022": 2.082, "2023": 0.298,  "2024": 1.057,  "2025*": -2.415,
-        },
-        "V2: BG 3yr · Lag-1  [Fully Testable — +0.147 avg]": {
-            "2013": -0.631, "2014": -1.192, "2015": 0.918, "2016": 1.623,
-            "2017": 0.648,  "2018": -0.080, "2019": 0.424, "2020": -1.331,
-            "2021": 0.336,  "2022": 0.246,  "2023": 1.486, "2024": -0.681,
-        },
-        "V2: BG 10yr · Lag-1  [5 windows only, 2020–2024]": {
-            "2020": 0.857, "2021": 1.827, "2022": 0.246, "2023": -0.166, "2024": -1.389,
-        },
+    # Live OOS walk-forward options — all computed dynamically via _wf_value_oos_tc
+    _V9_OOS_OPTS = {
+        "V1: F8 · 5yr · Lag-1  [OOS Validated]":       ("v1", 8,    1260),
+        "V1: F12 · 5yr · Lag-1  [Bogorad Reference]":  ("v1", 12,   1260),
+        "V2: BG 3yr · Lag-1  [Fully Testable]":        ("v2", None, 756),
+        "V2: BG 10yr · Lag-1  [Limited to ~5 windows]":("v2", None, 2520),
     }
 
-    # Position builders for TC adjustment
-    def _v9_build_pos(sig_key: str) -> pd.Series:
-        if "F8" in sig_key:
-            k, N = 8, 1260
-            if f"F{k}" not in v9_curve_px.columns:
+    def _v9_build_pos(variant: str, k, N: int) -> pd.Series:
+        if variant == "v1":
+            col = f"F{k}"
+            if col not in v9_curve_px.columns:
                 return pd.Series(dtype=float)
-            p = v9_curve_px[f"F{k}"].dropna()
+            p  = v9_curve_px[col].dropna()
             ma = p.rolling(N, min_periods=N // 2).mean()
             dev = ((p - ma) / ma).replace([np.inf, -np.inf], np.nan).dropna()
             sig = np.where(dev < -0.10, 1.0, np.where(dev > 0.10, -1.0, 0.0))
             return pd.Series(sig, index=dev.index).shift(1).fillna(0)
-        elif "F12" in sig_key:
-            k, N = 12, 1260
-            if f"F{k}" not in v9_curve_px.columns:
-                return pd.Series(dtype=float)
-            p = v9_curve_px[f"F{k}"].dropna()
-            ma = p.rolling(N, min_periods=N // 2).mean()
-            dev = ((p - ma) / ma).replace([np.inf, -np.inf], np.nan).dropna()
-            sig = np.where(dev < -0.10, 1.0, np.where(dev > 0.10, -1.0, 0.0))
-            return pd.Series(sig, index=dev.index).shift(1).fillna(0)
-        elif "3yr" in sig_key:
-            rev = vf1r.shift(756) - vf1r
-            return np.sign(rev.replace([np.inf, -np.inf], np.nan).dropna()).shift(1).fillna(0)
-        else:  # BG 10yr
-            rev = vf1r.shift(2520) - vf1r
-            return np.sign(rev.replace([np.inf, -np.inf], np.nan).dropna()).shift(1).fillna(0)
+        else:
+            rev = vf1r.shift(N) - vf1r
+            s   = np.sign(rev.replace([np.inf, -np.inf], np.nan).dropna())
+            return s.shift(1).fillna(0)
 
     _v9_oos_ctrl1, _v9_oos_ctrl2 = st.columns([2.8, 1.2])
     with _v9_oos_ctrl1:
         _v9_oos_sig = st.selectbox(
-            "Signal — OOS Walk-Forward", list(_V9_WF_GROSS.keys()),
+            "Signal — OOS Walk-Forward", list(_V9_OOS_OPTS.keys()),
             index=0, key="v9_oos_sig",
         )
     with _v9_oos_ctrl2:
-        _v9_oos_tc_map = _tc_label_map(float(vf1c.dropna().iloc[-1]))
+        _v9_oos_tc_map   = _tc_label_map(float(vf1c.dropna().iloc[-1]))
         _v9_oos_tc_label = st.selectbox(
             "TC — OOS Section", list(_v9_oos_tc_map.keys()),
             index=0, key="v9_oos_tc",
         )
         _v9_oos_tc_bps = _v9_oos_tc_map[_v9_oos_tc_label]
 
-    if _v9_oos_tc_bps > 0:
-        _v9_pos_built = _v9_build_pos(_v9_oos_sig)
-        _v9_wf_active = _wf_value_oos_tc(_v9_pos_built, vf1c, _v9_oos_tc_bps) if not _v9_pos_built.empty else _V9_WF_GROSS[_v9_oos_sig]
-    else:
-        _v9_wf_active = _V9_WF_GROSS[_v9_oos_sig]
+    _v9_var, _v9_k, _v9_N = _V9_OOS_OPTS[_v9_oos_sig]
+    _v9_pos_built = _v9_build_pos(_v9_var, _v9_k, _v9_N)
+    _v9_wf_active = _wf_value_oos_tc(_v9_pos_built, vf1c, _v9_oos_tc_bps) if not _v9_pos_built.empty else {}
 
     _v9_wf_vals    = [v for v in _v9_wf_active.values() if v is not None and not np.isnan(v)]
     _v9_wf_avg     = np.nanmean(_v9_wf_vals) if _v9_wf_vals else np.nan
@@ -3865,8 +3898,11 @@ with tab9:
     _v9_wf_n_tot   = len(_v9_wf_vals)
     _v9_tc_note    = f"  ·  {_v9_oos_tc_label}" if _v9_oos_tc_bps > 0 else ""
     _v9_recent_yrs = sorted(k for k in _v9_wf_active if not k.endswith("*"))[-3:]
-    _v9_recent_avg = np.nanmean([_v9_wf_active[y] for y in _v9_recent_yrs])
+    _v9_recent_avg = np.nanmean([_v9_wf_active[y] for y in _v9_recent_yrs]) if _v9_recent_yrs else np.nan
     _v9_is_10yr    = "10yr" in _v9_oos_sig
+    _v9_wf_yrs_s   = sorted(_v9_wf_active.keys())
+    _v9_first_yr   = _v9_wf_yrs_s[0][:4] if _v9_wf_yrs_s else "—"
+    _v9_last_yr    = _v9_wf_yrs_s[-1][:4] if _v9_wf_yrs_s else "—"
 
     # Summary cards (same style as Momentum Section 1)
     _v9wf_c1, _v9wf_c2, _v9wf_c3 = st.columns(3)
@@ -3886,7 +3922,7 @@ with tab9:
     _v9_hr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
 
     with _v9wf_c1:
-        _win_lbl = f"{_v9_wf_n_tot} Windows" + (" (2020–2024)" if _v9_is_10yr else " (2013–2025)")
+        _win_lbl = f"{_v9_wf_n_tot} Windows ({_v9_first_yr}–{_v9_last_yr})"
         st.markdown(f"""<div style="{_v9_cs}">
 <p style="{_v9_lbl}">{_v9_oos_sig.split('·')[0].strip()} — Fixed Parameter</p>
 <p style="{_v9_big}">{_v9_wf_avg:+.3f}</p>
@@ -3973,14 +4009,15 @@ with tab9:
         )
     else:
         st.caption(
-            f"Gold-bordered bars = most recent 3 OOS windows (2022–2024). "
+            f"Gold-bordered bars = most recent {len(_v9_recent_yrs)} complete OOS windows ({', '.join(_v9_recent_yrs)}). "
             + (f"TC = {_v9_oos_tc_label} deducted on each position change." if _v9_oos_tc_bps > 0 else "Gross returns shown (0 TC).")
-            + " 2025* is a partial window."
+            + (" Partial windows (marked *) excluded from gold highlighting." if any(k.endswith("*") for k in _v9_wf_active) else "")
         )
 
     # ── SECTION 2: IS PARAMETER SEARCH ───────────────────────────────────────
     st.divider()
-    st.markdown("#### IS Parameter Search (Full Period 2006–2025)")
+    _v9_is_yr0 = str(vf1c.index[0].year); _v9_is_yr1 = str(vf1c.index[-1].year)
+    st.markdown(f"#### IS Parameter Search (Full Period {_v9_is_yr0}–{_v9_is_yr1})")
     _v9_s2_tc_label = st.session_state.get("val_tc", "0 bps  (Gross)")
     st.caption(
         "Full in-sample backtest. Use controls to explore contract, lookback, threshold, and timing. "
@@ -4126,7 +4163,7 @@ with tab9:
     st.divider()
     section_header("BEST VALUE SIGNAL — BY VARIANT")
     st.caption(
-        "Best-performing configuration per variant. IS backtest · Full period 2006–2025 · 0 TC · Lag-1 entry · Gross Sharpe."
+        f"Best-performing configuration per variant. IS backtest · Full period {_v9_is_yr0}–{_v9_is_yr1} · 0 TC · Lag-1 entry · Gross Sharpe."
     )
     _vbsc1, _vbsc2 = st.columns(2)
     _vbcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
@@ -4752,6 +4789,22 @@ This threshold was calibrated for crude oil (higher volatility). Consider ±15-2
 - Baz, J., Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Section and Time Series. SSRN.
         """)
 
+    st.markdown(
+        '<div style="background:#0D1117;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
+        'border-radius:4px;padding:12px 20px;margin-top:20px;">'
+        '<span style="color:#B87333;font-size:0.82rem;font-family:\'IBM Plex Mono\',monospace;font-weight:700;">'
+        'All three signals validated &mdash; </span>'
+        '<span style="color:#94A3B8;font-size:0.78rem;font-family:\'IBM Plex Mono\',monospace;font-weight:600;">'
+        'NEXT &rarr; </span>'
+        '<span style="color:#B87333;font-size:0.82rem;font-family:\'IBM Plex Mono\',monospace;font-weight:700;">'
+        'Tab 10: Portfolio Construction</span>'
+        '<span style="color:#8A8278;font-size:0.78rem;"> &nbsp;&mdash;&nbsp; '
+        'Momentum (trend) + Carry (level) + Value (mean-reversion) combined into an equal-weight portfolio. '
+        'Low pairwise correlations confirm genuine diversification: '
+        'Mom&ndash;Carry +0.05, Mom&ndash;Value &minus;0.21, Carry&ndash;Value +0.03.</span></div>',
+        unsafe_allow_html=True,
+    )
+
 
 # ══════════════════════════════════════════════════════
 # TAB 10: PORTFOLIO CONSTRUCTION
@@ -4807,14 +4860,18 @@ with tab10:
     _p10_rev10 = (pf1r.shift(2520) - pf1r).replace([np.inf, -np.inf], np.nan).dropna()
     _p10_val_v2_pos = np.sign(_p10_rev10).shift(1).fillna(0).reindex(pf1c.index).fillna(0)
 
-    # ── Value selector ────────────────────────────────────────────────────────
-    _p10_hdr_col, _p10_val_col = st.columns([3, 2])
+    # ── Value selector + TC ───────────────────────────────────────────────────
+    _p10_hdr_col, _p10_val_col, _p10_tc_col = st.columns([2.5, 2.2, 1.6])
     with _p10_val_col:
         _p10_val_choice = st.selectbox(
             "Value signal for portfolio",
             ["V2: BG 10yr Lag-1 (Sharpe +0.512)", "V1: F8 5yr Lag-1 (Sharpe +0.277)"],
             index=0, key="p10_val_choice",
         )
+    with _p10_tc_col:
+        _p10_tc_map   = _tc_label_map(float(pf1c.dropna().iloc[-1]))
+        _p10_tc_label = st.selectbox("TC (bps)", list(_p10_tc_map.keys()), index=0, key="p10_tc")
+        _p10_tc_bps   = _p10_tc_map[_p10_tc_label]
     _p10_use_v2 = "V2" in _p10_val_choice
     _p10_val_pos = _p10_val_v2_pos if _p10_use_v2 else _p10_val_v1_pos
 
@@ -4832,8 +4889,11 @@ with tab10:
     _p10_port = (_p10_m + _p10_c + _p10_v) / 3.0
 
     # ── PnL series ────────────────────────────────────────────────────────────
-    def _p10_ret(pos: pd.Series) -> pd.Series:
+    def _p10_ret(pos: pd.Series, tc_bps: int = 0) -> pd.Series:
         pnl = pos * _p10_f.diff()
+        if tc_bps > 0:
+            chg = pos.diff().abs(); chg.iloc[0] = abs(pos.iloc[0])
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * _p10_f
         with np.errstate(invalid="ignore", divide="ignore"):
             return (pnl / _p10_f.shift(1)).replace([np.inf, -np.inf], np.nan)
 
@@ -4843,30 +4903,79 @@ with tab10:
         sd = act.std(ddof=1)
         return float(act.mean() / sd * np.sqrt(252)) if sd > 0 else np.nan
 
-    def _p10_metrics(pos: pd.Series):
-        ret = _p10_ret(pos)
-        sh  = _p10_sharpe(ret)
-        ann = float(ret.dropna().mean() * 252 * 100)
-        cum = (pos * _p10_f.diff()).cumsum()
-        dd  = float((cum - cum.cummax()).min())
+    def _p10_metrics(pos: pd.Series, tc_bps: int = 0):
+        ret  = _p10_ret(pos, tc_bps)
+        sh   = _p10_sharpe(ret)
+        ann  = float(ret.dropna().mean() * 252 * 100)
+        pnl  = pos * _p10_f.diff()
+        if tc_bps > 0:
+            chg = pos.diff().abs(); chg.iloc[0] = abs(pos.iloc[0])
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * _p10_f
+        cum  = pnl.cumsum()
+        dd   = float((cum - cum.cummax()).min())
         flat_pct = float(100 * (pos == 0).sum() / len(pos))
         return sh, ann, dd, flat_pct
 
-    def _p10_sub_sharpe(pos: pd.Series, start=None, end=None) -> float:
+    def _p10_sub_sharpe(pos: pd.Series, start=None, end=None, tc_bps: int = 0) -> float:
         idx = pos.index
         if start: idx = idx[idx >= pd.Timestamp(start)]
         if end:   idx = idx[idx <  pd.Timestamp(end)]
         if len(idx) < 20: return np.nan
-        p = pos.reindex(idx)
-        pnl = p * _p10_f.reindex(idx).diff()
+        p  = pos.reindex(idx)
+        f_ = _p10_f.reindex(idx)
+        pnl = p * f_.diff()
+        if tc_bps > 0:
+            chg = p.diff().abs(); chg.iloc[0] = abs(p.iloc[0])
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * f_
         with np.errstate(invalid="ignore", divide="ignore"):
-            ret = (pnl / _p10_f.reindex(idx).shift(1)).replace([np.inf, -np.inf], np.nan)
+            ret = (pnl / f_.shift(1)).replace([np.inf, -np.inf], np.nan)
         return _p10_sharpe(ret)
 
-    _port_sh, _port_ann, _port_dd, _port_flat = _p10_metrics(_p10_port)
-    _mom_sh,  _mom_ann,  _mom_dd,  _mom_flat  = _p10_metrics(_p10_m)
-    _car_sh,  _car_ann,  _car_dd,  _car_flat  = _p10_metrics(_p10_c)
-    _val_sh,  _val_ann,  _val_dd,  _val_flat  = _p10_metrics(_p10_v)
+    _port_sh, _port_ann, _port_dd, _port_flat = _p10_metrics(_p10_port, _p10_tc_bps)
+    _mom_sh,  _mom_ann,  _mom_dd,  _mom_flat  = _p10_metrics(_p10_m,    _p10_tc_bps)
+    _car_sh,  _car_ann,  _car_dd,  _car_flat  = _p10_metrics(_p10_c,    _p10_tc_bps)
+    _val_sh,  _val_ann,  _val_dd,  _val_flat  = _p10_metrics(_p10_v,    _p10_tc_bps)
+
+    # ── Portfolio story intro ──────────────────────────────────────────────────
+    st.markdown("""
+<div style="background:#111827;border:1px solid #2A2A2A;border-radius:6px;padding:16px 22px;margin-bottom:4px;">
+<p style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:700;margin:0 0 10px">
+THREE ORTHOGONAL RISK PREMIA &rarr; ONE EQUAL-WEIGHT PORTFOLIO</p>
+<table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#C8BFB4;">
+<tr style="border-bottom:1px solid #2A2A2A;color:#8A8278;font-size:0.72rem;">
+  <td style="padding:4px 10px 4px 0">Signal</td>
+  <td style="padding:4px 10px">Best Variant</td>
+  <td style="padding:4px 10px">OOS Sharpe</td>
+  <td style="padding:4px 10px">Entry</td>
+  <td style="padding:4px 10px">Correlation Role</td>
+</tr>
+<tr style="border-bottom:1px solid #1C1C1C;">
+  <td style="padding:5px 10px 5px 0;color:#B87333;font-weight:600">Momentum</td>
+  <td style="padding:5px 10px">MA(35,43)</td>
+  <td style="padding:5px 10px;color:#5BAD72">+0.49 (walk-fwd)</td>
+  <td style="padding:5px 10px">Lag-1</td>
+  <td style="padding:5px 10px">Trend persistence — anchor signal</td>
+</tr>
+<tr style="border-bottom:1px solid #1C1C1C;">
+  <td style="padding:5px 10px 5px 0;color:#B87333;font-weight:600">Carry</td>
+  <td style="padding:5px 10px">(F1&minus;F2)/F1</td>
+  <td style="padding:5px 10px;color:#5BAD72">+0.55 (no free params)</td>
+  <td style="padding:5px 10px">Same-Day</td>
+  <td style="padding:5px 10px">Structural basis &mdash; nearly uncorrelated with Mom (+0.05)</td>
+</tr>
+<tr>
+  <td style="padding:5px 10px 5px 0;color:#B87333;font-weight:600">Value</td>
+  <td style="padding:5px 10px">V1 F8 5yr ±10%</td>
+  <td style="padding:5px 10px;color:#5BAD72">+0.36 (walk-fwd)</td>
+  <td style="padding:5px 10px">Lag-1</td>
+  <td style="padding:5px 10px">Mean-reversion &mdash; negatively correlated with Mom (&minus;0.21)</td>
+</tr>
+</table>
+<p style="color:#8A8278;font-size:0.75rem;margin:10px 0 0">
+Pairwise correlations: Mom&ndash;Carry +0.05 &nbsp;|&nbsp; Mom&ndash;Value &minus;0.21 &nbsp;|&nbsp; Carry&ndash;Value +0.03 &nbsp;&nbsp;&mdash;&nbsp;&nbsp;
+Theoretical EW Sharpe ceiling (if uncorrelated): &radic;3 &times; avg &asymp; 0.97. &nbsp;
+EW portfolio realises diversification benefit from negative Mom&ndash;Value correlation.</p>
+</div>""", unsafe_allow_html=True)
 
     # ── Section 1: Live Portfolio Badge ───────────────────────────────────────
     st.divider()
@@ -4906,8 +5015,10 @@ with tab10:
 
     # ── Section 2: Portfolio Performance Cards ────────────────────────────────
     st.divider()
-    section_header("EW PORTFOLIO PERFORMANCE (GROSS)")
-    st.caption("Full period 2006–2025 · 0 TC · gross · all signals Lag-1 except Carry (Same-Day).")
+    _p10_yr0 = str(pf1c.index[0].year); _p10_yr1 = str(pf1c.index[-1].year)
+    _p10_tc_note_hdr = f" · {_p10_tc_label}" if _p10_tc_bps > 0 else " · 0 TC (Gross)"
+    section_header(f"EW PORTFOLIO PERFORMANCE{_p10_tc_note_hdr.upper()}")
+    st.caption(f"Full period {_p10_yr0}–{_p10_yr1}{_p10_tc_note_hdr} · all signals Lag-1 except Carry (Same-Day).")
 
     _p10_card_s  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
                     "border-radius:4px;padding:14px 20px")
@@ -4920,8 +5031,8 @@ with tab10:
 
     _p10_cc1, _p10_cc2, _p10_cc3, _p10_cc4 = st.columns(4)
     for _col2, _lbl2, _big2, _sub2 in [
-        (_p10_cc1, "Sharpe Ratio", f"{_port_sh:+.3f}", "Ann. Gross (2006–2025)"),
-        (_p10_cc2, "Ann. Return",  f"{_port_ann:+.1f}%", "Gross · no TC"),
+        (_p10_cc1, "Sharpe Ratio", f"{_port_sh:+.3f}", f"Ann.{'  Net' if _p10_tc_bps>0 else ' Gross'} ({_p10_yr0}–{_p10_yr1})"),
+        (_p10_cc2, "Ann. Return",  f"{_port_ann:+.1f}%", f"{'Net' if _p10_tc_bps>0 else 'Gross'} · {_p10_tc_note_hdr.strip(' ·')}"),
         (_p10_cc3, "Max Drawdown", f"${_port_dd:,.0f}/MT", "Cumulative USD/MT"),
         (_p10_cc4, "% In Market",  f"{100-_port_flat:.1f}%", f"Flat: {_port_flat:.1f}% of days"),
     ]:
@@ -5012,7 +5123,7 @@ with tab10:
     st.caption("Sharpe ratio by regime. Highlights where each signal adds / detracts value.")
 
     _p10_periods = [
-        ("Full (2006–2025)", None,         None),
+        (f"Full ({_p10_yr0}–{_p10_yr1})", None,         None),
         ("Pre-2020",         None,         "2020-01-01"),
         ("2020–2021",        "2020-01-01", "2022-01-01"),
         ("Post-2022",        "2022-01-01", None),
@@ -5022,10 +5133,10 @@ with tab10:
     for _plbl, _ps, _pe in _p10_periods:
         _sub_rows.append({
             "Period":    _plbl,
-            "Momentum":  _p10_sub_sharpe(_p10_m,    _ps, _pe),
-            "Carry":     _p10_sub_sharpe(_p10_c,    _ps, _pe),
-            "Value":     _p10_sub_sharpe(_p10_v,    _ps, _pe),
-            "EW Portfolio": _p10_sub_sharpe(_p10_port, _ps, _pe),
+            "Momentum":  _p10_sub_sharpe(_p10_m,    _ps, _pe, _p10_tc_bps),
+            "Carry":     _p10_sub_sharpe(_p10_c,    _ps, _pe, _p10_tc_bps),
+            "Value":     _p10_sub_sharpe(_p10_v,    _ps, _pe, _p10_tc_bps),
+            "EW Portfolio": _p10_sub_sharpe(_p10_port, _ps, _pe, _p10_tc_bps),
         })
 
     _sub_df = pd.DataFrame(_sub_rows).set_index("Period")
@@ -5078,13 +5189,21 @@ with tab10:
 
     # ── Section 6: Cumulative PnL Chart ──────────────────────────────────────
     st.divider()
-    section_header("CUMULATIVE PnL (USD/MT)")
-    st.caption("Gross cumulative PnL. EW Portfolio vs individual signals on common period.")
+    _p10_pnl_lbl = f"Net ({_p10_tc_label})" if _p10_tc_bps > 0 else "Gross"
+    section_header(f"CUMULATIVE PnL (USD/MT) — {_p10_pnl_lbl}")
+    st.caption(f"{_p10_pnl_lbl} cumulative PnL. EW Portfolio vs individual signals on common period.")
 
-    _p10_cum_port = (_p10_port * _p10_f.diff()).cumsum()
-    _p10_cum_mom  = (_p10_m   * _p10_f.diff()).cumsum()
-    _p10_cum_car  = (_p10_c   * _p10_f.diff()).cumsum()
-    _p10_cum_val  = (_p10_v   * _p10_f.diff()).cumsum()
+    def _cum_pnl(pos):
+        pnl = pos * _p10_f.diff()
+        if _p10_tc_bps > 0:
+            chg = pos.diff().abs(); chg.iloc[0] = abs(pos.iloc[0])
+            pnl = pnl - chg * (_p10_tc_bps / 10000.0 / 2.0) * _p10_f
+        return pnl.cumsum()
+
+    _p10_cum_port = _cum_pnl(_p10_port)
+    _p10_cum_mom  = _cum_pnl(_p10_m)
+    _p10_cum_car  = _cum_pnl(_p10_c)
+    _p10_cum_val  = _cum_pnl(_p10_v)
 
     fig_p10_cum = go.Figure()
     for _name, _series, _color, _width in [
@@ -5115,9 +5234,7 @@ with tab10:
     section_header("ROLLING SHARPE (252-DAY)")
 
     def _p10_roll_sh(pos: pd.Series, window: int = 252) -> pd.Series:
-        pnl = pos * _p10_f.diff()
-        with np.errstate(invalid="ignore", divide="ignore"):
-            ret = (pnl / _p10_f.shift(1)).replace([np.inf, -np.inf], np.nan)
+        ret = _p10_ret(pos, _p10_tc_bps)
         act = ret.where(pos != 0)
         return act.rolling(window, min_periods=window // 2).apply(
             lambda x: (x.mean() / x.std(ddof=1) * np.sqrt(252)) if x.std(ddof=1) > 0 else np.nan,
@@ -5156,9 +5273,12 @@ with tab10:
 
     # ── Section 8: Annual PnL Bars ────────────────────────────────────────────
     st.divider()
-    section_header("ANNUAL PnL (USD/MT)")
+    section_header(f"ANNUAL PnL (USD/MT) — {_p10_pnl_lbl}")
 
     _p10_pnl_s = _p10_port * _p10_f.diff()
+    if _p10_tc_bps > 0:
+        _p10_chg = _p10_port.diff().abs(); _p10_chg.iloc[0] = abs(_p10_port.iloc[0])
+        _p10_pnl_s = _p10_pnl_s - _p10_chg * (_p10_tc_bps / 10000.0 / 2.0) * _p10_f
     _p10_ann_pnl = _p10_pnl_s.groupby(_p10_pnl_s.index.year).sum()
     _p10_ann_colors = ["#5BAD72" if v >= 0 else "#B85450" for v in _p10_ann_pnl.values]
 
@@ -5241,5 +5361,5 @@ Carry regime changes (backwardation → contango) are accompanied by large same-
 If signals are pairwise uncorrelated (ρ ≈ 0) and each has Sharpe S, then EW Sharpe ≈ √3 × S.
 At avg individual Sharpe ≈ 0.60: theoretical EW ≈ 1.04. Realised EW ≈ 1.08 (slight positive contribution from mild negative Mom–Value correlation).
 
-**Disclaimer:** IS backtest only (2006–2025). Not investment advice.
+**Disclaimer:** IS backtest only. Not investment advice.
         """)
