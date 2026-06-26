@@ -1,0 +1,203 @@
+Tab,Version,Variant,Timing,Sharpe,Net5_Sharpe,AnnRet_pct,MaxDD_USD
+Momentum,MA Crossover,"MA(35,43)",Same-Day,0.717,0.702,18.35,-4757.0
+Momentum,MA Crossover,"MA(35,43)",Lag-1,0.628,0.613,16.07,-4584.0
+Momentum,MA Crossover,"MA(10,25)",Same-Day,0.372,0.35,9.57,-5121.5
+Momentum,MA Crossover,"MA(10,25)",Lag-1,0.445,0.424,11.45,-3453.0
+Momentum,MA Crossover,"MA(63,100)",Same-Day,-0.089,-0.095,-2.21,-13521.8
+Momentum,MA Crossover,"MA(63,100)",Lag-1,-0.056,-0.063,-1.4,-12596.5
+Momentum,CTA,Baz-Granger 3-timescale,Same-Day,0.109,0.101,2.52,-7611.1
+Momentum,CTA,Baz-Granger 3-timescale,Lag-1,0.084,0.076,1.94,-8461.9
+Momentum,Anchors,Anchors EW (10/25+35/43+63/100),Same-Day,0.457,0.437,8.57,-3813.6
+Momentum,Anchors,Anchors EW (10/25+35/43+63/100),Lag-1,0.466,0.446,8.71,-3334.3
+Carry,V1 Roll Yield,(F1-F2)/F1,Same-Day,0.102,0.079,2.61,-7320.0
+Carry,V1 Roll Yield,(F1-F2)/F1,Lag-1,0.03,0.007,0.76,-9273.8
+Carry,V1 Roll Yield,(F1-F3)/F1,Same-Day,0.029,0.006,0.75,-8472.8
+Carry,V1 Roll Yield,(F1-F3)/F1,Lag-1,-0.038,-0.062,-0.98,-10685.7
+Carry,V1 Roll Yield,(Cash-3M)/Cash,Same-Day,0.121,0.1,3.11,-7620.8
+Carry,V1 Roll Yield,(Cash-3M)/Cash,Lag-1,0.001,-0.019,0.03,-8842.4
+Carry,V2 Long Slope,F3-F15,Same-Day,0.137,0.118,3.54,-5927.9
+Carry,V2 Long Slope,F3-F15,Lag-1,-0.019,-0.039,-0.5,-7019.0
+Carry,V2 Long Slope,F4-F16,Same-Day,0.179,0.162,4.6,-4386.8
+Carry,V2 Long Slope,F4-F16,Lag-1,-0.081,-0.098,-2.09,-10226.7
+Carry,V2 Long Slope,F5-F17,Same-Day,0.018,0.0,0.46,-6369.7
+Carry,V2 Long Slope,F5-F17,Lag-1,-0.031,-0.049,-0.79,-9906.3
+Carry,V2 Long Slope,F6-F18,Same-Day,0.03,0.013,0.77,-5984.3
+Carry,V2 Long Slope,F6-F18,Lag-1,0.056,0.04,1.45,-7342.6
+Carry,V2 Long Slope,F7-F19,Same-Day,-0.028,-0.043,-0.71,-8573.5
+Carry,V2 Long Slope,F7-F19,Lag-1,0.03,0.015,0.78,-6582.6
+Carry,V2 Long Slope,F8-F20,Same-Day,0.058,0.041,1.51,-5938.0
+Carry,V2 Long Slope,F8-F20,Lag-1,-0.05,-0.067,-1.29,-8614.6
+Carry,V2 Long Slope,F9-F21,Same-Day,0.074,0.057,1.9,-6745.9
+Carry,V2 Long Slope,F9-F21,Lag-1,-0.017,-0.033,-0.43,-7913.1
+Carry,V2 Long Slope,F10-F22,Same-Day,0.059,0.044,1.52,-8013.9
+Carry,V2 Long Slope,F10-F22,Lag-1,0.031,0.015,0.79,-7177.5
+Carry,V2 Long Slope,F11-F23,Same-Day,-0.002,-0.016,-0.06,-7524.9
+Carry,V2 Long Slope,F11-F23,Lag-1,0.043,0.029,1.1,-6249.5
+Carry,V2 Long Slope,F12-F24,Same-Day,0.006,-0.008,0.15,-7372.8
+Carry,V2 Long Slope,F12-F24,Lag-1,0.049,0.036,1.27,-6024.7
+Carry,V3 Z-score,Z-score 252d,Same-Day,0.261,0.228,6.18,-5062.2
+Carry,V3 Z-score,Z-score 252d,Lag-1,0.245,0.211,5.79,-5240.3
+Carry,V4 Carry Mom,20-day Δcarry,Same-Day,0.524,0.464,13.47,-3286.0
+Carry,V4 Carry Mom,20-day Δcarry,Lag-1,0.424,0.365,10.91,-4278.7
+Carry,V4 Carry Mom,60-day Δcarry,Same-Day,0.388,0.342,9.91,-10893.6
+Carry,V4 Carry Mom,60-day Δcarry,Lag-1,0.308,0.262,7.86,-6747.5
+Value,V1 MA Reversion 1yr,F1,Same-Day,-0.166,-0.176,-1.99,-6749.9
+Value,V1 MA Reversion 1yr,F1,Lag-1,-0.146,-0.155,-1.74,-5985.9
+Value,V1 MA Reversion 3yr,F1,Same-Day,0.028,0.02,0.37,-5165.9
+Value,V1 MA Reversion 3yr,F1,Lag-1,0.051,0.043,0.67,-4880.2
+Value,V1 MA Reversion 5yr,F1,Same-Day,0.257,0.248,3.45,-5175.0
+Value,V1 MA Reversion 5yr,F1,Lag-1,0.274,0.266,3.68,-5344.2
+Value,V1 MA Reversion 7yr,F1,Same-Day,0.112,0.106,1.25,-5024.5
+Value,V1 MA Reversion 7yr,F1,Lag-1,0.104,0.098,1.16,-5186.5
+Value,V1 MA Reversion 10yr,F1,Same-Day,-0.001,-0.004,-0.01,-5227.2
+Value,V1 MA Reversion 10yr,F1,Lag-1,-0.005,-0.008,-0.05,-5071.9
+Value,V1 MA Reversion 1yr,F2,Same-Day,-0.189,-0.198,-2.25,-7081.4
+Value,V1 MA Reversion 1yr,F2,Lag-1,-0.116,-0.124,-1.37,-5736.4
+Value,V1 MA Reversion 3yr,F2,Same-Day,-0.028,-0.035,-0.38,-5444.4
+Value,V1 MA Reversion 3yr,F2,Lag-1,0.015,0.008,0.2,-5030.2
+Value,V1 MA Reversion 5yr,F2,Same-Day,0.239,0.23,3.21,-5175.0
+Value,V1 MA Reversion 5yr,F2,Lag-1,0.265,0.257,3.57,-5421.8
+Value,V1 MA Reversion 7yr,F2,Same-Day,0.104,0.099,1.18,-5024.5
+Value,V1 MA Reversion 7yr,F2,Lag-1,0.094,0.088,1.05,-5186.5
+Value,V1 MA Reversion 10yr,F2,Same-Day,-0.017,-0.021,-0.18,-5286.4
+Value,V1 MA Reversion 10yr,F2,Lag-1,0.004,0.0,0.04,-4950.4
+Value,V1 MA Reversion 1yr,F3,Same-Day,-0.198,-0.207,-2.37,-7292.3
+Value,V1 MA Reversion 1yr,F3,Lag-1,-0.114,-0.123,-1.35,-5861.3
+Value,V1 MA Reversion 3yr,F3,Same-Day,0.022,0.014,0.29,-5333.4
+Value,V1 MA Reversion 3yr,F3,Lag-1,0.059,0.051,0.78,-5068.2
+Value,V1 MA Reversion 5yr,F3,Same-Day,0.237,0.228,3.2,-5175.0
+Value,V1 MA Reversion 5yr,F3,Lag-1,0.25,0.241,3.37,-5421.8
+Value,V1 MA Reversion 7yr,F3,Same-Day,0.115,0.109,1.3,-5024.5
+Value,V1 MA Reversion 7yr,F3,Lag-1,0.072,0.066,0.81,-5186.5
+Value,V1 MA Reversion 10yr,F3,Same-Day,-0.013,-0.017,-0.14,-5184.9
+Value,V1 MA Reversion 10yr,F3,Lag-1,0.021,0.017,0.22,-4655.9
+Value,V1 MA Reversion 1yr,F4,Same-Day,-0.173,-0.183,-2.07,-7134.7
+Value,V1 MA Reversion 1yr,F4,Lag-1,-0.1,-0.11,-1.19,-5479.0
+Value,V1 MA Reversion 3yr,F4,Same-Day,0.012,0.005,0.17,-5359.9
+Value,V1 MA Reversion 3yr,F4,Lag-1,0.039,0.031,0.51,-4984.5
+Value,V1 MA Reversion 5yr,F4,Same-Day,0.229,0.22,3.1,-5175.0
+Value,V1 MA Reversion 5yr,F4,Lag-1,0.273,0.264,3.69,-5421.8
+Value,V1 MA Reversion 7yr,F4,Same-Day,0.115,0.109,1.3,-5024.5
+Value,V1 MA Reversion 7yr,F4,Lag-1,0.061,0.056,0.69,-5186.5
+Value,V1 MA Reversion 10yr,F4,Same-Day,0.008,0.004,0.09,-5060.7
+Value,V1 MA Reversion 10yr,F4,Lag-1,0.011,0.007,0.12,-4733.2
+Value,V1 MA Reversion 1yr,F5,Same-Day,-0.14,-0.149,-1.67,-6636.9
+Value,V1 MA Reversion 1yr,F5,Lag-1,-0.109,-0.119,-1.3,-5734.2
+Value,V1 MA Reversion 3yr,F5,Same-Day,0.001,-0.006,0.01,-5359.9
+Value,V1 MA Reversion 3yr,F5,Lag-1,-0.015,-0.022,-0.21,-4985.0
+Value,V1 MA Reversion 5yr,F5,Same-Day,0.242,0.233,3.3,-5175.0
+Value,V1 MA Reversion 5yr,F5,Lag-1,0.318,0.309,4.34,-5371.2
+Value,V1 MA Reversion 7yr,F5,Same-Day,0.121,0.115,1.37,-5024.5
+Value,V1 MA Reversion 7yr,F5,Lag-1,0.072,0.066,0.81,-5186.5
+Value,V1 MA Reversion 10yr,F5,Same-Day,0.031,0.027,0.34,-4854.9
+Value,V1 MA Reversion 10yr,F5,Lag-1,0.003,-0.002,0.03,-4684.2
+Value,V1 MA Reversion 1yr,F6,Same-Day,-0.131,-0.14,-1.55,-6336.9
+Value,V1 MA Reversion 1yr,F6,Lag-1,-0.051,-0.06,-0.6,-5508.1
+Value,V1 MA Reversion 3yr,F6,Same-Day,-0.015,-0.021,-0.2,-5359.9
+Value,V1 MA Reversion 3yr,F6,Lag-1,0.005,-0.001,0.07,-5001.0
+Value,V1 MA Reversion 5yr,F6,Same-Day,0.242,0.233,3.32,-5175.0
+Value,V1 MA Reversion 5yr,F6,Lag-1,0.299,0.291,4.11,-5371.2
+Value,V1 MA Reversion 7yr,F6,Same-Day,0.131,0.125,1.49,-5024.5
+Value,V1 MA Reversion 7yr,F6,Lag-1,0.087,0.081,0.99,-5186.5
+Value,V1 MA Reversion 10yr,F6,Same-Day,0.07,0.065,0.76,-4854.9
+Value,V1 MA Reversion 10yr,F6,Lag-1,0.04,0.036,0.44,-4684.2
+Value,V1 MA Reversion 1yr,F7,Same-Day,-0.079,-0.088,-0.94,-6337.1
+Value,V1 MA Reversion 1yr,F7,Lag-1,-0.012,-0.022,-0.14,-4942.8
+Value,V1 MA Reversion 3yr,F7,Same-Day,0.0,-0.006,0.01,-5359.9
+Value,V1 MA Reversion 3yr,F7,Lag-1,0.061,0.055,0.82,-4984.5
+Value,V1 MA Reversion 5yr,F7,Same-Day,0.272,0.264,3.75,-5175.0
+Value,V1 MA Reversion 5yr,F7,Lag-1,0.338,0.33,4.65,-5371.2
+Value,V1 MA Reversion 7yr,F7,Same-Day,0.11,0.104,1.26,-5024.5
+Value,V1 MA Reversion 7yr,F7,Lag-1,0.068,0.062,0.78,-5186.5
+Value,V1 MA Reversion 10yr,F7,Same-Day,0.051,0.047,0.56,-4854.9
+Value,V1 MA Reversion 10yr,F7,Lag-1,0.05,0.046,0.54,-4684.2
+Value,V1 MA Reversion 1yr,F8,Same-Day,-0.082,-0.091,-0.97,-6805.6
+Value,V1 MA Reversion 1yr,F8,Lag-1,0.001,-0.009,0.01,-4942.8
+Value,V1 MA Reversion 3yr,F8,Same-Day,0.038,0.032,0.52,-5267.9
+Value,V1 MA Reversion 3yr,F8,Lag-1,0.059,0.052,0.79,-5016.2
+Value,V1 MA Reversion 5yr,F8,Same-Day,0.277,0.269,3.83,-5175.0
+Value,V1 MA Reversion 5yr,F8,Lag-1,0.328,0.32,4.53,-5371.2
+Value,V1 MA Reversion 7yr,F8,Same-Day,0.111,0.105,1.27,-5024.5
+Value,V1 MA Reversion 7yr,F8,Lag-1,0.058,0.052,0.66,-5186.5
+Value,V1 MA Reversion 10yr,F8,Same-Day,0.041,0.036,0.45,-4726.7
+Value,V1 MA Reversion 10yr,F8,Lag-1,0.047,0.042,0.51,-4663.4
+Value,V1 MA Reversion 1yr,F9,Same-Day,-0.046,-0.056,-0.54,-6316.3
+Value,V1 MA Reversion 1yr,F9,Lag-1,0.028,0.018,0.34,-4769.8
+Value,V1 MA Reversion 3yr,F9,Same-Day,0.048,0.041,0.65,-5521.1
+Value,V1 MA Reversion 3yr,F9,Lag-1,0.042,0.035,0.57,-5192.0
+Value,V1 MA Reversion 5yr,F9,Same-Day,0.241,0.233,3.35,-5175.0
+Value,V1 MA Reversion 5yr,F9,Lag-1,0.269,0.26,3.73,-5371.2
+Value,V1 MA Reversion 7yr,F9,Same-Day,0.111,0.105,1.28,-5024.5
+Value,V1 MA Reversion 7yr,F9,Lag-1,0.011,0.005,0.12,-5186.5
+Value,V1 MA Reversion 10yr,F9,Same-Day,0.056,0.051,0.61,-4726.7
+Value,V1 MA Reversion 10yr,F9,Lag-1,0.054,0.049,0.59,-4663.4
+Value,V1 MA Reversion 1yr,F10,Same-Day,-0.021,-0.031,-0.25,-6015.6
+Value,V1 MA Reversion 1yr,F10,Lag-1,0.082,0.072,0.97,-4754.2
+Value,V1 MA Reversion 3yr,F10,Same-Day,0.015,0.008,0.2,-5521.1
+Value,V1 MA Reversion 3yr,F10,Lag-1,0.054,0.047,0.73,-5192.0
+Value,V1 MA Reversion 5yr,F10,Same-Day,0.212,0.204,2.96,-5175.0
+Value,V1 MA Reversion 5yr,F10,Lag-1,0.27,0.261,3.76,-5371.2
+Value,V1 MA Reversion 7yr,F10,Same-Day,0.128,0.122,1.49,-5024.5
+Value,V1 MA Reversion 7yr,F10,Lag-1,0.031,0.025,0.36,-5186.5
+Value,V1 MA Reversion 10yr,F10,Same-Day,0.119,0.114,1.3,-4623.9
+Value,V1 MA Reversion 10yr,F10,Lag-1,0.041,0.037,0.45,-4563.9
+Value,V1 MA Reversion 1yr,F11,Same-Day,0.048,0.038,0.57,-5455.8
+Value,V1 MA Reversion 1yr,F11,Lag-1,0.111,0.101,1.31,-4483.8
+Value,V1 MA Reversion 3yr,F11,Same-Day,-0.008,-0.014,-0.11,-5610.1
+Value,V1 MA Reversion 3yr,F11,Lag-1,0.066,0.059,0.89,-5174.8
+Value,V1 MA Reversion 5yr,F11,Same-Day,0.22,0.212,3.08,-5175.0
+Value,V1 MA Reversion 5yr,F11,Lag-1,0.277,0.269,3.88,-5371.2
+Value,V1 MA Reversion 7yr,F11,Same-Day,0.133,0.127,1.56,-5024.5
+Value,V1 MA Reversion 7yr,F11,Lag-1,0.067,0.061,0.79,-5214.2
+Value,V1 MA Reversion 10yr,F11,Same-Day,0.132,0.127,1.46,-4633.4
+Value,V1 MA Reversion 10yr,F11,Lag-1,0.064,0.059,0.7,-4750.4
+Value,V1 MA Reversion 1yr,F12,Same-Day,0.061,0.05,0.73,-5455.8
+Value,V1 MA Reversion 1yr,F12,Lag-1,0.121,0.11,1.43,-4483.8
+Value,V1 MA Reversion 3yr,F12,Same-Day,-0.017,-0.023,-0.22,-5610.1
+Value,V1 MA Reversion 3yr,F12,Lag-1,0.053,0.046,0.72,-5174.8
+Value,V1 MA Reversion 5yr,F12,Same-Day,0.184,0.176,2.58,-5175.0
+Value,V1 MA Reversion 5yr,F12,Lag-1,0.235,0.227,3.31,-5371.2
+Value,V1 MA Reversion 7yr,F12,Same-Day,0.107,0.101,1.25,-5024.5
+Value,V1 MA Reversion 7yr,F12,Lag-1,0.029,0.023,0.35,-5214.2
+Value,V1 MA Reversion 10yr,F12,Same-Day,0.115,0.11,1.27,-4707.2
+Value,V1 MA Reversion 10yr,F12,Lag-1,0.043,0.038,0.47,-4750.4
+Value,V1 MA Reversion 1yr,F13,Same-Day,0.019,0.008,0.22,-5669.4
+Value,V1 MA Reversion 1yr,F13,Lag-1,0.133,0.122,1.57,-4333.8
+Value,V1 MA Reversion 3yr,F13,Same-Day,-0.007,-0.014,-0.1,-5652.6
+Value,V1 MA Reversion 3yr,F13,Lag-1,0.069,0.063,0.95,-5055.0
+Value,V1 MA Reversion 5yr,F13,Same-Day,0.196,0.188,2.77,-5175.0
+Value,V1 MA Reversion 5yr,F13,Lag-1,0.236,0.228,3.34,-5371.2
+Value,V1 MA Reversion 7yr,F13,Same-Day,0.159,0.153,1.89,-5024.5
+Value,V1 MA Reversion 7yr,F13,Lag-1,-0.041,-0.047,-0.49,-5641.7
+Value,V1 MA Reversion 10yr,F13,Same-Day,0.119,0.114,1.32,-4444.2
+Value,V1 MA Reversion 10yr,F13,Lag-1,-0.002,-0.007,-0.02,-4791.2
+Value,V1 MA Reversion 1yr,F14,Same-Day,0.033,0.023,0.39,-5552.8
+Value,V1 MA Reversion 1yr,F14,Lag-1,0.121,0.11,1.43,-4423.8
+Value,V1 MA Reversion 3yr,F14,Same-Day,0.033,0.027,0.45,-5749.4
+Value,V1 MA Reversion 3yr,F14,Lag-1,0.051,0.045,0.7,-5396.8
+Value,V1 MA Reversion 5yr,F14,Same-Day,0.205,0.197,2.92,-5175.0
+Value,V1 MA Reversion 5yr,F14,Lag-1,0.218,0.21,3.08,-5371.2
+Value,V1 MA Reversion 7yr,F14,Same-Day,0.193,0.187,2.32,-5024.5
+Value,V1 MA Reversion 7yr,F14,Lag-1,-0.057,-0.063,-0.68,-5663.5
+Value,V1 MA Reversion 10yr,F14,Same-Day,0.165,0.159,1.83,-4444.2
+Value,V1 MA Reversion 10yr,F14,Lag-1,0.031,0.025,0.34,-4791.2
+Value,V1 MA Reversion 1yr,F15,Same-Day,0.061,0.05,0.73,-5475.8
+Value,V1 MA Reversion 1yr,F15,Lag-1,0.084,0.073,0.99,-4423.8
+Value,V1 MA Reversion 3yr,F15,Same-Day,0.085,0.078,1.17,-5648.9
+Value,V1 MA Reversion 3yr,F15,Lag-1,0.015,0.009,0.21,-5315.8
+Value,V1 MA Reversion 5yr,F15,Same-Day,0.238,0.231,3.42,-5175.0
+Value,V1 MA Reversion 5yr,F15,Lag-1,0.195,0.188,2.78,-5371.2
+Value,V1 MA Reversion 7yr,F15,Same-Day,0.175,0.169,2.12,-5024.5
+Value,V1 MA Reversion 7yr,F15,Lag-1,-0.058,-0.064,-0.69,-5663.5
+Value,V1 MA Reversion 10yr,F15,Same-Day,0.148,0.142,1.65,-4394.2
+Value,V1 MA Reversion 10yr,F15,Lag-1,0.017,0.012,0.19,-4865.2
+Value,V2 BG Reversal,1yr,Same-Day,-0.355,-0.363,-8.4,-15484.2
+Value,V2 BG Reversal,1yr,Lag-1,-0.34,-0.349,-8.05,-15864.2
+Value,V2 BG Reversal,3yr,Same-Day,0.303,0.291,5.87,-4901.0
+Value,V2 BG Reversal,3yr,Lag-1,0.263,0.25,5.07,-5072.0
+Value,V2 BG Reversal,5yr,Same-Day,-0.137,-0.146,-2.13,-6950.2
+Value,V2 BG Reversal,5yr,Lag-1,-0.169,-0.178,-2.62,-7794.9
+Value,V2 BG Reversal,7yr,Same-Day,0.157,0.15,2.02,-5999.9
+Value,V2 BG Reversal,7yr,Lag-1,0.113,0.106,1.45,-5990.4
+Value,V2 BG Reversal,10yr,Same-Day,0.512,0.497,5.13,-4108.4
+Value,V2 BG Reversal,10yr,Lag-1,0.365,0.35,3.66,-4108.4

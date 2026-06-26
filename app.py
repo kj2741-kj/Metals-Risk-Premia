@@ -19,6 +19,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 from scipy import stats
+from scipy.optimize import minimize
 
 warnings.filterwarnings("ignore")
 
@@ -1962,6 +1963,69 @@ def _wf_ma3543_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
     return out
 
 
+@st.cache_data(show_spinner=False)
+def _wf_anchors_isopt_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
+    """Walk-forward OOS Sharpes for Anchors + IS-optimised weights, with round-trip TC.
+    Anchors = MA(10,25), MA(35,43), MA(63,100) (Lag-1 positions, full-history MA state).
+    Per OOS window: fit max-Sharpe QP weights (≥0, sum=1) on the prior 5yr IS returns,
+    then apply to the OOS anchor positions. Computes ALL windows (was hardcoded to 3)."""
+    IS_W, OOS_W = 1260, 252
+    T, dates = len(_f1r), _f1r.index
+    anchors = [(10, 25), (35, 43), (63, 100)]
+
+    def _apos(s, l):
+        return np.sign(_f1r.rolling(s).mean() - _f1r.rolling(l).mean()).shift(1).fillna(0)
+    pos_anchors = [_apos(s, l) for s, l in anchors]
+
+    def _opt_w(ret_mat):
+        def neg_sh(w):
+            r = ret_mat @ w; a = r[r != 0]
+            if len(a) < 20: return 0.0
+            sd = a.std(ddof=1)
+            return -(a.mean() / sd * np.sqrt(252)) if sd > 0 else 0.0
+        best_v, best_w = np.inf, np.array([1/3, 1/3, 1/3])
+        for w0 in [[1/3,1/3,1/3],[1,0,0],[0,1,0],[0,0,1],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5]]:
+            try:
+                res = minimize(neg_sh, w0, method="SLSQP", bounds=[(0,1)]*3,
+                               constraints=[{"type":"eq","fun":lambda w: w.sum()-1}],
+                               options={"ftol":1e-9,"maxiter":300})
+                if res.fun < best_v: best_v, best_w = res.fun, res.x
+            except Exception:
+                pass
+        w = np.clip(best_w, 0, 1); return w / w.sum()
+
+    out = {}
+    oos_s = IS_W
+    while oos_s < T:
+        oos_e = min(oos_s + OOS_W, T)
+        if (oos_e - oos_s) < OOS_W:
+            oos_s += OOS_W; continue
+        yr = str(dates[oos_s].year)
+        is_dt = dates[oos_s - IS_W:oos_s]; oos_dt = dates[oos_s:oos_e]
+        f1c_is = _f1c.reindex(is_dt)
+        ret_mat = []
+        for p in pos_anchors:
+            pis = p.reindex(is_dt).fillna(0)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                r = (pis * f1c_is.diff() / f1c_is.shift(1)).replace([np.inf,-np.inf], np.nan).fillna(0)
+            ret_mat.append(r.values)
+        w = _opt_w(np.column_stack(ret_mat))
+        port = sum(wi * p.reindex(oos_dt).fillna(0) for wi, p in zip(w, pos_anchors))
+        f1c_oos = _f1c.reindex(oos_dt)
+        pnl = port * f1c_oos.diff()
+        if tc_bps > 0:
+            chg = port.diff().abs(); chg.iloc[0] = abs(port.iloc[0])
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * f1c_oos
+        with np.errstate(invalid="ignore", divide="ignore"):
+            ret = (pnl / f1c_oos.shift(1)).replace([np.inf,-np.inf], np.nan)
+        act = ret[port != 0].dropna()
+        if len(act) >= 20:
+            sd = float(act.std(ddof=1))
+            out[yr] = float(act.mean() / sd * np.sqrt(252)) if sd > 0 else np.nan
+        oos_s += OOS_W
+    return out
+
+
 # ══════════════════════════════════════════════════════
 # TAB 7: MOMENTUM SIGNALS
 # ══════════════════════════════════════════════════════
@@ -1996,9 +2060,8 @@ with tab7:
     f1c: pd.Series = _f1_df["F1_continuous"]
 
     # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD EVIDENCE ────────────────────────
-    # Anchors+IS-Opt reference values from bucket_weight_opt.py (separate research run)
-    _WF_ANC_OPT      = {"2022": 0.382, "2023": 0.476, "2024": 0.437}
-    _WF_OPT_AVG_FULL = 0.442
+    # Anchors+IS-Opt OOS Sharpes are now computed LIVE (all windows) — see below,
+    # after the TC selector is known, via _wf_anchors_isopt_tc().
 
     _oos_tc_row = st.columns([1.8, 4.2])
     with _oos_tc_row[0]:
@@ -2017,6 +2080,10 @@ with tab7:
         )
 
     _wf_active     = _wf_ma3543_tc(f1r, f1c, _oos_tc_bps)
+    # Anchors + IS-opt walk-forward — computed live for ALL OOS windows (TC-aware).
+    _WF_ANC_OPT      = _wf_anchors_isopt_tc(f1r, f1c, _oos_tc_bps)
+    _anc_opt_vals    = [v for v in _WF_ANC_OPT.values() if v is not None and not np.isnan(v)]
+    _WF_OPT_AVG_FULL = round(np.nanmean(_anc_opt_vals), 3) if _anc_opt_vals else np.nan
     _wf_yrs_all    = sorted(k for k in _wf_active if not k.endswith("*"))
     _wf_recent_yrs = _wf_yrs_all[-3:] if len(_wf_yrs_all) >= 3 else _wf_yrs_all
     _wf_first_yr   = _wf_yrs_all[0] if _wf_yrs_all else "N/A"
@@ -2070,8 +2137,8 @@ with tab7:
     with _wf_c2:
         st.markdown(f"""<div style="{_cs}">
 <p style="{_lbl}">Anchors + IS-Opt Weights</p>
-<p style="{_big}">+{_WF_OPT_AVG_FULL:.3f}</p>
-<p style="{_sub}">Avg OOS Sharpe · {_wf_first_yr}–2024 · 15 Windows</p>
+<p style="{_big}">{_WF_OPT_AVG_FULL:+.3f}</p>
+<p style="{_sub}">Avg OOS Sharpe · {_wf_first_yr}–{_wf_last_yr[:4]} · {len(_WF_ANC_OPT)} Windows{_tc_note}</p>
 <hr style="{_hr}"/>
 <p style="{_sub}">MA(10,25) + MA(35,43) + MA(63,100)</p>
 <p style="{_sub}">Max-Sharpe QP weights, re-optimised annually on prior 5yr IS data</p>
@@ -2147,45 +2214,51 @@ with tab7:
             + (f"TC = {_oos_tc_label} deducted on each signal flip." if _oos_tc_bps > 0 else "Gross returns shown.")
         )
     else:
-        # Anchors + IS-Opt Weights: 3-year bar chart
+        # Anchors + IS-Opt Weights: all OOS windows, computed live (TC-aware)
         _anc_years = list(_WF_ANC_OPT.keys())
         _anc_sh    = list(_WF_ANC_OPT.values())
+        _anc_recent = _anc_years[-3:] if len(_anc_years) >= 3 else _anc_years
         fig_anc = go.Figure()
         fig_anc.add_trace(go.Bar(
             x=_anc_years, y=_anc_sh,
-            marker_color=[COLORS["green"] if v >= 0 else COLORS["red"] for v in _anc_sh],
-            marker_line_color=[COLORS["amber"]] * len(_anc_years), marker_line_width=1.5,
+            marker_color=[
+                (COLORS["primary"] if v >= 0 else "#B05030") if y in _anc_recent
+                else (COLORS["green"] if v >= 0 else COLORS["red"])
+                for y, v in _WF_ANC_OPT.items()
+            ],
+            marker_line_color=["#D4A843" if y in _anc_recent else "rgba(0,0,0,0)" for y in _anc_years],
+            marker_line_width=1.5,
             hovertemplate="%{x}<br>OOS Sharpe: %{y:.3f}<extra></extra>",
         ))
         fig_anc.add_hline(y=0, line_dash="solid", line_color="#475569", line_width=1)
         fig_anc.add_hline(
             y=_WF_OPT_AVG_FULL, line_dash="dot", line_color=COLORS["amber"], line_width=1.5,
-            annotation_text=f"15-window avg +{_WF_OPT_AVG_FULL:.3f}",
+            annotation_text=f"{len(_anc_sh)}-window avg {_WF_OPT_AVG_FULL:+.3f}",
             annotation_position="top right",
             annotation_font=dict(size=10, color=COLORS["amber"]),
         )
         fig_anc.update_layout(
             **CHART_LAYOUT, height=300,
             title=dict(
-                text="Anchors + IS-Opt Weights — OOS Sharpe (2022–2024 windows)",
+                text=f"Anchors + IS-Opt Weights — OOS Sharpe  (Walk-Forward · IS=5yr · all windows{_tc_note})",
                 font=dict(size=13),
             ),
             yaxis_title="OOS Sharpe", xaxis_title=None, showlegend=False,
         )
         st.plotly_chart(fig_anc, use_container_width=True)
         st.caption(
-            "Per-window IS-opt data available for 2022–2024. Full 15-window average (+0.442) shown as reference. "
-            "Note — for Anchors + IS-Opt Weights, strict OOS validation is less critical: "
-            "the three anchor MAs [MA(10,25), MA(35,43), MA(63,100)] are structural, not data-fitted. "
-            "Only the combination weights are IS-optimised annually on prior 5yr data (max-Sharpe QP). "
-            "There is no look-ahead bias in the anchor selection itself."
+            f"All {len(_anc_sh)} OOS windows, IS-opt QP weights re-fit annually on prior 5yr data "
+            f"(max-Sharpe, w≥0, Σw=1). Full-period avg {_WF_OPT_AVG_FULL:+.3f}"
+            + (f" · TC = {_oos_tc_label}." if _oos_tc_bps > 0 else " (gross).")
+            + " The three anchor MAs [MA(10,25), MA(35,43), MA(63,100)] are structural, not data-fitted — "
+            "only the combination weights are optimised IS, so there is no anchor-selection look-ahead."
         )
 
     with st.expander("Walk-Forward Annual Detail", expanded=False):
         _wf_yrs_tbl = list(_wf_active.keys())
         _is_labels  = [f"{int(y.rstrip('*'))-5}–{int(y.rstrip('*'))-1}" for y in _wf_yrs_tbl]
         _tc_col     = f"MA(35,43) OOS{'  '+_oos_tc_label if _oos_tc_bps>0 else ' (Gross)'}"
-        _anc_map    = {y: f"+{v:.3f}" for y, v in _WF_ANC_OPT.items()}
+        _anc_map    = {y: f"{v:+.3f}" for y, v in _WF_ANC_OPT.items()}
         _wf_tbl = pd.DataFrame({
             "OOS Window":      _wf_yrs_tbl,
             "IS Period (5yr)": _is_labels,
@@ -2196,8 +2269,8 @@ with tab7:
         st.dataframe(_wf_tbl, use_container_width=True, hide_index=True)
         st.caption(
             "OOS Window label = start year of 252-day OOS period. "
-            "Anchors+Opt 2022–2024: IS-opt QP weights on MA(10,25)+MA(35,43)+MA(63,100), "
-            f"full-period avg = +{_WF_OPT_AVG_FULL:.3f} (from bucket_weight_opt.py)."
+            "Anchors+Opt: IS-opt QP weights on MA(10,25)+MA(35,43)+MA(63,100), re-fit each window; "
+            f"computed live for all {len(_WF_ANC_OPT)} windows · full-period avg = {_WF_OPT_AVG_FULL:+.3f}."
         )
 
     st.divider()
@@ -4092,10 +4165,10 @@ with tab9:
 
     # ── Strategy Preset ───────────────────────────────────────────────────────
     _VAL_PRESETS = {
-        "V2 — Baz-Granger · 10yr · Lag-1  [Best Overall]": {
+        "V2 — Baz-Granger · 10yr · Same-Day  [Best Overall]": {
             "val_vgroup":   "V2 — Baz-Granger Reversal",
             "val_lb":       "10yr (2520d)",
-            "val_timing":   "Lag-1 (Next-Day)",
+            "val_timing":   "Same-Day",
         },
         "V1 — F8 · 5yr · ±10% · Lag-1  [Empirical Optimum]": {
             "val_vgroup":   "V1 — MA Reversion",
@@ -4111,10 +4184,10 @@ with tab9:
             "val_thr":      "±10% (default)",
             "val_timing":   "Lag-1 (Next-Day)",
         },
-        "V2 — Baz-Granger · 3yr · Lag-1  [Alternative Lookback]": {
+        "V2 — Baz-Granger · 3yr · Same-Day  [Alternative Lookback]": {
             "val_vgroup":   "V2 — Baz-Granger Reversal",
             "val_lb":       "3yr  (756d)",
-            "val_timing":   "Lag-1 (Next-Day)",
+            "val_timing":   "Same-Day",
         },
         "V1 — F8 · 7yr · ±10% · Lag-1  [Longer-Window V1]": {
             "val_vgroup":   "V1 — MA Reversion",
@@ -4174,8 +4247,12 @@ with tab9:
         val_tc_label = st.selectbox("TC (bps)", list(_val_tc_map.keys()), index=0, key="val_tc")
         val_tc_bps = _val_tc_map[val_tc_label]
     with v9_c6:
-        val_timing = st.selectbox("Position Entry", ["Lag-1 (Next-Day)", "Same-Day"],
-                                  index=0, key="val_timing")
+        val_timing = st.selectbox("Position Entry", ["Same-Day", "Lag-1 (Next-Day)"],
+                                  index=0, key="val_timing",
+                                  help="Same-Day (shift 1, no look-ahead) now the default: under the "
+                                       "corrected timing convention it beats Lag-1 for every V2 Baz-Granger "
+                                       "lookback (10yr +0.51 vs +0.37). V1 MA-Reversion is roughly tied "
+                                       "(Lag-1 marginally ahead for F8/F12 5yr).")
         val_same_day = val_timing == "Same-Day"
 
     # Build spec
