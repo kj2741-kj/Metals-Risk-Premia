@@ -1,5 +1,5 @@
 """
-Metals Risk Premia — Interactive Dashboard
+Metals Risk Premia - Interactive Dashboard
 ============================================
 Streamlit dashboard for exploring LME & CME metals data.
 
@@ -76,7 +76,7 @@ st.markdown("""
     .metric-card .delta-pos { color: #5BAD72; font-size: 0.82rem; }
     .metric-card .delta-neg { color: #B85450; font-size: 0.82rem; }
 
-    /* Compact metric cards (momentum tab — fits 8 per row) */
+    /* Compact metric cards (momentum tab - fits 8 per row) */
     .metric-compact {
         background: #161616;
         border: 1px solid #2A2A2A;
@@ -246,7 +246,7 @@ def _local_bytesio(path):
 
 @st.cache_data(ttl=3600)
 def load_cash_3m_data(file):
-    """Load Metals Cash and 3M.xlsx — one sheet per metal."""
+    """Load Metals Cash and 3M.xlsx - one sheet per metal."""
     xls = pd.ExcelFile(file)
     data = {}
 
@@ -293,7 +293,7 @@ def load_cash_3m_data(file):
 @st.cache_data(ttl=3600)
 def load_futures_curve_data(file):
     """
-    Load Metals Futures Curve — one sheet per metal with F1-F27.
+    Load Metals Futures Curve - one sheet per metal with F1-F27.
     Handles: .xlsx, .xls, .csv (with encoding fallbacks), and
     xlsx files incorrectly saved with .csv extension.
     """
@@ -428,7 +428,7 @@ def parse_cash_3m_columns(df, metal_name):
     for col in df.columns:
         cl = col.lower()
         # First-match-wins: don't overwrite a key once populated.
-        # Check spread first — spread col names also contain "cash"/"3m"/"price".
+        # Check spread first - spread col names also contain "cash"/"3m"/"price".
         if "spread" in cl and "price" in cl and "spread_price" not in result.columns:
             result["spread_price"] = pd.to_numeric(df[col], errors="coerce")
         elif "spread" in cl and "volume" in cl and "spread_volume" not in result.columns:
@@ -675,12 +675,12 @@ if not cash_file:
     st.markdown("""
     **Expected file structure:**
 
-    **File 1 — Metals Cash and 3M.xlsx:**
+    **File 1 - Metals Cash and 3M.xlsx:**
     One sheet per LME metal (LME Copper, LME Aluminium, ...) with columns for
     Cash Price, 3M Forward Price/Volume/OI, Cash-3M Spread Price/Volume.
     Plus a CME Cash Prices sheet for Gold, Silver, Platinum, Palladium, Copper ($/lb).
 
-    **File 2 — Metals Futures Curve (.xlsx or .csv):**
+    **File 2 - Metals Futures Curve (.xlsx or .csv):**
     One sheet per metal with F1 through F27, each having Price, Volume, Open Interest columns.
     """)
     st.stop()
@@ -787,7 +787,7 @@ with tab1:
 
         st.divider()
 
-        section_header("Cash-3M Spread — 1 Year")
+        section_header("Cash-3M Spread - 1 Year")
         spread_metals = [m for m in LME_METALS if m in cash_data]
         selected_spread_metal = st.selectbox("Select Commodity", spread_metals, key="spread_metal_select")
 
@@ -815,7 +815,7 @@ with tab1:
             fig_spread.update_layout(
                 **CHART_LAYOUT,
                 height=320,
-                title=dict(text=f"{selected_spread_metal} — Cash-3M Spread (Last 1 Year)", font=dict(size=14)),
+                title=dict(text=f"{selected_spread_metal} - Cash-3M Spread (Last 1 Year)", font=dict(size=14)),
                 yaxis_title="Spread ($/MT)",
                 xaxis_title=None,
                 hovermode="x unified",
@@ -942,7 +942,7 @@ with tab2:
                         fig.update_layout(
                             **CHART_LAYOUT,
                             height=500,
-                            title=dict(text=f"{curve_metal} — Forward Curve", font=dict(size=16)),
+                            title=dict(text=f"{curve_metal} - Forward Curve", font=dict(size=16)),
                             xaxis_title="Contract",
                             yaxis_title="Price",
                         )
@@ -952,9 +952,9 @@ with tab2:
                         if len(latest_row) >= 2:
                             slope = latest_row.iloc[-1] - latest_row.iloc[0]
                             if slope > 0:
-                                st.success(f"📈 **Contango** — Far month contracts are trading higher than near month ({curve_metal}, {selected_curve_date.strftime('%Y-%m-%d')})")
+                                st.success(f"📈 **Contango** - Far month contracts are trading higher than near month ({curve_metal}, {selected_curve_date.strftime('%Y-%m-%d')})")
                             else:
-                                st.warning(f"📉 **Backwardation** — Near month contracts are trading higher than far month ({curve_metal}, {selected_curve_date.strftime('%Y-%m-%d')})")
+                                st.warning(f"📉 **Backwardation** - Near month contracts are trading higher than far month ({curve_metal}, {selected_curve_date.strftime('%Y-%m-%d')})")
                 else:
                     st.warning("Could not parse futures price columns. Check column naming (expecting F1, F2, ... pattern with Price).")
             else:
@@ -987,7 +987,7 @@ with tab3:
         st.warning(f"No data found for {selected_metal}")
         st.stop()
 
-    st.markdown(f"### {selected_metal} — Cash vs 3M (Carry Analysis)")
+    st.markdown(f"### {selected_metal} - Cash vs 3M (Carry Analysis)")
 
     if "cash_price" not in metal_df.columns or metal_df.empty:
         st.warning("Price data not found for this metal.")
@@ -1040,7 +1040,7 @@ with tab3:
                 fig_sp.update_layout(
                     **CHART_LAYOUT,
                     height=350,
-                    title=dict(text=f"{selected_metal} — Cash minus 3M Spread", font=dict(size=14)),
+                    title=dict(text=f"{selected_metal} - Cash minus 3M Spread", font=dict(size=14)),
                     yaxis_title="Spread ($/MT)",
                 )
                 fig_sp.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
@@ -1123,7 +1123,7 @@ with tab4:
         st.warning(f"No data found for {selected_metal}")
         st.stop()
 
-    st.markdown(f"### {selected_metal} — Volume & Open Interest")
+    st.markdown(f"### {selected_metal} - Volume & Open Interest")
 
     # Price chart: 3M Forward for LME; F3 front month for CME
     is_lme = selected_metal in cash_data
@@ -1149,7 +1149,7 @@ with tab4:
         ))
         fig_price.update_layout(
             **CHART_LAYOUT, height=350,
-            title=dict(text=f"{selected_metal} — {price_label}", font=dict(size=14)),
+            title=dict(text=f"{selected_metal} - {price_label}", font=dict(size=14)),
             yaxis_title="Price",
         )
         fig_price.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
@@ -1164,7 +1164,7 @@ with tab4:
         if not has_vol and not has_oi:
             st.info("3M Forward Volume and Open Interest data not available for this metal.")
         else:
-            section_header("3M Forward — Volume & Open Interest")
+            section_header("3M Forward - Volume & Open Interest")
             fig_vol = make_subplots(rows=2, cols=1, shared_xaxes=True,
                                     row_heights=[0.5, 0.5], vertical_spacing=0.08)
 
@@ -1193,7 +1193,7 @@ with tab4:
             fig_vol.update_layout(
                 **CHART_LAYOUT,
                 height=500,
-                title=dict(text=f"{selected_metal} — 3M Forward", font=dict(size=14)),
+                title=dict(text=f"{selected_metal} - 3M Forward", font=dict(size=14)),
             )
             fig_vol.update_yaxes(title_text="Volume", row=1, col=1)
             fig_vol.update_yaxes(title_text="Open Interest", row=2, col=1)
@@ -1232,7 +1232,7 @@ with tab4:
                     if sel_vol.empty and sel_oi.empty:
                         st.info(f"No volume/OI data found for {sel_contract}.")
                     else:
-                        section_header(f"{sel_contract} — Volume & Open Interest")
+                        section_header(f"{sel_contract} - Volume & Open Interest")
                         fig_vol_c = make_subplots(rows=2, cols=1, shared_xaxes=True,
                                                   row_heights=[0.5, 0.5], vertical_spacing=0.08)
 
@@ -1259,13 +1259,13 @@ with tab4:
                         fig_vol_c.update_layout(
                             **CHART_LAYOUT,
                             height=500,
-                            title=dict(text=f"{selected_metal} — {sel_contract}", font=dict(size=14)),
+                            title=dict(text=f"{selected_metal} - {sel_contract}", font=dict(size=14)),
                         )
                         fig_vol_c.update_yaxes(title_text="Volume", row=1, col=1)
                         fig_vol_c.update_yaxes(title_text="Open Interest", row=2, col=1)
                         st.plotly_chart(fig_vol_c, use_container_width=True)
 
-    # Futures Strip Volume Heatmap — works for both LME and CME
+    # Futures Strip Volume Heatmap - works for both LME and CME
     if curve_data:
         section_header("Futures Strip Volume Heatmap")
         curve_match = _find_curve_sheet(selected_metal, curve_data)
@@ -1293,7 +1293,7 @@ with tab4:
                     fig_hm.update_layout(
                         **CHART_LAYOUT,
                         height=400,
-                        title=dict(text=f"{selected_metal} — Monthly Average Volume by Contract", font=dict(size=13)),
+                        title=dict(text=f"{selected_metal} - Monthly Average Volume by Contract", font=dict(size=13)),
                         xaxis_title="Month",
                         yaxis_title="Contract",
                     )
@@ -1353,7 +1353,7 @@ with tab5:
                 with col4:
                     metric_card("Ratio", f"{last['Ratio']:.4f}")
 
-                section_header("LME vs COMEX — Price in $/MT")
+                section_header("LME vs COMEX - Price in $/MT")
                 fig_xm = go.Figure()
 
                 fig_xm.add_trace(go.Scatter(
@@ -1448,7 +1448,7 @@ with tab5:
 
                 st.info(
                     "**Why the sharp drop?** The rolling correlation fell sharply around mid-2025 due to the "
-                    "**US copper tariff shock** — COMEX copper (US domestic) priced in a large import tariff premium "
+                    "**US copper tariff shock** - COMEX copper (US domestic) priced in a large import tariff premium "
                     "and diverged from LME copper (global benchmark), temporarily breaking the historically tight "
                     "relationship. Any visible data gap reflects periods where CME settlement prices were unavailable. "
                     "The correlation recovered once the tariff premium stabilised."
@@ -1481,7 +1481,7 @@ with tab5:
 with tab6:
     st.markdown("### Descriptive Statistics")
 
-    section_header("Summary Statistics — All LME Metals")
+    section_header("Summary Statistics - All LME Metals")
 
     stats_rows = []
     for metal in LME_METALS:
@@ -1523,9 +1523,9 @@ with tab6:
         stats_df = pd.DataFrame(stats_rows).set_index("Metal")
         fmt_dict = {c: "{:,.2f}" for c in stats_df.columns if stats_df[c].dtype in ["float64", "float32"]}
         fmt_dict.update({"Obs": "{:,.0f}", "Backw. %": "{:.1f}%"})
-        st.dataframe(stats_df.style.format(fmt_dict, na_rep="—"), use_container_width=True)
+        st.dataframe(stats_df.style.format(fmt_dict, na_rep="-"), use_container_width=True)
 
-    section_header("Summary Statistics — CME Metals")
+    section_header("Summary Statistics - CME Metals")
     if "CME_Cash" in cash_data:
         cme_df_all = filter_date(cash_data["CME_Cash"], start_date, end_date)
         cme_stats_rows = []
@@ -1555,7 +1555,7 @@ with tab6:
             cme_stats_df = pd.DataFrame(cme_stats_rows).set_index("Metal")
             fmt_cme = {c: "{:,.2f}" for c in cme_stats_df.columns if cme_stats_df[c].dtype in ["float64", "float32"]}
             fmt_cme.update({"Obs": "{:,.0f}"})
-            st.dataframe(cme_stats_df.style.format(fmt_cme, na_rep="—"), use_container_width=True)
+            st.dataframe(cme_stats_df.style.format(fmt_cme, na_rep="-"), use_container_width=True)
     else:
         st.info("CME Cash Prices data not available.")
 
@@ -1566,7 +1566,7 @@ with tab6:
     else:
         metal_df = pd.DataFrame()
 
-    section_header(f"{selected_metal} — Rolling Volatility")
+    section_header(f"{selected_metal} - Rolling Volatility")
     if not metal_df.empty and "cash_return" in metal_df.columns:
         rets = metal_df["cash_return"].dropna()
 
@@ -1581,12 +1581,12 @@ with tab6:
 
         fig_vol.update_layout(
             **CHART_LAYOUT, height=400,
-            title=dict(text=f"{selected_metal} — Annualized Realized Volatility", font=dict(size=14)),
+            title=dict(text=f"{selected_metal} - Annualized Realized Volatility", font=dict(size=14)),
             yaxis_title="Volatility (%)",
         )
         st.plotly_chart(fig_vol, use_container_width=True)
 
-    section_header(f"{selected_metal} — Return Distribution")
+    section_header(f"{selected_metal} - Return Distribution")
     if not metal_df.empty and "cash_return" in metal_df.columns:
         rets = metal_df["cash_return"].dropna()
 
@@ -1665,34 +1665,34 @@ def _mom_cum_pnl(f1r: pd.Series, f1c: pd.Series, spec: dict) -> pd.Series:
 # All variant+timing combinations available for comparison dropdown
 _MOM_CMP_OPTIONS = {
     "N/A": None,
-    "MA(35,43) — Lag-1":    {"type": "ma", "m": 35, "n": 43, "same_day": False},
-    "MA(35,43) — Same-Day": {"type": "ma", "m": 35, "n": 43, "same_day": True},
-    "MA(33,48) — Lag-1":    {"type": "ma", "m": 33, "n": 48, "same_day": False},
-    "MA(33,48) — Same-Day": {"type": "ma", "m": 33, "n": 48, "same_day": True},
-    "MA(35,44) — Lag-1":    {"type": "ma", "m": 35, "n": 44, "same_day": False},
-    "MA(35,44) — Same-Day": {"type": "ma", "m": 35, "n": 44, "same_day": True},
-    "MA(34,47) — Lag-1":    {"type": "ma", "m": 34, "n": 47, "same_day": False},
-    "MA(34,47) — Same-Day": {"type": "ma", "m": 34, "n": 47, "same_day": True},
-    "MA(36,44) — Lag-1":    {"type": "ma", "m": 36, "n": 44, "same_day": False},
-    "MA(36,44) — Same-Day": {"type": "ma", "m": 36, "n": 44, "same_day": True},
-    "MA(1,5) — Lag-1":      {"type": "ma", "m": 1,  "n": 5,  "same_day": False},
-    "MA(1,5) — Same-Day":   {"type": "ma", "m": 1,  "n": 5,  "same_day": True},
-    "MA(5,20) — Lag-1":     {"type": "ma", "m": 5,  "n": 20, "same_day": False},
-    "MA(5,20) — Same-Day":  {"type": "ma", "m": 5,  "n": 20, "same_day": True},
-    "MA(10,60) — Lag-1":    {"type": "ma", "m": 10, "n": 60, "same_day": False},
-    "MA(10,60) — Same-Day": {"type": "ma", "m": 10, "n": 60, "same_day": True},
-    "CTA(9,21) — Lag-1":    {"type": "cta_single", "s": 9,  "l": 21, "same_day": False},
-    "CTA(9,21) — Same-Day": {"type": "cta_single", "s": 9,  "l": 21, "same_day": True},
-    "CTA(9,20) — Lag-1":    {"type": "cta_single", "s": 9,  "l": 20, "same_day": False},
-    "CTA(9,20) — Same-Day": {"type": "cta_single", "s": 9,  "l": 20, "same_day": True},
-    "CTA(10,19) — Lag-1":   {"type": "cta_single", "s": 10, "l": 19, "same_day": False},
-    "CTA(10,19) — Same-Day":{"type": "cta_single", "s": 10, "l": 19, "same_day": True},
-    "CTA(8,21) — Lag-1":    {"type": "cta_single", "s": 8,  "l": 21, "same_day": False},
-    "CTA(8,21) — Same-Day": {"type": "cta_single", "s": 8,  "l": 21, "same_day": True},
-    "CTA(14,15) — Lag-1":   {"type": "cta_single", "s": 14, "l": 15, "same_day": False},
-    "CTA(14,15) — Same-Day":{"type": "cta_single", "s": 14, "l": 15, "same_day": True},
-    "CTA Paper — Lag-1":    {"type": "cta_paper", "same_day": False},
-    "CTA Paper — Same-Day": {"type": "cta_paper", "same_day": True},
+    "MA(35,43) - Lag-1":    {"type": "ma", "m": 35, "n": 43, "same_day": False},
+    "MA(35,43) - Same-Day": {"type": "ma", "m": 35, "n": 43, "same_day": True},
+    "MA(33,48) - Lag-1":    {"type": "ma", "m": 33, "n": 48, "same_day": False},
+    "MA(33,48) - Same-Day": {"type": "ma", "m": 33, "n": 48, "same_day": True},
+    "MA(35,44) - Lag-1":    {"type": "ma", "m": 35, "n": 44, "same_day": False},
+    "MA(35,44) - Same-Day": {"type": "ma", "m": 35, "n": 44, "same_day": True},
+    "MA(34,47) - Lag-1":    {"type": "ma", "m": 34, "n": 47, "same_day": False},
+    "MA(34,47) - Same-Day": {"type": "ma", "m": 34, "n": 47, "same_day": True},
+    "MA(36,44) - Lag-1":    {"type": "ma", "m": 36, "n": 44, "same_day": False},
+    "MA(36,44) - Same-Day": {"type": "ma", "m": 36, "n": 44, "same_day": True},
+    "MA(1,5) - Lag-1":      {"type": "ma", "m": 1,  "n": 5,  "same_day": False},
+    "MA(1,5) - Same-Day":   {"type": "ma", "m": 1,  "n": 5,  "same_day": True},
+    "MA(5,20) - Lag-1":     {"type": "ma", "m": 5,  "n": 20, "same_day": False},
+    "MA(5,20) - Same-Day":  {"type": "ma", "m": 5,  "n": 20, "same_day": True},
+    "MA(10,60) - Lag-1":    {"type": "ma", "m": 10, "n": 60, "same_day": False},
+    "MA(10,60) - Same-Day": {"type": "ma", "m": 10, "n": 60, "same_day": True},
+    "CTA(9,21) - Lag-1":    {"type": "cta_single", "s": 9,  "l": 21, "same_day": False},
+    "CTA(9,21) - Same-Day": {"type": "cta_single", "s": 9,  "l": 21, "same_day": True},
+    "CTA(9,20) - Lag-1":    {"type": "cta_single", "s": 9,  "l": 20, "same_day": False},
+    "CTA(9,20) - Same-Day": {"type": "cta_single", "s": 9,  "l": 20, "same_day": True},
+    "CTA(10,19) - Lag-1":   {"type": "cta_single", "s": 10, "l": 19, "same_day": False},
+    "CTA(10,19) - Same-Day":{"type": "cta_single", "s": 10, "l": 19, "same_day": True},
+    "CTA(8,21) - Lag-1":    {"type": "cta_single", "s": 8,  "l": 21, "same_day": False},
+    "CTA(8,21) - Same-Day": {"type": "cta_single", "s": 8,  "l": 21, "same_day": True},
+    "CTA(14,15) - Lag-1":   {"type": "cta_single", "s": 14, "l": 15, "same_day": False},
+    "CTA(14,15) - Same-Day":{"type": "cta_single", "s": 14, "l": 15, "same_day": True},
+    "CTA Paper - Lag-1":    {"type": "cta_paper", "same_day": False},
+    "CTA Paper - Same-Day": {"type": "cta_paper", "same_day": True},
 }
 
 _MA_OPT_PATH  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "MA_Crossover_Optimization.csv")
@@ -1781,7 +1781,7 @@ def _carry_binarize(raw_values: np.ndarray, spec: dict) -> np.ndarray:
     """Map a raw carry signal to a ±1/0 position.
     Default: sign(raw). If spec['deadband'] > 0 (only meaningful for the
     standardised V3 z-score, where raw is in z-units), trade ±1 only when
-    |raw| exceeds the deadband, else flat — filtering out near-mean noise."""
+    |raw| exceeds the deadband, else flat - filtering out near-mean noise."""
     db = float(spec.get("deadband", 0.0) or 0.0)
     if db > 0:
         return np.where(raw_values > db, 1.0,
@@ -1910,25 +1910,25 @@ def _value_cum_pnl(curve_prices: pd.DataFrame, f1r: pd.Series, f1c: pd.Series, s
 _VALUE_CMP_OPTIONS: dict = {
     "N/A": None,
     # V1 F12 (Mark's default contract)
-    "V1: F12 — 1yr MA":  {"variant": "v1", "contract": 12, "lookback": 252,  "threshold": 0.10, "same_day": False},
-    "V1: F12 — 3yr MA":  {"variant": "v1", "contract": 12, "lookback": 756,  "threshold": 0.10, "same_day": False},
-    "V1: F12 — 5yr MA":  {"variant": "v1", "contract": 12, "lookback": 1260, "threshold": 0.10, "same_day": False},
-    "V1: F12 — 7yr MA":  {"variant": "v1", "contract": 12, "lookback": 1764, "threshold": 0.10, "same_day": False},
-    "V1: F12 — 10yr MA": {"variant": "v1", "contract": 12, "lookback": 2520, "threshold": 0.10, "same_day": False},
+    "V1: F12 - 1yr MA":  {"variant": "v1", "contract": 12, "lookback": 252,  "threshold": 0.10, "same_day": False},
+    "V1: F12 - 3yr MA":  {"variant": "v1", "contract": 12, "lookback": 756,  "threshold": 0.10, "same_day": False},
+    "V1: F12 - 5yr MA":  {"variant": "v1", "contract": 12, "lookback": 1260, "threshold": 0.10, "same_day": False},
+    "V1: F12 - 7yr MA":  {"variant": "v1", "contract": 12, "lookback": 1764, "threshold": 0.10, "same_day": False},
+    "V1: F12 - 10yr MA": {"variant": "v1", "contract": 12, "lookback": 2520, "threshold": 0.10, "same_day": False},
     # V1 F5
-    "V1: F5 — 1yr MA":   {"variant": "v1", "contract": 5,  "lookback": 252,  "threshold": 0.10, "same_day": False},
-    "V1: F5 — 5yr MA":   {"variant": "v1", "contract": 5,  "lookback": 1260, "threshold": 0.10, "same_day": False},
-    "V1: F5 — 10yr MA":  {"variant": "v1", "contract": 5,  "lookback": 2520, "threshold": 0.10, "same_day": False},
+    "V1: F5 - 1yr MA":   {"variant": "v1", "contract": 5,  "lookback": 252,  "threshold": 0.10, "same_day": False},
+    "V1: F5 - 5yr MA":   {"variant": "v1", "contract": 5,  "lookback": 1260, "threshold": 0.10, "same_day": False},
+    "V1: F5 - 10yr MA":  {"variant": "v1", "contract": 5,  "lookback": 2520, "threshold": 0.10, "same_day": False},
     # V1 F1
-    "V1: F1 — 1yr MA":   {"variant": "v1", "contract": 1,  "lookback": 252,  "threshold": 0.10, "same_day": False},
-    "V1: F1 — 5yr MA":   {"variant": "v1", "contract": 1,  "lookback": 1260, "threshold": 0.10, "same_day": False},
-    "V1: F1 — 10yr MA":  {"variant": "v1", "contract": 1,  "lookback": 2520, "threshold": 0.10, "same_day": False},
+    "V1: F1 - 1yr MA":   {"variant": "v1", "contract": 1,  "lookback": 252,  "threshold": 0.10, "same_day": False},
+    "V1: F1 - 5yr MA":   {"variant": "v1", "contract": 1,  "lookback": 1260, "threshold": 0.10, "same_day": False},
+    "V1: F1 - 10yr MA":  {"variant": "v1", "contract": 1,  "lookback": 2520, "threshold": 0.10, "same_day": False},
     # V2 Baz-Granger
-    "V2: BG — 1yr rev.":  {"variant": "v2", "lookback": 252,  "same_day": False},
-    "V2: BG — 3yr rev.":  {"variant": "v2", "lookback": 756,  "same_day": False},
-    "V2: BG — 5yr rev.":  {"variant": "v2", "lookback": 1260, "same_day": False},
-    "V2: BG — 7yr rev.":  {"variant": "v2", "lookback": 1764, "same_day": False},
-    "V2: BG — 10yr rev.": {"variant": "v2", "lookback": 2520, "same_day": False},
+    "V2: BG - 1yr rev.":  {"variant": "v2", "lookback": 252,  "same_day": False},
+    "V2: BG - 3yr rev.":  {"variant": "v2", "lookback": 756,  "same_day": False},
+    "V2: BG - 5yr rev.":  {"variant": "v2", "lookback": 1260, "same_day": False},
+    "V2: BG - 7yr rev.":  {"variant": "v2", "lookback": 1764, "same_day": False},
+    "V2: BG - 10yr rev.": {"variant": "v2", "lookback": 2520, "same_day": False},
 }
 
 
@@ -2031,7 +2031,7 @@ def _wf_anchors_isopt_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
 # ══════════════════════════════════════════════════════
 
 with tab7:
-    st.markdown("### Momentum Signals — LME Copper")
+    st.markdown("### Momentum Signals - LME Copper")
     st.markdown(
         '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
         'border-radius:4px;padding:10px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px;">'
@@ -2039,7 +2039,7 @@ with tab7:
         'font-weight:700;white-space:nowrap;">SIGNAL 1 OF 3</span>'
         '<span style="color:#8A8278;font-size:0.8rem;">Price trends persist in short-to-medium horizons. '
         'The MA(35,43) signal is validated OOS and feeds directly into the equal-weight portfolio (Tab 10). '
-        'Carry and Value signals follow in Tabs 8–9.</span></div>',
+        'Carry and Value signals follow in Tabs 8-9.</span></div>',
         unsafe_allow_html=True,
     )
     st.caption(
@@ -2060,14 +2060,14 @@ with tab7:
     f1c: pd.Series = _f1_df["F1_continuous"]
 
     # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD EVIDENCE ────────────────────────
-    # Anchors+IS-Opt OOS Sharpes are now computed LIVE (all windows) — see below,
+    # Anchors+IS-Opt OOS Sharpes are now computed LIVE (all windows) - see below,
     # after the TC selector is known, via _wf_anchors_isopt_tc().
 
     _oos_tc_row = st.columns([1.8, 4.2])
     with _oos_tc_row[0]:
         _oos_tc_map = _tc_label_map(float(f1c.dropna().iloc[-1]))
         _oos_tc_label = st.selectbox(
-            "TC — OOS Section", list(_oos_tc_map.keys()), index=0, key="oos_tc_sel"
+            "TC - OOS Section", list(_oos_tc_map.keys()), index=0, key="oos_tc_sel"
         )
         _oos_tc_bps = _oos_tc_map[_oos_tc_label]
     with _oos_tc_row[1]:
@@ -2080,7 +2080,7 @@ with tab7:
         )
 
     _wf_active     = _wf_ma3543_tc(f1r, f1c, _oos_tc_bps)
-    # Anchors + IS-opt walk-forward — computed live for ALL OOS windows (TC-aware).
+    # Anchors + IS-opt walk-forward - computed live for ALL OOS windows (TC-aware).
     _WF_ANC_OPT      = _wf_anchors_isopt_tc(f1r, f1c, _oos_tc_bps)
     _anc_opt_vals    = [v for v in _WF_ANC_OPT.values() if v is not None and not np.isnan(v)]
     _WF_OPT_AVG_FULL = round(np.nanmean(_anc_opt_vals), 3) if _anc_opt_vals else np.nan
@@ -2088,14 +2088,14 @@ with tab7:
     _wf_recent_yrs = _wf_yrs_all[-3:] if len(_wf_yrs_all) >= 3 else _wf_yrs_all
     _wf_first_yr   = _wf_yrs_all[0] if _wf_yrs_all else "N/A"
     _wf_last_yr    = sorted(_wf_active.keys())[-1] if _wf_active else "N/A"
-    _recent_label  = f"{_wf_recent_yrs[0]}–{_wf_recent_yrs[-1]}" if _wf_recent_yrs else "—"
+    _recent_label  = f"{_wf_recent_yrs[0]}-{_wf_recent_yrs[-1]}" if _wf_recent_yrs else "-"
 
     st.markdown("#### Out-of-Sample Walk-Forward Validation")
     st.caption(
-        f"IS = 5yr rolling window · OOS = 1yr · Same-Day entry · {len(_wf_active)} OOS windows. "
-        "MA(35,43) selected a priori — never re-optimised per window. "
+        f"IS = 5yr rolling window, OOS = 1yr, Same-Day entry, {len(_wf_active)} OOS windows. "
+        "MA(35,43) selected a priori - never re-optimised per window. "
         f"Window labels denote the start year of each OOS period; "
-        f"data coverage spans {_wf_first_yr}–{_wf_last_yr[:4]}."
+        f"data coverage spans {_wf_first_yr}-{_wf_last_yr[:4]}."
     )
 
     _wf_vals_all  = [v for v in _wf_active.values() if v is not None and not np.isnan(v)]
@@ -2105,7 +2105,7 @@ with tab7:
     _WF_N_POS     = sum(1 for v in _wf_vals_all if v > 0)
     _WF_N_GT03    = sum(1 for v in _wf_vals_all if v > 0.30)
     _WF_N_TOTAL   = len(_wf_active)
-    _tc_note      = f"  ·  {_oos_tc_label}" if _oos_tc_bps > 0 else ""
+    _tc_note      = f", {_oos_tc_label}" if _oos_tc_bps > 0 else ""
 
     _wf_c1, _wf_c2, _wf_c3 = st.columns(3)
     _cs   = ("background:#161616;border:1px solid #2A2A2A;"
@@ -2125,20 +2125,20 @@ with tab7:
 
     with _wf_c1:
         st.markdown(f"""<div style="{_cs}">
-<p style="{_lbl}">MA(35,43) — Fixed Parameter</p>
+<p style="{_lbl}">MA(35,43) - Fixed Parameter</p>
 <p style="{_big}">{_WF_MA35_AVG:+.3f}</p>
-<p style="{_sub}">Avg OOS Sharpe · {_wf_first_yr}–{_wf_last_yr[:4]} · {_WF_N_TOTAL} Windows{_tc_note}</p>
+<p style="{_sub}">Avg OOS Sharpe, {_wf_first_yr}-{_wf_last_yr[:4]}, {_WF_N_TOTAL} Windows{_tc_note}</p>
 <hr style="{_hr}"/>
 <p style="{_sub}">{_recent_label} avg</p>
 <p style="{_med}">{_WF_MA35_P23:+.3f}</p>
-<p style="{_sub}">Zero re-optimisation · 13-day tail excluded</p>
+<p style="{_sub}">Zero re-optimisation, 13-day tail excluded</p>
 </div>""", unsafe_allow_html=True)
 
     with _wf_c2:
         st.markdown(f"""<div style="{_cs}">
 <p style="{_lbl}">Anchors + IS-Opt Weights</p>
 <p style="{_big}">{_WF_OPT_AVG_FULL:+.3f}</p>
-<p style="{_sub}">Avg OOS Sharpe · {_wf_first_yr}–{_wf_last_yr[:4]} · {len(_WF_ANC_OPT)} Windows{_tc_note}</p>
+<p style="{_sub}">Avg OOS Sharpe, {_wf_first_yr}-{_wf_last_yr[:4]}, {len(_WF_ANC_OPT)} Windows{_tc_note}</p>
 <hr style="{_hr}"/>
 <p style="{_sub}">MA(10,25) + MA(35,43) + MA(63,100)</p>
 <p style="{_sub}">Max-Sharpe QP weights, re-optimised annually on prior 5yr IS data</p>
@@ -2149,14 +2149,14 @@ with tab7:
         _wf_best_yr  = max(_wf_active, key=lambda y: _wf_active[y])
         _wf_worst_yr = min(_wf_active, key=lambda y: _wf_active[y])
         st.markdown(f"""<div style="{_csg}">
-<p style="{_lblg}">OOS Consistency — MA(35,43)</p>
+<p style="{_lblg}">OOS Consistency - MA(35,43)</p>
 <p style="{_sub}">Positive OOS Sharpe</p>
 <p style="{_med}">{_WF_N_POS} / {_WF_N_TOTAL} windows</p>
 <hr style="{_hr}"/>
 <p style="{_sub}">OOS Sharpe above +0.30</p>
 <p style="{_med}">{_WF_N_GT03} / {_WF_N_TOTAL} windows</p>
 <hr style="{_hr}"/>
-<p style="{_sub}">Best: {_wf_best_yr} ({_wf_active[_wf_best_yr]:+.3f}) · Worst: {_wf_worst_yr} ({_wf_active[_wf_worst_yr]:+.3f})</p>
+<p style="{_sub}">Best: {_wf_best_yr} ({_wf_active[_wf_best_yr]:+.3f}), Worst: {_wf_worst_yr} ({_wf_active[_wf_worst_yr]:+.3f})</p>
 </div>""", unsafe_allow_html=True)
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
@@ -2164,12 +2164,12 @@ with tab7:
     _wf_chart_c1, _wf_chart_c2 = st.columns([2, 4])
     with _wf_chart_c1:
         _wf_chart_mode = st.selectbox(
-            "Annual OOS Sharpe — Strategy",
-            ["MA(35,43) — Annual OOS Sharpe", "Anchors + IS-Opt Weights"],
+            "Annual OOS Sharpe - Strategy",
+            ["MA(35,43) - Annual OOS Sharpe", "Anchors + IS-Opt Weights"],
             index=0, key="wf_chart_mode",
         )
 
-    if _wf_chart_mode == "MA(35,43) — Annual OOS Sharpe":
+    if _wf_chart_mode == "MA(35,43) - Annual OOS Sharpe":
         _wf_years_plot  = list(_wf_active.keys())
         _wf_sh_plot     = list(_wf_active.values())
         _wf_bar_cls = [
@@ -2202,7 +2202,7 @@ with tab7:
         fig_wf_bar.update_layout(
             **CHART_LAYOUT, height=300,
             title=dict(
-                text=f"MA(35,43) — Annual OOS Sharpe  (Walk-Forward · IS=5yr · Same-Day{_tc_note})",
+                text=f"MA(35,43) - Annual OOS Sharpe  (Walk-Forward, IS=5yr, Same-Day{_tc_note})",
                 font=dict(size=13),
             ),
             yaxis_title="OOS Sharpe", xaxis_title=None, showlegend=False,
@@ -2240,7 +2240,7 @@ with tab7:
         fig_anc.update_layout(
             **CHART_LAYOUT, height=300,
             title=dict(
-                text=f"Anchors + IS-Opt Weights — OOS Sharpe  (Walk-Forward · IS=5yr · all windows{_tc_note})",
+                text=f"Anchors + IS-Opt Weights - OOS Sharpe  (Walk-Forward, IS=5yr, all windows{_tc_note})",
                 font=dict(size=13),
             ),
             yaxis_title="OOS Sharpe", xaxis_title=None, showlegend=False,
@@ -2249,65 +2249,65 @@ with tab7:
         st.caption(
             f"All {len(_anc_sh)} OOS windows, IS-opt QP weights re-fit annually on prior 5yr data "
             f"(max-Sharpe, w≥0, Σw=1). Full-period avg {_WF_OPT_AVG_FULL:+.3f}"
-            + (f" · TC = {_oos_tc_label}." if _oos_tc_bps > 0 else " (gross).")
-            + " The three anchor MAs [MA(10,25), MA(35,43), MA(63,100)] are structural, not data-fitted — "
+            + (f", TC = {_oos_tc_label}." if _oos_tc_bps > 0 else " (gross).")
+            + " The three anchor MAs [MA(10,25), MA(35,43), MA(63,100)] are structural, not data-fitted - "
             "only the combination weights are optimised IS, so there is no anchor-selection look-ahead."
         )
 
     with st.expander("Walk-Forward Annual Detail", expanded=False):
         _wf_yrs_tbl = list(_wf_active.keys())
-        _is_labels  = [f"{int(y.rstrip('*'))-5}–{int(y.rstrip('*'))-1}" for y in _wf_yrs_tbl]
+        _is_labels  = [f"{int(y.rstrip('*'))-5}-{int(y.rstrip('*'))-1}" for y in _wf_yrs_tbl]
         _tc_col     = f"MA(35,43) OOS{'  '+_oos_tc_label if _oos_tc_bps>0 else ' (Gross)'}"
         _anc_map    = {y: f"{v:+.3f}" for y, v in _WF_ANC_OPT.items()}
         _wf_tbl = pd.DataFrame({
             "OOS Window":      _wf_yrs_tbl,
             "IS Period (5yr)": _is_labels,
             _tc_col:           [f"{_wf_active.get(y, float('nan')):+.3f}" for y in _wf_yrs_tbl],
-            "Anchors+Opt OOS": [_anc_map.get(y, "—") for y in _wf_yrs_tbl],
+            "Anchors+Opt OOS": [_anc_map.get(y, "-") for y in _wf_yrs_tbl],
             "Status":          ["✓" if _wf_active.get(y, float("nan")) > 0 else "✗" for y in _wf_yrs_tbl],
         })
         st.dataframe(_wf_tbl, use_container_width=True, hide_index=True)
         st.caption(
             "OOS Window label = start year of 252-day OOS period. "
             "Anchors+Opt: IS-opt QP weights on MA(10,25)+MA(35,43)+MA(63,100), re-fit each window; "
-            f"computed live for all {len(_WF_ANC_OPT)} windows · full-period avg = {_WF_OPT_AVG_FULL:+.3f}."
+            f"computed live for all {len(_WF_ANC_OPT)} windows, full-period avg = {_WF_OPT_AVG_FULL:+.3f}."
         )
 
     st.divider()
 
     # ── SECTION 2: IS PARAMETER SEARCH (IN-SAMPLE) ────────────────────────────
     _m_is_yr0 = str(f1r.index[0].year); _m_is_yr1 = str(f1r.index[-1].year)
-    _mom_is_exp = st.expander(f"IS Parameter Search ({_m_is_yr0}–{_m_is_yr1} In-Sample)", expanded=False)
+    _mom_is_exp = st.expander(f"IS Parameter Search ({_m_is_yr0}-{_m_is_yr1} In-Sample)", expanded=False)
     _mom_is_exp.__enter__()
 
     st.markdown(
         '<div style="background:#1A1200;border:1px solid #3A2E00;border-left:4px solid #F59E0B;'
         'border-radius:4px;padding:8px 14px;margin-bottom:10px;font-size:0.82rem;color:#D4A843;">'
-        f'&#9888;  IN-SAMPLE BACKTEST — Results use full {_m_is_yr0}–{_m_is_yr1} history. '
+        f'&#9888;  IN-SAMPLE BACKTEST - Results use full {_m_is_yr0}-{_m_is_yr1} history. '
         'Not held-out data. See walk-forward section above for OOS estimates.</div>',
         unsafe_allow_html=True,
     )
 
     # ── Strategy Preset ───────────────────────────────────────────────────────
     _MOM_PRESETS = {
-        "MA(35,43) · Same-Day  [WF Best / Default]": {
+        "MA(35,43), Same-Day  [WF Best / Default]": {
             "mom_sig_type": "MA Crossover",
-            "mom_variant":  "MA(35,43) — Best Sharpe [default]",
+            "mom_variant":  "MA(35,43) - Best Sharpe [default]",
             "mom_timing":   "Same-Day",
         },
-        "CTA(9,21) · Same-Day  [Baz-Granger Best]": {
+        "CTA(9,21), Same-Day  [Baz-Granger Best]": {
             "mom_sig_type": "CTA (Baz-Granger)",
-            "mom_variant":  "CTA(9,21) — Best Lag-1 Sharpe [default]",
+            "mom_variant":  "CTA(9,21) - Best Lag-1 Sharpe [default]",
             "mom_timing":   "Same-Day",
         },
-        "Anchors EW · Lag-1  [Anchors + IS-Opt]": {
+        "Anchors EW, Lag-1  [Anchors + IS-Opt]": {
             "mom_sig_type": "Anchors + IS-Opt Weights",
-            "mom_variant":  "EW Anchors — MA(10,25) + MA(35,43) + MA(63,100)",
+            "mom_variant":  "EW Anchors - MA(10,25) + MA(35,43) + MA(63,100)",
             "mom_timing":   "Lag-1 (Next-Day)",
         },
-        "MA(35,43) · Lag-1  [Sensitivity Check]": {
+        "MA(35,43), Lag-1  [Sensitivity Check]": {
             "mom_sig_type": "MA Crossover",
-            "mom_variant":  "MA(35,43) — Best Sharpe [default]",
+            "mom_variant":  "MA(35,43) - Best Sharpe [default]",
             "mom_timing":   "Lag-1 (Next-Day)",
         },
         "Custom (use controls below)": {},
@@ -2348,7 +2348,7 @@ with tab7:
     with c2:
         if sig_type == "MA Crossover":
             variant_opts = {
-                "MA(35,43) — Best Sharpe [default]": (35, 43),
+                "MA(35,43) - Best Sharpe [default]": (35, 43),
                 "MA(33,48)": (33, 48),
                 "MA(35,44)": (35, 44),
                 "MA(34,47)": (34, 47),
@@ -2360,8 +2360,8 @@ with tab7:
             default_idx = 0
         elif sig_type == "CTA (Baz-Granger)":
             variant_opts = {
-                "CTA(8,21) — Best Same-Day Sharpe": ("cta_single", 8, 21),
-                "CTA(9,21) — Best Lag-1 Sharpe [default]": ("cta_single", 9, 21),
+                "CTA(8,21) - Best Same-Day Sharpe": ("cta_single", 8, 21),
+                "CTA(9,21) - Best Lag-1 Sharpe [default]": ("cta_single", 9, 21),
                 "CTA(9,20)": ("cta_single", 9, 20),
                 "CTA(10,19)": ("cta_single", 10, 19),
                 "CTA(14,15)": ("cta_single", 14, 15),
@@ -2370,7 +2370,7 @@ with tab7:
             default_idx = 1
         else:  # Anchors
             variant_opts = {
-                "EW Anchors — MA(10,25) + MA(35,43) + MA(63,100)": ("anchors_ew",),
+                "EW Anchors - MA(10,25) + MA(35,43) + MA(63,100)": ("anchors_ew",),
             }
             default_idx = 0
         # Guard: reset if session value no longer valid for current sig_type
@@ -2393,11 +2393,11 @@ with tab7:
     # TC inherited from Section 1 OOS dropdown
     tc_bps   = _oos_tc_bps
     tc_label = _oos_tc_label
-    st.caption(f"TC applied to all metrics below: **{tc_label}** — change via the OOS TC selector in Section 1.")
+    st.caption(f"TC applied to all metrics below: **{tc_label}** - change via the OOS TC selector in Section 1.")
 
     if sig_type == "Anchors + IS-Opt Weights":
         st.info(
-            "**Anchors + IS-Opt Weights** — IS backtest uses equal-weight combination of the three anchor MAs. "
+            "**Anchors + IS-Opt Weights** - IS backtest uses equal-weight combination of the three anchor MAs. "
             "The IS-optimised walk-forward Sharpe (+0.442 avg) is shown in Section 1. "
             "Position shown here is a continuous range −1 to +1 (average of three ±1 signals).",
             icon="ℹ️",
@@ -2503,7 +2503,7 @@ with tab7:
     pf_c1, pf_c2 = st.columns([3, 1])
     with pf_c1:
         perf_dates = st.date_input(
-            "Performance period  (signal uses full history — only metrics & charts below update)",
+            "Performance period  (signal uses full history - only metrics & charts below update)",
             value=(f1r.index[0].date(), f1r.index[-1].date()),
             min_value=f1r.index[0].date(), max_value=f1r.index[-1].date(),
             key="mom_perf_dates",
@@ -2550,7 +2550,7 @@ with tab7:
     # ── Metric cards ──────────────────────────────────────────────────────────
     def _mcard(col, label, val, fmt=".2f", suffix="", good_high=True):
         if val is None or (isinstance(val, float) and np.isnan(val)):
-            col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">—</p></div>',
+            col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">-</p></div>',
                          unsafe_allow_html=True)
             return
         v_str = f"{val:{fmt}}{suffix}"
@@ -2623,14 +2623,14 @@ with tab7:
                          line_width=0.8, annotation_text="0.5", annotation_position="right")
         fig_rs.update_layout(
             **CHART_LAYOUT, height=320,
-            title=dict(text=f"{variant_label} — Rolling Sharpe ({timing_label}, {'Net of TC' if _rs_net else 'Gross'})", font=dict(size=13)),
+            title=dict(text=f"{variant_label} - Rolling Sharpe ({timing_label}, {'Net of TC' if _rs_net else 'Gross'})", font=dict(size=13)),
             yaxis_title="Annualised Sharpe", xaxis_title=None, hovermode="x unified",
         )
         fig_rs.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
         st.plotly_chart(fig_rs, use_container_width=True)
-    st.caption(f"Signal computed over full {_m_is_yr0}–{_m_is_yr1} history. "
+    st.caption(f"Signal computed over full {_m_is_yr0}-{_m_is_yr1} history. "
                f"Rolling Sharpe uses {'net (' + tc_label + ')' if _rs_net else 'gross'} returns. "
-               "Positive/negative swings show regime dependence — a consistently positive curve indicates robustness.")
+               "Positive/negative swings show regime dependence - a consistently positive curve indicates robustness.")
 
     # ── Cumulative PnL chart ──────────────────────────────────────────────────
     st.divider()
@@ -2687,7 +2687,7 @@ with tab7:
     fig_cum.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1)
     fig_cum.update_layout(
         **CHART_LAYOUT, height=420,
-        title=dict(text="Strategy Comparison — Cumulative PnL (Gross, USD/MT)", font=dict(size=13)),
+        title=dict(text="Strategy Comparison - Cumulative PnL (Gross, USD/MT)", font=dict(size=13)),
         yaxis_title="Cumulative PnL (USD/MT)",
         xaxis_title=None, hovermode="x unified",
     )
@@ -2756,7 +2756,7 @@ with tab7:
             ))
             fig_hm.update_layout(
                 **CHART_LAYOUT, height=480,
-                title=dict(text=f"MA Crossover — Sharpe surface  (m=fast, n=slow, n≤{hm_n_max})", font=dict(size=13)),
+                title=dict(text=f"MA Crossover - Sharpe surface  (m=fast, n=slow, n≤{hm_n_max})", font=dict(size=13)),
                 coloraxis_colorbar=dict(title=hm_metric, thickness=14),
             )
             with hm_c1:
@@ -2798,7 +2798,7 @@ with tab7:
             ))
             fig_cta.update_layout(
                 **CHART_LAYOUT, height=460,
-                title=dict(text="CTA (Baz-Granger) — Sharpe scatter  (S=short EWMA, L=long EWMA)", font=dict(size=13)),
+                title=dict(text="CTA (Baz-Granger) - Sharpe scatter  (S=short EWMA, L=long EWMA)", font=dict(size=13)),
             )
             with hm_c1:
                 st.plotly_chart(fig_cta, use_container_width=True)
@@ -2808,7 +2808,7 @@ with tab7:
     st.divider()
     section_header("SIGNAL & POSITION OVER TIME")
 
-    # Full date range — no filter widget
+    # Full date range - no filter widget
     f1r_w = f1r
     pos_w = pos_s
 
@@ -2840,7 +2840,7 @@ with tab7:
 
     fig_sig.update_layout(
         **CHART_LAYOUT, height=500, barmode="overlay",
-        title=dict(text=f"{variant_label} — Price & Position ({timing_label})", font=dict(size=13)),
+        title=dict(text=f"{variant_label} - Price & Position ({timing_label})", font=dict(size=13)),
         hovermode="x unified", showlegend=True,
         xaxis2_title=None,
     )
@@ -2890,11 +2890,11 @@ with tab7:
 - Signal = sign(SMA(m) − SMA(n)) where m < n
 - +1 (long) when fast MA is above slow MA; −1 (short) otherwise
 
-**CTA Signal — Baz-Granger Eqs 29-33**
+**CTA Signal - Baz-Granger Eqs 29-33**
 - x = EWMA(S) − EWMA(L)  [EWMA convention: com = n−1, i.e. λ = (n−1)/n]
 - y = x / σ₆₃(price)     [63-day price volatility normalisation]
 - z = y / σ₂₅₂(y)        [252-day signal normalisation]
-- u = z · exp(−z²/4) / 0.89  [response function — shrinks extreme signals]
+- u = z, exp(−z²/4) / 0.89  [response function - shrinks extreme signals]
 - Signal = sign(u)
 - CTA Paper uses 3 timescales (S,L) = (8,24), (16,48), (32,96); S_CTA = mean(u₁,u₂,u₃)
 
@@ -2924,7 +2924,7 @@ with tab7:
         'NEXT &rarr; </span>'
         '<span style="color:#B87333;font-size:0.82rem;font-family:\'IBM Plex Mono\',monospace;font-weight:700;">'
         'Tab 8: Carry Signals</span>'
-        '<span style="color:#8A8278;font-size:0.78rem;"> &nbsp;&mdash;&nbsp; '
+        '<span style="color:#8A8278;font-size:0.78rem;"> &nbsp;-&nbsp; '
         'Backwardation / contango premium from the term structure. '
         'Complements momentum: carry is a <em>level</em> signal; momentum is <em>trend</em>-based. '
         'Low historical correlation confirms diversification value.</span></div>',
@@ -2937,23 +2937,23 @@ with tab7:
 # ══════════════════════════════════════════════════════
 
 with tab8:
-    st.markdown("### Carry Signals — LME Copper")
+    st.markdown("### Carry Signals - LME Copper")
     st.markdown(
         '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
         'border-radius:4px;padding:10px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px;">'
         '<span style="color:#B87333;font-family:\'IBM Plex Mono\',monospace;font-size:0.78rem;'
         'font-weight:700;white-space:nowrap;">SIGNAL 2 OF 3</span>'
         '<span style="color:#8A8278;font-size:0.8rem;">Structural backwardation / contango premium from the forward curve. '
-        'No free parameters — the signal is a market structural measure, not fitted data. '
+        'No free parameters - the signal is a market structural measure, not fitted data. '
         'IS performance is representative of OOS. Combines with momentum in the portfolio (Tab 10).</span></div>',
         unsafe_allow_html=True,
     )
     st.caption("Term structure carry: Long in backwardation, Short in contango. Signal from curve shape; PnL always from F1_continuous.")
 
-    # ── Best Carry Signal — By Variant (headline, top of tab) ─────────────────
-    section_header("BEST CARRY SIGNAL — BY VARIANT")
+    # ── Best Carry Signal - By Variant (headline, top of tab) ─────────────────
+    section_header("BEST CARRY SIGNAL - BY VARIANT")
     st.caption(
-        "Best configuration per variant family — full-period IS backtest (2006–2025), 0 TC, "
+        "Best configuration per variant family - full-period IS backtest (2006-2025), 0 TC, "
         "gross Same-Day Sharpe (shift-1, no look-ahead). Past performance is not indicative of future results."
     )
     _bcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
@@ -2968,39 +2968,39 @@ with tab8:
     _bsc4, _bsc3, _bsc1, _bsc2 = st.columns(4)
     with _bsc4:
         st.markdown(f"""<div style="{_bcsx}">
-<p style="{_blbx}">V4 — Carry Momentum  ★</p>
+<p style="{_blbx}">V4 - Carry Momentum  ★</p>
 <p style="{_bbig}">+0.52</p>
 <p style="{_bsub}">Sharpe Ratio (Gross)</p>
 <hr style="{_bhr}"/>
-<p style="{_bsub}">20-day Δ(F1−F2)/F1 · Same-Day</p>
-<p style="{_bsub}">Ann Ret ≈ +13.5% · Max DD ≈ −47%</p>
+<p style="{_bsub}">20-day Δ(F1−F2)/F1, Same-Day</p>
+<p style="{_bsub}">Ann Ret ≈ +13.5%, Max DD ≈ −47%</p>
 </div>""", unsafe_allow_html=True)
     with _bsc3:
         st.markdown(f"""<div style="{_bcs}">
-<p style="{_blbl}">V3 — Z-Score</p>
+<p style="{_blbl}">V3 - Z-Score</p>
 <p style="{_bbig}">+0.26</p>
 <p style="{_bsub}">Sharpe Ratio (Gross)</p>
 <hr style="{_bhr}"/>
-<p style="{_bsub}">(F1−F2)/F1 · 252d Z · Same-Day</p>
-<p style="{_bsub}">Ann Ret ≈ +6.2% · Max DD ≈ −80%</p>
+<p style="{_bsub}">(F1−F2)/F1, 252d Z, Same-Day</p>
+<p style="{_bsub}">Ann Ret ≈ +6.2%, Max DD ≈ −80%</p>
 </div>""", unsafe_allow_html=True)
     with _bsc1:
         st.markdown(f"""<div style="{_bcs}">
-<p style="{_blbl}">V1 — Roll Yield</p>
+<p style="{_blbl}">V1 - Roll Yield</p>
 <p style="{_bbig}">+0.10</p>
 <p style="{_bsub}">Sharpe Ratio (Gross)</p>
 <hr style="{_bhr}"/>
-<p style="{_bsub}">(F1−F2)/F1 · Same-Day</p>
-<p style="{_bsub}">Ann Ret ≈ +2.6% · Max DD ≈ −147%</p>
+<p style="{_bsub}">(F1−F2)/F1, Same-Day</p>
+<p style="{_bsub}">Ann Ret ≈ +2.6%, Max DD ≈ −147%</p>
 </div>""", unsafe_allow_html=True)
     with _bsc2:
         st.markdown(f"""<div style="{_bcs}">
-<p style="{_blbl}">V2 — Long Slope</p>
+<p style="{_blbl}">V2 - Long Slope</p>
 <p style="{_bbig}">+0.18</p>
 <p style="{_bsub}">Sharpe Ratio (Gross)</p>
 <hr style="{_bhr}"/>
-<p style="{_bsub}">F4−F16 slope · Same-Day</p>
-<p style="{_bsub}">Ann Ret ≈ +4.6% · Max DD ≈ −75%</p>
+<p style="{_bsub}">F4−F16 slope, Same-Day</p>
+<p style="{_bsub}">Ann Ret ≈ +4.6%, Max DD ≈ −75%</p>
 </div>""", unsafe_allow_html=True)
     st.caption(
         "V4 Carry Momentum (sign of the 20-day change in the (F1−F2)/F1 roll yield) is the best carry "
@@ -3012,15 +3012,15 @@ with tab8:
     <div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;border-radius:4px;padding:14px 20px;margin-bottom:8px;">
       <div style="display:flex;gap:40px;flex-wrap:wrap;">
         <div style="min-width:180px;">
-          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V1 — Roll Yield</span><br>
+          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V1 - Roll Yield</span><br>
           <span style="color:#8A8278;font-size:0.78rem;">Short-end basis: (F1-F2)/F1, (F1-F3)/F1,<br>or (Cash-3M)/Cash. Raw 1-period roll cost.</span>
         </div>
         <div style="min-width:200px;">
-          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V2 — Long Slope</span><br>
+          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V2 - Long Slope</span><br>
           <span style="color:#8A8278;font-size:0.78rem;">Curve slope at longer tenors: (Fj-Fk)/Fk<br>for 10 pairs (F3-F15 through F12-F24).</span>
         </div>
         <div style="min-width:180px;">
-          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V3 — Z-score</span><br>
+          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V3 - Z-score</span><br>
           <span style="color:#8A8278;font-size:0.78rem;">Rolling 252-day standardisation of (F1-F2)/F1.<br>Filters permanent level shifts; regime-relative signal.</span>
         </div>
       </div>
@@ -3029,28 +3029,28 @@ with tab8:
 
     # ── Strategy Preset ───────────────────────────────────────────────────────
     _CARRY_PRESETS = {
-        "V1 · (F1-F2)/F1 · Same-Day  [Best V1]": {
-            "carry_vgroup":  "V1 — Roll Yield",
+        "V1, (F1-F2)/F1, Same-Day  [Best V1]": {
+            "carry_vgroup":  "V1 - Roll Yield",
             "carry_subv":    "(F1-F2)/F1",
             "carry_timing":  "Same-Day",
         },
-        "V2 · F3-F15 Slope · Same-Day  [Best V2]": {
-            "carry_vgroup":  "V2 — Long Slope",
+        "V2, F3-F15 Slope, Same-Day  [Best V2]": {
+            "carry_vgroup":  "V2 - Long Slope",
             "carry_subv":    "F3-F15 Slope",
             "carry_timing":  "Same-Day",
         },
-        "V3 · Z-score · Same-Day  [Best V3]": {
-            "carry_vgroup":  "V3 — Z-score",
+        "V3, Z-score, Same-Day  [Best V3]": {
+            "carry_vgroup":  "V3 - Z-score",
             "carry_subv":    "Z-score (252d window)",
             "carry_timing":  "Same-Day",
         },
-        "V1 · (F1-F2)/F1 · Lag-1  [Sensitivity Check]": {
-            "carry_vgroup":  "V1 — Roll Yield",
+        "V1, (F1-F2)/F1, Lag-1  [Sensitivity Check]": {
+            "carry_vgroup":  "V1 - Roll Yield",
             "carry_subv":    "(F1-F2)/F1",
             "carry_timing":  "Lag-1 (Next-Day)",
         },
-        "V1 · (Cash-3M)/Cash · Same-Day": {
-            "carry_vgroup":  "V1 — Roll Yield",
+        "V1, (Cash-3M)/Cash, Same-Day": {
+            "carry_vgroup":  "V1 - Roll Yield",
             "carry_subv":    "(Cash-3M)/Cash",
             "carry_timing":  "Same-Day",
         },
@@ -3084,7 +3084,7 @@ with tab8:
     with c8_c1:
         carry_vgroup = st.selectbox(
             "Variant Group",
-            ["V4 — Carry Momentum", "V3 — Z-score", "V1 — Roll Yield", "V2 — Long Slope"],
+            ["V4 - Carry Momentum", "V3 - Z-score", "V1 - Roll Yield", "V2 - Long Slope"],
             index=0, key="carry_vgroup",
             help="Default V4 Carry Momentum (20d): best walk-forward OOS Sharpe of all carry "
                  "signals (+0.50 net5), robust to TC (still +0.29 at 20bps) and to execution lag. "
@@ -3093,12 +3093,12 @@ with tab8:
                  "artifact (collapses at 20bps and with one extra day's lag).",
         )
     with c8_c2:
-        if carry_vgroup == "V1 — Roll Yield":
+        if carry_vgroup == "V1 - Roll Yield":
             _c8_sub_opts = {"(F1-F2)/F1": "f1f2", "(F1-F3)/F1": "f1f3", "(Cash-3M)/Cash": "cash3m"}
-        elif carry_vgroup == "V2 — Long Slope":
+        elif carry_vgroup == "V2 - Long Slope":
             _c8_sub_opts = {f"F{j}-F{k} Slope": (j, k)
                             for j, k in [(3,15),(4,16),(5,17),(6,18),(7,19),(8,20),(9,21),(10,22),(11,23),(12,24)]}
-        elif carry_vgroup == "V4 — Carry Momentum":
+        elif carry_vgroup == "V4 - Carry Momentum":
             _c8_sub_opts = {"20-day Δcarry (best OOS +0.50)": 20, "60-day Δcarry": 60}
         else:
             _c8_sub_opts = {"Z-score sign (252d)": (252, 0.0),
@@ -3117,11 +3117,11 @@ with tab8:
         carry_tc_bps = carry_tc_map[carry_tc_label]
 
     # Build spec dict
-    if carry_vgroup == "V1 — Roll Yield":
+    if carry_vgroup == "V1 - Roll Yield":
         carry_spec = {"variant": "v1", "signal_type": carry_sub_val, "same_day": carry_same_day}
-    elif carry_vgroup == "V2 — Long Slope":
+    elif carry_vgroup == "V2 - Long Slope":
         carry_spec = {"variant": "v3", "j": carry_sub_val[0], "k": carry_sub_val[1], "same_day": carry_same_day}
-    elif carry_vgroup == "V4 — Carry Momentum":
+    elif carry_vgroup == "V4 - Carry Momentum":
         carry_spec = {"variant": "v5", "horizon": carry_sub_val, "same_day": carry_same_day}
     else:
         carry_spec = {"variant": "v4", "window": carry_sub_val[0],
@@ -3202,7 +3202,7 @@ with tab8:
 
     def _cmcard(col, label, val, fmt=".2f", suffix=""):
         if val is None or (isinstance(val, float) and np.isnan(val)):
-            col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">—</p></div>', unsafe_allow_html=True)
+            col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">-</p></div>', unsafe_allow_html=True)
             return
         col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">{val:{fmt}}{suffix}</p></div>', unsafe_allow_html=True)
 
@@ -3258,7 +3258,7 @@ with tab8:
     pf8_c1, _ = st.columns([3, 1])
     with pf8_c1:
         carry_perf_dates = st.date_input(
-            "Performance period  (signal uses full history — only metrics & charts below update)",
+            "Performance period  (signal uses full history - only metrics & charts below update)",
             value=(_c8_idx[0].date(), _c8_idx[-1].date()),
             min_value=_c8_idx[0].date(), max_value=_c8_idx[-1].date(),
             key="carry_perf_dates",
@@ -3305,7 +3305,7 @@ with tab8:
     section_header("MULTI-STRATEGY COMPARISON")
     _cmp_all_opts = [k for k in _CARRY_CMP_OPTIONS.keys() if _CARRY_CMP_OPTIONS[k] is not None]
     _carry_multi_sel = st.multiselect(
-        "Select strategies to compare — Performance Metrics & Rolling Sharpe",
+        "Select strategies to compare - Performance Metrics & Rolling Sharpe",
         _cmp_all_opts,
         default=[_cmp_all_opts[0]] if _cmp_all_opts else [],
         key="carry_multi_sel",
@@ -3372,12 +3372,12 @@ with tab8:
             _cal = _ann_r / abs(_mdd) if _mdd != 0 else np.nan
             _cmp_rows.append({
                 "Strategy": _cmp_lbl,
-                "Sharpe": f"{_sh:+.3f}" if not np.isnan(_sh) else "—",
-                "Sortino": f"{_srt:+.3f}" if not np.isnan(_srt) else "—",
-                "Ann Ret %": f"{_ann_r:+.1f}" if not np.isnan(_ann_r) else "—",
-                "Ann Std %": f"{_ann_sd:.1f}" if not np.isnan(_ann_sd) else "—",
-                "Max DD %": f"{_mdd:.1f}" if not np.isnan(_mdd) else "—",
-                "Calmar": f"{_cal:+.2f}" if not np.isnan(_cal) else "—",
+                "Sharpe": f"{_sh:+.3f}" if not np.isnan(_sh) else "-",
+                "Sortino": f"{_srt:+.3f}" if not np.isnan(_srt) else "-",
+                "Ann Ret %": f"{_ann_r:+.1f}" if not np.isnan(_ann_r) else "-",
+                "Ann Std %": f"{_ann_sd:.1f}" if not np.isnan(_ann_sd) else "-",
+                "Max DD %": f"{_mdd:.1f}" if not np.isnan(_mdd) else "-",
+                "Calmar": f"{_cal:+.2f}" if not np.isnan(_cal) else "-",
                 "Hit Rate %": f"{float((_act > 0).mean()) * 100:.1f}",
             })
         except Exception:
@@ -3386,7 +3386,7 @@ with tab8:
     if _cmp_rows:
         st.dataframe(pd.DataFrame(_cmp_rows), use_container_width=True, hide_index=True)
     elif _carry_multi_sel:
-        st.info("Unable to compute metrics for the selected strategies — check data availability.")
+        st.info("Unable to compute metrics for the selected strategies - check data availability.")
 
     st.divider()
     section_header("PERFORMANCE METRICS")
@@ -3469,14 +3469,14 @@ with tab8:
                             line_width=0.8, annotation_text="0.5", annotation_position="right")
         fig_crs8.update_layout(
             **CHART_LAYOUT, height=360,
-            title=dict(text=f"Rolling Sharpe — Carry Strategies ({carry_timing}, {'Net of TC' if _crs8_net else 'Gross'})", font=dict(size=13)),
+            title=dict(text=f"Rolling Sharpe - Carry Strategies ({carry_timing}, {'Net of TC' if _crs8_net else 'Gross'})", font=dict(size=13)),
             yaxis_title="Annualised Sharpe", xaxis_title=None, hovermode="x unified",
         )
         fig_crs8.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
         st.plotly_chart(fig_crs8, use_container_width=True)
         if _crs8_net:
             st.caption(f"Main line is net of {carry_tc_label}; overlay comparison strategies remain gross.")
-    st.caption("Carry tends to be regime-dependent — performs strongly during sustained backwardation cycles (e.g., 2006-2008, 2021-2022). "
+    st.caption("Carry tends to be regime-dependent - performs strongly during sustained backwardation cycles (e.g., 2006-2008, 2021-2022). "
                "Positive rolling Sharpe validates the strategy over that window. "
                "Solid = 1yr window, dotted = 2yr window.")
 
@@ -3484,7 +3484,7 @@ with tab8:
     st.divider()
     section_header("SUB-PERIOD ANALYSIS (Pre-2022 / Post-2022)")
     st.caption("Carry risk premia flipped post-2022: sustained contango following the 2021-2022 backwardation spike "
-               "reduced carry returns sharply. No parameters were optimised — IS = OOS for all carry variants.")
+               "reduced carry returns sharply. No parameters were optimised - IS = OOS for all carry variants.")
 
     _c8_pre22  = _c8_idx < pd.Timestamp("2022-01-01")
     _c8_post22 = _c8_idx >= pd.Timestamp("2022-01-01")
@@ -3494,7 +3494,7 @@ with tab8:
 
     csp_pre, csp_post = st.columns(2)
     with csp_pre:
-        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Pre-2022 (2006–2021)</div>', unsafe_allow_html=True)
+        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Pre-2022 (2006-2021)</div>', unsafe_allow_html=True)
         if cm8_pre:
             _cp8_cols = st.columns(2)
             _cmcard(_cp8_cols[0], "Sharpe",       cm8_pre.get("sharpe"),      ".3f")
@@ -3505,7 +3505,7 @@ with tab8:
         else:
             st.info("Insufficient data.")
     with csp_post:
-        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Post-2022 (2022–present)</div>', unsafe_allow_html=True)
+        st.markdown('<div style="color:#7A7068;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Post-2022 (2022-present)</div>', unsafe_allow_html=True)
         if cm8_post:
             _cp8b_cols = st.columns(2)
             _cmcard(_cp8b_cols[0], "Sharpe",       cm8_post.get("sharpe"),      ".3f")
@@ -3584,7 +3584,7 @@ with tab8:
     fig_c8cum.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1)
     fig_c8cum.update_layout(
         **CHART_LAYOUT, height=420,
-        title=dict(text="Carry Strategy Comparison — Cumulative PnL (Gross, USD/MT)", font=dict(size=13)),
+        title=dict(text="Carry Strategy Comparison - Cumulative PnL (Gross, USD/MT)", font=dict(size=13)),
         yaxis_title="Cumulative PnL (USD/MT)", xaxis_title=None, hovermode="x unified",
     )
     fig_c8cum.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
@@ -3640,7 +3640,7 @@ with tab8:
 
     fig_csh.update_layout(
         **CHART_LAYOUT, height=500, barmode="overlay",
-        title=dict(text=f"{carry_sub_label} — Raw Carry Value & Binary Signal", font=dict(size=13)),
+        title=dict(text=f"{carry_sub_label} - Raw Carry Value & Binary Signal", font=dict(size=13)),
         hovermode="x unified", showlegend=True,
     )
     fig_csh.update_yaxes(title_text="Carry (%)", row=1, col=1)
@@ -3671,9 +3671,9 @@ with tab8:
     st.plotly_chart(fig_c8ann, use_container_width=True)
 
     # ── Section 9: Tenor Comparison (V2 only) ─────────────────────────────────
-    if carry_vgroup == "V2 — Long Slope":
+    if carry_vgroup == "V2 - Long Slope":
         st.divider()
-        section_header("TENOR PAIR COMPARISON — V2 LONG SLOPE")
+        section_header("TENOR PAIR COMPARISON - V2 LONG SLOPE")
         st.caption("Sharpe ratio for all 10 tenor pairs. Shows which part of the curve carries the most predictive power.")
 
         _v3_pairs = [(3,15),(4,16),(5,17),(6,18),(7,19),(8,20),(9,21),(10,22),(11,23),(12,24)]
@@ -3729,7 +3729,7 @@ with tab8:
         fig_tenor.add_vline(x=0, line_dash="dash", line_color="#475569", line_width=1)
         fig_tenor.update_layout(
             **CHART_LAYOUT, height=420, barmode="group",
-            title=dict(text="V2 Long Slope — Sharpe by Tenor Pair (Gross, No TC)", font=dict(size=13)),
+            title=dict(text="V2 Long Slope - Sharpe by Tenor Pair (Gross, No TC)", font=dict(size=13)),
             xaxis_title="Sharpe Ratio", yaxis_title=None,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         )
@@ -3768,7 +3768,7 @@ with tab8:
 
     fig_c8sig.update_layout(
         **CHART_LAYOUT, height=480, barmode="overlay",
-        title=dict(text=f"{carry_sub_label} — F1 Price & Position ({carry_timing})", font=dict(size=13)),
+        title=dict(text=f"{carry_sub_label} - F1 Price & Position ({carry_timing})", font=dict(size=13)),
         hovermode="x unified", showlegend=True,
     )
     fig_c8sig.update_yaxes(title_text="F1_cont ($/MT)", row=1, col=1)
@@ -3811,15 +3811,15 @@ Commodity carry (basis) reflects expected convenience yield and storage costs.
 
 **Signal Variant Formulas**
 - **V1 Roll Yield**: `(F1-F2)/F1`, `(F1-F3)/F1`, `(Cash-3M)/Cash`
-  Short-end basis as a fraction of current price. Annualized reference values (x12, x6) shown in the badge panel above for comparability — binary signal is identical to the raw ratio.
+  Short-end basis as a fraction of current price. Annualized reference values (x12, x6) shown in the badge panel above for comparability - binary signal is identical to the raw ratio.
 - **V2 Long Slope**: `(Fj-Fk)/Fk` for j < k (e.g., F3-F15, F4-F16, ... F12-F24)
   Slope of the forward curve at longer tenors. Downward slope (Fj > Fk) = backwardation at the long end = Long signal.
 - **V3 Z-score**: 252-day rolling standardization of `(F1-F2)/F1`.
   Filters permanent level shifts in the basis; signal fires when carry is unusually high or low relative to its recent history.
 
 **Position Timing**
-- *Same-Day*: `position[t] = sign(carry[t])` — taken at same close as signal
-- *Lag-1*: `position[t] = sign(carry[t-1])` — entered the following day
+- *Same-Day*: `position[t] = sign(carry[t])` - taken at same close as signal
+- *Lag-1*: `position[t] = sign(carry[t-1])` - entered the following day
 
 **Why Same-Day Dominates for Carry**
 Carry is a level-based signal. On flip days (contango→backwardation), a large price move
@@ -3838,7 +3838,7 @@ All strategies trade F1_continuous regardless of which tenor pair generates the 
 Sharpe, Sortino, Max DD, Calmar all computed from daily_ret in % terms.
 
 **In-Sample vs Out-of-Sample**
-Carry signals have *no optimised parameters* — the signal formula (e.g., (F1-F2)/F1) is a structural
+Carry signals have *no optimised parameters* - the signal formula (e.g., (F1-F2)/F1) is a structural
 market measure, not a fitted quantity. There is no parameter search or look-ahead bias.
 Consequently, IS results are representative of OOS performance; the sub-period table above
 (pre/post 2022) reflects genuine regime-conditional performance, not overfitting.
@@ -3854,9 +3854,9 @@ Baz, J., Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Se
         'NEXT &rarr; </span>'
         '<span style="color:#B87333;font-size:0.82rem;font-family:\'IBM Plex Mono\',monospace;font-weight:700;">'
         'Tab 9: Value Signals</span>'
-        '<span style="color:#8A8278;font-size:0.78rem;"> &nbsp;&mdash;&nbsp; '
+        '<span style="color:#8A8278;font-size:0.78rem;"> &nbsp;-&nbsp; '
         'Mean-reversion toward long-run equilibrium price levels. '
-        'Regime-conditional and negatively correlated with momentum — the third orthogonal source of return '
+        'Regime-conditional and negatively correlated with momentum - the third orthogonal source of return '
         'in the equal-weight portfolio.</span></div>',
         unsafe_allow_html=True,
     )
@@ -3899,7 +3899,7 @@ def _wf_value_oos_tc(_pos: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
 # ══════════════════════════════════════════════════════
 
 with tab9:
-    st.markdown("### Value Signals — LME Copper")
+    st.markdown("### Value Signals - LME Copper")
     st.markdown(
         '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
         'border-radius:4px;padding:10px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px;">'
@@ -3915,9 +3915,9 @@ with tab9:
     st.warning(
         "**Regime Conditionality:** Value signal performance is regime-sensitive. "
         "V2 Baz-Granger 10yr is weak post-2022 (Sharpe ≈ +0.14). "
-        "V1 MA Reversion underperforms during sharp dislocations (2020–2021 Sharpe ≈ −1.05) "
+        "V1 MA Reversion underperforms during sharp dislocations (2020-2021 Sharpe ≈ −1.05) "
         "because the flat zone delays entry. "
-        "Interpret full-period Sharpe figures with sub-period breakdown — see Regime Analysis section below.",
+        "Interpret full-period Sharpe figures with sub-period breakdown - see Regime Analysis section below.",
         icon="⚠️",
     )
 
@@ -3941,16 +3941,16 @@ with tab9:
     <div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;border-radius:4px;padding:14px 20px;margin-bottom:8px;">
       <div style="display:flex;gap:40px;flex-wrap:wrap;">
         <div style="min-width:220px;">
-          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V1 — MA Reversion</span><br>
+          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V1 - MA Reversion</span><br>
           <span style="color:#8A8278;font-size:0.78rem;">Long-run moving-average reversion on Fk<br>
-          (k = F1–F15). Three states: +1 (cheap), 0 (fair), −1 (expensive).<br>
+          (k = F1-F15). Three states: +1 (cheap), 0 (fair), −1 (expensive).<br>
           F12 is Mark Bogorad's reference contract for energy risk premia.</span>
         </div>
         <div style="min-width:220px;">
-          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V2 — Baz-Granger Reversal</span><br>
+          <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V2 - Baz-Granger Reversal</span><br>
           <span style="color:#8A8278;font-size:0.78rem;">Contrarian N-year return reversal on F1_raw.<br>
           Signal = sign(F1_raw[t−N] − F1_raw[t]).<br>
-          Always long or short — no flat zone.</span>
+          Always long or short - no flat zone.</span>
         </div>
       </div>
     </div>
@@ -3959,18 +3959,18 @@ with tab9:
     # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD ────────────────────────────────
     st.markdown("#### Out-of-Sample Walk-Forward Validation")
     st.caption(
-        "IS = 5yr rolling window · OOS = 1yr · Same-Day entry · Fixed parameters — no re-optimisation per window. "
+        "IS = 5yr rolling window, OOS = 1yr, Same-Day entry, Fixed parameters - no re-optimisation per window. "
         "Window labels denote the start year of each OOS period. "
         "V1 F8 and F12 use ±10% threshold throughout. "
         "V2 BG 10yr: signal first valid Jan 2016; only 5 complete OOS windows available."
     )
 
-    # Live OOS walk-forward options — all computed dynamically via _wf_value_oos_tc
+    # Live OOS walk-forward options - all computed dynamically via _wf_value_oos_tc
     _V9_OOS_OPTS = {
-        "V1: F8 · 5yr · Same-Day  [OOS Validated]":       ("v1", 8,    1260),
-        "V1: F12 · 5yr · Same-Day  [Bogorad Reference]":  ("v1", 12,   1260),
-        "V2: BG 3yr · Same-Day  [Fully Testable]":        ("v2", None, 756),
-        "V2: BG 10yr · Same-Day  [Limited to ~5 windows]":("v2", None, 2520),
+        "V1: F8, 5yr, Same-Day  [OOS Validated]":       ("v1", 8,    1260),
+        "V1: F12, 5yr, Same-Day  [Bogorad Reference]":  ("v1", 12,   1260),
+        "V2: BG 3yr, Same-Day  [Fully Testable]":        ("v2", None, 756),
+        "V2: BG 10yr, Same-Day  [Limited to ~5 windows]":("v2", None, 2520),
     }
 
     def _v9_build_pos(variant: str, k, N: int) -> pd.Series:
@@ -3991,13 +3991,13 @@ with tab9:
     _v9_oos_ctrl1, _v9_oos_ctrl2 = st.columns([2.8, 1.2])
     with _v9_oos_ctrl1:
         _v9_oos_sig = st.selectbox(
-            "Signal — OOS Walk-Forward", list(_V9_OOS_OPTS.keys()),
+            "Signal - OOS Walk-Forward", list(_V9_OOS_OPTS.keys()),
             index=0, key="v9_oos_sig",
         )
     with _v9_oos_ctrl2:
         _v9_oos_tc_map   = _tc_label_map(float(vf1c.dropna().iloc[-1]))
         _v9_oos_tc_label = st.selectbox(
-            "TC — OOS Section", list(_v9_oos_tc_map.keys()),
+            "TC - OOS Section", list(_v9_oos_tc_map.keys()),
             index=0, key="v9_oos_tc",
         )
         _v9_oos_tc_bps = _v9_oos_tc_map[_v9_oos_tc_label]
@@ -4010,13 +4010,13 @@ with tab9:
     _v9_wf_avg     = np.nanmean(_v9_wf_vals) if _v9_wf_vals else np.nan
     _v9_wf_n_pos   = sum(1 for v in _v9_wf_vals if v > 0)
     _v9_wf_n_tot   = len(_v9_wf_vals)
-    _v9_tc_note    = f"  ·  {_v9_oos_tc_label}" if _v9_oos_tc_bps > 0 else ""
+    _v9_tc_note    = f", {_v9_oos_tc_label}" if _v9_oos_tc_bps > 0 else ""
     _v9_recent_yrs = sorted(k for k in _v9_wf_active if not k.endswith("*"))[-3:]
     _v9_recent_avg = np.nanmean([_v9_wf_active[y] for y in _v9_recent_yrs]) if _v9_recent_yrs else np.nan
     _v9_is_10yr    = "10yr" in _v9_oos_sig
     _v9_wf_yrs_s   = sorted(_v9_wf_active.keys())
-    _v9_first_yr   = _v9_wf_yrs_s[0][:4] if _v9_wf_yrs_s else "—"
-    _v9_last_yr    = _v9_wf_yrs_s[-1][:4] if _v9_wf_yrs_s else "—"
+    _v9_first_yr   = _v9_wf_yrs_s[0][:4] if _v9_wf_yrs_s else "-"
+    _v9_last_yr    = _v9_wf_yrs_s[-1][:4] if _v9_wf_yrs_s else "-"
 
     # Summary cards (same style as Momentum Section 1)
     _v9wf_c1, _v9wf_c2, _v9wf_c3 = st.columns(3)
@@ -4036,11 +4036,11 @@ with tab9:
     _v9_hr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
 
     with _v9wf_c1:
-        _win_lbl = f"{_v9_wf_n_tot} Windows ({_v9_first_yr}–{_v9_last_yr})"
+        _win_lbl = f"{_v9_wf_n_tot} Windows ({_v9_first_yr}-{_v9_last_yr})"
         st.markdown(f"""<div style="{_v9_cs}">
-<p style="{_v9_lbl}">{_v9_oos_sig.split('·')[0].strip()} — Fixed Parameter</p>
+<p style="{_v9_lbl}">{_v9_oos_sig.split(', ')[0].strip()} - Fixed Parameter</p>
 <p style="{_v9_big}">{_v9_wf_avg:+.3f}</p>
-<p style="{_v9_sub}">Avg OOS Sharpe · {_win_lbl}{_v9_tc_note}</p>
+<p style="{_v9_sub}">Avg OOS Sharpe, {_win_lbl}{_v9_tc_note}</p>
 <hr style="{_v9_hr}"/>
 <p style="{_v9_sub}">Recent 3 windows ({", ".join(_v9_recent_yrs)}) avg</p>
 <p style="{_v9_med}">{_v9_recent_avg:+.3f}</p>
@@ -4050,13 +4050,13 @@ with tab9:
     with _v9wf_c2:
         if _v9_is_10yr:
             st.markdown(f"""<div style="{_v9_cs}">
-<p style="{_v9_lbl}">V2 BG 10yr — Data Constraint</p>
+<p style="{_v9_lbl}">V2 BG 10yr - Data Constraint</p>
 <p style="{_v9_big}">5</p>
-<p style="{_v9_sub}">OOS windows available (2020–2024)</p>
+<p style="{_v9_sub}">OOS windows available (2020-2024)</p>
 <hr style="{_v9_hr}"/>
 <p style="{_v9_sub}">Signal first valid: Jan 2016</p>
-<p style="{_v9_sub}">IS window (5yr) consumes 2016–2021 data</p>
-<p style="{_v9_sub}">Full-period Sharpe = entire signal history — no true IS holdout</p>
+<p style="{_v9_sub}">IS window (5yr) consumes 2016-2021 data</p>
+<p style="{_v9_sub}">Full-period Sharpe = entire signal history - no true IS holdout</p>
 </div>""", unsafe_allow_html=True)
         else:
             _v9_wf_n_gt03 = sum(1 for v in _v9_wf_vals if v > 0.30)
@@ -4096,7 +4096,7 @@ with tab9:
         marker_color=_v9_bar_clr,
         marker_line_color=_v9_border,
         marker_line_width=2,
-        text=[f"{v:+.2f}" if (v is not None and not np.isnan(v)) else "—" for v in _v9_wf_shps],
+        text=[f"{v:+.2f}" if (v is not None and not np.isnan(v)) else "-" for v in _v9_wf_shps],
         textposition="outside",
         hovertemplate="%{x}: Sharpe %{y:+.3f}<extra></extra>",
     ))
@@ -4116,9 +4116,9 @@ with tab9:
     if _v9_is_10yr:
         st.info(
             "**V2 BG 10yr data note:** Signal first computable in Jan 2016 (requires 10yr of price history). "
-            "With a 5yr IS window, first OOS window begins 2020. Only 5 windows exist — "
+            "With a 5yr IS window, first OOS window begins 2020. Only 5 windows exist - "
             "the full-period Sharpe (+0.512) is the entire track record of this signal. "
-            "Strong 2020–2021 performance is COVID mean-reversion; 2023–2024 is negative.",
+            "Strong 2020-2021 performance is COVID mean-reversion; 2023-2024 is negative.",
             icon="ℹ️",
         )
     else:
@@ -4131,41 +4131,41 @@ with tab9:
     # ── SECTION 2: IS PARAMETER SEARCH ───────────────────────────────────────
     st.divider()
     _v9_is_yr0 = str(vf1c.index[0].year); _v9_is_yr1 = str(vf1c.index[-1].year)
-    st.markdown(f"#### IS Parameter Search (Full Period {_v9_is_yr0}–{_v9_is_yr1})")
+    st.markdown(f"#### IS Parameter Search (Full Period {_v9_is_yr0}-{_v9_is_yr1})")
     _v9_s2_tc_label = st.session_state.get("val_tc", "0 bps  (Gross)")
     st.caption(
         "Full in-sample backtest. Use controls to explore contract, lookback, threshold, and timing. "
-        f"TC applied to all metrics below: **{_v9_s2_tc_label}** — change via the TC dropdown in controls below."
+        f"TC applied to all metrics below: **{_v9_s2_tc_label}** - change via the TC dropdown in controls below."
     )
 
     # ── Strategy Preset ───────────────────────────────────────────────────────
     _VAL_PRESETS = {
-        "V2 — Baz-Granger · 10yr · Same-Day  [Best Overall]": {
-            "val_vgroup":   "V2 — Baz-Granger Reversal",
+        "V2 - Baz-Granger, 10yr, Same-Day  [Best Overall]": {
+            "val_vgroup":   "V2 - Baz-Granger Reversal",
             "val_lb":       "10yr (2520d)",
             "val_timing":   "Same-Day",
         },
-        "V1 — F8 · 5yr · ±10% · Lag-1  [Empirical Optimum]": {
-            "val_vgroup":   "V1 — MA Reversion",
+        "V1 - F8, 5yr, ±10%, Lag-1  [Empirical Optimum]": {
+            "val_vgroup":   "V1 - MA Reversion",
             "val_contract": "F8",
             "val_lb":       "5yr  (1260d)",
             "val_thr":      "±10% (default)",
             "val_timing":   "Lag-1 (Next-Day)",
         },
-        "V1 — F12 · 5yr · ±10% · Lag-1  [Bogorad Reference]": {
-            "val_vgroup":   "V1 — MA Reversion",
+        "V1 - F12, 5yr, ±10%, Lag-1  [Bogorad Reference]": {
+            "val_vgroup":   "V1 - MA Reversion",
             "val_contract": "F12",
             "val_lb":       "5yr  (1260d)",
             "val_thr":      "±10% (default)",
             "val_timing":   "Lag-1 (Next-Day)",
         },
-        "V2 — Baz-Granger · 3yr · Same-Day  [Alternative Lookback]": {
-            "val_vgroup":   "V2 — Baz-Granger Reversal",
+        "V2 - Baz-Granger, 3yr, Same-Day  [Alternative Lookback]": {
+            "val_vgroup":   "V2 - Baz-Granger Reversal",
             "val_lb":       "3yr  (756d)",
             "val_timing":   "Same-Day",
         },
-        "V1 — F8 · 7yr · ±10% · Lag-1  [Longer-Window V1]": {
-            "val_vgroup":   "V1 — MA Reversion",
+        "V1 - F8, 7yr, ±10%, Lag-1  [Longer-Window V1]": {
+            "val_vgroup":   "V1 - MA Reversion",
             "val_contract": "F8",
             "val_lb":       "7yr  (1764d)",
             "val_thr":      "±10% (default)",
@@ -4191,7 +4191,7 @@ with tab9:
     with _v9_pre_info:
         st.markdown(
             '<div style="padding:8px 0;color:#7A7068;font-size:0.78rem;">'
-            'Selecting a preset auto-fills all controls below — all sections update together. '
+            'Selecting a preset auto-fills all controls below - all sections update together. '
             'Switch to <b>Custom</b> to edit individual parameters freely.</div>',
             unsafe_allow_html=True,
         )
@@ -4199,7 +4199,7 @@ with tab9:
     # ── Controls ──────────────────────────────────────────────────────────────
     v9_c1, v9_c2, v9_c3, v9_c4, v9_c5, v9_c6 = st.columns([1.5, 1.2, 1.5, 1.3, 1.2, 1.4])
     with v9_c1:
-        val_vgroup = st.selectbox("Variant", ["V1 — MA Reversion", "V2 — Baz-Granger Reversal"],
+        val_vgroup = st.selectbox("Variant", ["V1 - MA Reversion", "V2 - Baz-Granger Reversal"],
                                   index=1, key="val_vgroup")
         val_is_v1 = val_vgroup.startswith("V1")
     with v9_c2:
@@ -4281,9 +4281,9 @@ with tab9:
 
     # ── Best Value Signal Summary ─────────────────────────────────────────────
     st.divider()
-    section_header("BEST VALUE SIGNAL — BY VARIANT")
+    section_header("BEST VALUE SIGNAL - BY VARIANT")
     st.caption(
-        f"Best-performing configuration per variant. IS backtest · Full period {_v9_is_yr0}–{_v9_is_yr1} · 0 TC · Same-Day entry · Gross Sharpe."
+        f"Best-performing configuration per variant. IS backtest, Full period {_v9_is_yr0}-{_v9_is_yr1}, 0 TC, Same-Day entry, Gross Sharpe."
     )
     _vbsc1, _vbsc2 = st.columns(2)
     _vbcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
@@ -4296,46 +4296,46 @@ with tab9:
     _vbhr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
     with _vbsc1:
         st.markdown(f"""<div style="{_vbcs}">
-<p style="{_vblbl}">V1 — MA Reversion</p>
+<p style="{_vblbl}">V1 - MA Reversion</p>
 <p style="{_vbbig}">+0.277</p>
 <p style="{_vbsub}">Sharpe Ratio (Gross)</p>
 <hr style="{_vbhr}"/>
-<p style="{_vbsub}">F8 · 5yr Lookback · ±10% Threshold · Same-Day</p>
-<p style="{_vbsub}">Ann Ret ≈ +7.1% · Max DD ≈ −67% · 38% Flat Days</p>
+<p style="{_vbsub}">F8, 5yr Lookback, ±10% Threshold, Same-Day</p>
+<p style="{_vbsub}">Ann Ret ≈ +7.1%, Max DD ≈ −67%, 38% Flat Days</p>
 <p style="{_vbsub}">Note: F12 is Bogorad's energy reference (Sharpe +0.184 for copper)</p>
 </div>""", unsafe_allow_html=True)
     with _vbsc2:
         st.markdown(f"""<div style="{_vbcs}">
-<p style="{_vblbl}">V2 — Baz-Granger Reversal</p>
+<p style="{_vblbl}">V2 - Baz-Granger Reversal</p>
 <p style="{_vbbig}">+0.512</p>
 <p style="{_vbsub}">Sharpe Ratio (Gross)</p>
 <hr style="{_vbhr}"/>
-<p style="{_vbsub}">F1_raw · 10yr Lookback · Same-Day</p>
-<p style="{_vbsub}">Ann Ret ≈ +10.2% · Max DD ≈ −44%</p>
-<p style="{_vbsub}">Non-monotonic: 5yr is a trap (Sharpe −0.14) — use 3yr or 10yr</p>
+<p style="{_vbsub}">F1_raw, 10yr Lookback, Same-Day</p>
+<p style="{_vbsub}">Ann Ret ≈ +10.2%, Max DD ≈ −44%</p>
+<p style="{_vbsub}">Non-monotonic: 5yr is a trap (Sharpe −0.14) - use 3yr or 10yr</p>
 </div>""", unsafe_allow_html=True)
     st.caption(
         "Same-Day (shift-1, no look-ahead) is the default: for V2 Baz-Granger it beats Lag-1 (+0.51 vs +0.37); "
         "for V1 MA-Reversion the two are close (Lag-1 marginally ahead, e.g. F8 +0.33 vs +0.28). "
-        "Value edge is regime-conditional — most P&L is concentrated in the 2020–2022 COVID dislocation period."
+        "Value edge is regime-conditional - most P&L is concentrated in the 2020-2022 COVID dislocation period."
     )
 
     # ── Live Signal Badge ─────────────────────────────────────────────────────
     _v9_last_raw = float(val_raw.iloc[-1])
     if val_is_v1:
         if _v9_last_raw < -val_thr:
-            _v9_state, _v9_scolor, _v9_sbg = "BELOW FAIR VALUE — LONG", "#5BAD72", "rgba(91,173,114,0.08)"
+            _v9_state, _v9_scolor, _v9_sbg = "BELOW FAIR VALUE - LONG", "#5BAD72", "rgba(91,173,114,0.08)"
         elif _v9_last_raw > val_thr:
-            _v9_state, _v9_scolor, _v9_sbg = "ABOVE FAIR VALUE — SHORT", "#B85450", "rgba(184,84,80,0.08)"
+            _v9_state, _v9_scolor, _v9_sbg = "ABOVE FAIR VALUE - SHORT", "#B85450", "rgba(184,84,80,0.08)"
         else:
-            _v9_state, _v9_scolor, _v9_sbg = "NEAR FAIR VALUE — FLAT", "#C9A84C", "rgba(201,168,76,0.06)"
+            _v9_state, _v9_scolor, _v9_sbg = "NEAR FAIR VALUE - FLAT", "#C9A84C", "rgba(201,168,76,0.06)"
         _v9_dev_str = f"{_v9_last_raw * 100:+.2f}%"
         _v9_raw_lbl = f"deviation from {val_N}d MA (F{val_k})"
     else:
         if _v9_last_raw > 0:
-            _v9_state, _v9_scolor, _v9_sbg = "PRICE FALLEN — LONG", "#5BAD72", "rgba(91,173,114,0.08)"
+            _v9_state, _v9_scolor, _v9_sbg = "PRICE FALLEN - LONG", "#5BAD72", "rgba(91,173,114,0.08)"
         else:
-            _v9_state, _v9_scolor, _v9_sbg = "PRICE RISEN — SHORT", "#B85450", "rgba(184,84,80,0.08)"
+            _v9_state, _v9_scolor, _v9_sbg = "PRICE RISEN - SHORT", "#B85450", "rgba(184,84,80,0.08)"
         _v9_dev_str = f"{_v9_last_raw:+,.1f} $/MT"
         _v9_raw_lbl = f"{val_N}d price reversal (F1_raw)"
 
@@ -4374,7 +4374,7 @@ with tab9:
         <div>
           <div style="color:#7A7068;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px;">Entry Mode</div>
           <div style="color:#D4CFC8;font-size:1.1rem;font-weight:600;font-family:'IBM Plex Mono',monospace;">{val_timing}</div>
-          <div style="color:#5A5248;font-size:0.72rem;margin-top:3px;">{'±' + str(int(val_thr*100)) + '% threshold' if val_is_v1 else 'no threshold — always in market'}</div>
+          <div style="color:#5A5248;font-size:0.72rem;margin-top:3px;">{'±' + str(int(val_thr*100)) + '% threshold' if val_is_v1 else 'no threshold - always in market'}</div>
         </div>
       </div>
     </div>
@@ -4431,7 +4431,7 @@ with tab9:
 
         fig_v9dev.update_layout(
             **CHART_LAYOUT, height=500, barmode="overlay",
-            title=dict(text=f"F{val_k} vs {val_N}d MA — Deviation % (±{int(val_thr*100)}% bands)", font=dict(size=13)),
+            title=dict(text=f"F{val_k} vs {val_N}d MA - Deviation % (±{int(val_thr*100)}% bands)", font=dict(size=13)),
             hovermode="x unified", showlegend=True,
         )
         fig_v9dev.update_yaxes(title_text="Deviation %", row=1, col=1)
@@ -4479,14 +4479,14 @@ with tab9:
         fig_v9dev.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
         st.plotly_chart(fig_v9dev, use_container_width=True)
         st.caption(f"Top: F1_raw[t−{val_N}d] − F1_raw[t]. Positive = price has fallen over {val_N} trading days → contrarian Long. "
-                   "Bottom: resulting binary signal (always in market — no flat zone for V2).")
+                   "Bottom: resulting binary signal (always in market - no flat zone for V2).")
 
     # ── Section 3: Date Filter + Performance Metrics ──────────────────────────
     st.divider()
     pf9_c1, _ = st.columns([3, 1])
     with pf9_c1:
         val_perf_dates = st.date_input(
-            "Performance period  (signal uses full history — only metrics & charts below update)",
+            "Performance period  (signal uses full history - only metrics & charts below update)",
             value=(_v9_idx[0].date(), _v9_idx[-1].date()),
             min_value=_v9_idx[0].date(), max_value=_v9_idx[-1].date(),
             key="val_perf_dates",
@@ -4608,20 +4608,20 @@ with tab9:
                             line_width=1.2, annotation_text="2022", annotation_position="top right")
         fig_vrs9.update_layout(
             **CHART_LAYOUT, height=320,
-            title=dict(text=f"{val_vgroup} — Rolling Sharpe ({val_timing}, {'Net of TC' if _vrs9_net else 'Gross'})", font=dict(size=13)),
+            title=dict(text=f"{val_vgroup} - Rolling Sharpe ({val_timing}, {'Net of TC' if _vrs9_net else 'Gross'})", font=dict(size=13)),
             yaxis_title="Annualised Sharpe", xaxis_title=None, hovermode="x unified",
         )
         fig_vrs9.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
         st.plotly_chart(fig_vrs9, use_container_width=True)
-    st.caption("Value signals are strongly regime-dependent — COVID-era price dislocations (2020-2021) created a rare "
+    st.caption("Value signals are strongly regime-dependent - COVID-era price dislocations (2020-2021) created a rare "
                "mean-reversion opportunity. The 2022 vertical line marks the post-COVID sub-period used in Mark Bogorad's paper.")
 
     # ── Section 5: Sub-period Analysis ────────────────────────────────────────
     st.divider()
-    section_header("REGIME ANALYSIS — Pre-COVID / COVID Spike / Post-COVID")
+    section_header("REGIME ANALYSIS - Pre-COVID / COVID Spike / Post-COVID")
     st.caption("Value signals are strongly regime-conditional. The 2020-2021 COVID window drove the majority of V2 10yr performance (+0.512 full-period). "
                "Split: Pre-2020 (normal regime) / 2020-2021 (dislocation) / 2022+ (normalisation). "
-               "Presents the honest attribution — do not present V2 as a systematic signal without this context.")
+               "Presents the honest attribution - do not present V2 as a systematic signal without this context.")
 
     _v9_pre20  = _v9_idx < pd.Timestamp("2020-01-01")
     _v9_covid  = (_v9_idx >= pd.Timestamp("2020-01-01")) & (_v9_idx < pd.Timestamp("2022-01-01"))
@@ -4669,9 +4669,9 @@ with tab9:
     # ── Section 6: Contract Comparison (V1 only) ───────────────────────────────
     if val_is_v1:
         st.divider()
-        section_header("CONTRACT COMPARISON — F1 THROUGH F15 (SHARPE, GROSS)")
+        section_header("CONTRACT COMPARISON - F1 THROUGH F15 (SHARPE, GROSS)")
         st.caption(f"Sharpe for each reference contract at {val_lb_label} lookback, ±{int(val_thr*100)}% threshold, {val_timing}. "
-                   "Identifies the empirically optimal contract. Mark Bogorad chose F12 for energy — is the same true for copper?")
+                   "Identifies the empirically optimal contract. Mark Bogorad chose F12 for energy - is the same true for copper?")
 
         _vc_sharpes = {}
         for _vk in range(1, 16):
@@ -4720,12 +4720,12 @@ with tab9:
             fig_vcc.add_vline(x=0, line_dash="dash", line_color="#475569", line_width=1)
             fig_vcc.update_layout(
                 **CHART_LAYOUT, height=380,
-                title=dict(text=f"Sharpe by Contract — {val_lb_label} MA, ±{int(val_thr*100)}% threshold", font=dict(size=13)),
+                title=dict(text=f"Sharpe by Contract - {val_lb_label} MA, ±{int(val_thr*100)}% threshold", font=dict(size=13)),
                 xaxis_title="Sharpe Ratio", yaxis_title=None,
             )
             st.plotly_chart(fig_vcc, use_container_width=True)
             st.caption(f"Best contract at this lookback/threshold: **{_vc_best}** (Sharpe = {_vc_sharpes.get(_vc_best, float('nan')):.3f}). "
-                       "Green = Sharpe > 0.5, amber = 0–0.5, red = negative. "
+                       "Green = Sharpe > 0.5, amber = 0-0.5, red = negative. "
                        "Contracts too near (F1-F3) are noisy; very far (F13-F15) may have limited liquidity.")
 
     # ── Section 7: Cumulative PnL + Comparison ────────────────────────────────
@@ -4767,7 +4767,7 @@ with tab9:
                          line_width=1.2, annotation_text="2022", annotation_position="top right")
     fig_v9cum.update_layout(
         **CHART_LAYOUT, height=420,
-        title=dict(text="Cumulative PnL (USD/MT) — Value Strategies", font=dict(size=13)),
+        title=dict(text="Cumulative PnL (USD/MT) - Value Strategies", font=dict(size=13)),
         yaxis_title="Cumulative PnL ($/MT)", hovermode="x unified",
     )
     fig_v9cum.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
@@ -4791,7 +4791,7 @@ with tab9:
     fig_v9ann.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1)
     fig_v9ann.update_layout(
         **CHART_LAYOUT, height=300,
-        title=dict(text=f"{val_vgroup} — Annual PnL ($/MT, Gross)", font=dict(size=13)),
+        title=dict(text=f"{val_vgroup} - Annual PnL ($/MT, Gross)", font=dict(size=13)),
         xaxis_title=None, yaxis_title="PnL ($/MT)",
     )
     st.plotly_chart(fig_v9ann, use_container_width=True)
@@ -4822,7 +4822,7 @@ with tab9:
 
     fig_v9sig.update_layout(
         **CHART_LAYOUT, height=480, barmode="overlay",
-        title=dict(text=f"{val_vgroup} — F1 Price & Three-State Position", font=dict(size=13)),
+        title=dict(text=f"{val_vgroup} - F1 Price & Three-State Position", font=dict(size=13)),
         hovermode="x unified", showlegend=True,
     )
     fig_v9sig.update_yaxes(title_text="F1_cont ($/MT)", row=1, col=1)
@@ -4859,7 +4859,7 @@ with tab9:
     st.divider()
     with st.expander("Methodology Notes", expanded=False):
         st.markdown("""
-**V1 — Long-Run MA Reversion**
+**V1 - Long-Run MA Reversion**
 
 Signal: `deviation_t = (Fk_t − MA_N(Fk)) / MA_N(Fk)`
 
@@ -4868,9 +4868,9 @@ Position (three states):
 - `−1` (Short): `deviation > +threshold`  → price above long-run mean → *expensive*
 - ` 0` (Flat):  deviation within ±threshold → *near fair value*
 
-The flat zone is a distinguishing feature: unlike momentum and carry, value is *not always* in the market. The ±10% default threshold is calibrated to Mark Bogorad's energy paper. For copper (lower realized volatility than crude oil), consider testing ±15–20% as the flat zone may be very small at ±10%.
+The flat zone is a distinguishing feature: unlike momentum and carry, value is *not always* in the market. The ±10% default threshold is calibrated to Mark Bogorad's energy paper. For copper (lower realized volatility than crude oil), consider testing ±15-20% as the flat zone may be very small at ±10%.
 
-**V2 — Baz-Granger N-year Reversal**
+**V2 - Baz-Granger N-year Reversal**
 
 Signal: `reversal_t = F1_raw[t−N] − F1_raw[t]`
 
@@ -4878,7 +4878,7 @@ Position (two states):
 - `+1` (Long):  `reversal > 0` → price has *fallen* over N years → contrarian long
 - `−1` (Short): `reversal < 0` → price has *risen* over N years → contrarian short
 
-No flat zone — always in the market. This is a pure reversal bet on medium/long-run mean reversion. Positive reversal means the market is cheaper than it was N years ago, which the strategy treats as a buy signal.
+No flat zone - always in the market. This is a pure reversal bet on medium/long-run mean reversion. Positive reversal means the market is cheaper than it was N years ago, which the strategy treats as a buy signal.
 
 **Why F12 as Reference (V1)?**
 Bogorad chose F12 (1-year-forward contract) because it is:
@@ -4887,7 +4887,7 @@ Bogorad chose F12 (1-year-forward contract) because it is:
 3. Closely correlated with long-run supply/demand expectations
 
 For copper, F12 corresponds to the LME 12-month forward, which is well-traded.
-The contract comparison chart above tests F1–F15 to find the empirically optimal contract for copper.
+The contract comparison chart above tests F1-F15 to find the empirically optimal contract for copper.
 
 **Position Timing** (no look-ahead either way)
 - *Same-Day (shift 1)*: `position` uses the prior close's signal; first return t→t+1. Realistic default.
@@ -4906,7 +4906,7 @@ below their 10-year trend and then recovered. In normal regimes (pre-2020, post-
 (Sharpe ≈ 0.0 to +0.3). Present this as event-driven risk premia, not a persistent carry-style signal.
 
 V1 MA Reversion (best: F8, 5yr, Sharpe +0.277) is more stable across regimes but still weak for
-copper — the ±10% threshold leaves copper in the flat zone most of the time (60% flat at ±10%).
+copper - the ±10% threshold leaves copper in the flat zone most of the time (60% flat at ±10%).
 This threshold was calibrated for crude oil (higher volatility). Consider ±15-20% for copper.
 
 **References**
@@ -4918,15 +4918,15 @@ This threshold was calibrated for crude oil (higher volatility). Consider ±15-2
         '<div style="background:#0D1117;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
         'border-radius:4px;padding:12px 20px;margin-top:20px;">'
         '<span style="color:#B87333;font-size:0.82rem;font-family:\'IBM Plex Mono\',monospace;font-weight:700;">'
-        'All three signals validated &mdash; </span>'
+        'All three signals validated - </span>'
         '<span style="color:#94A3B8;font-size:0.78rem;font-family:\'IBM Plex Mono\',monospace;font-weight:600;">'
         'NEXT &rarr; </span>'
         '<span style="color:#B87333;font-size:0.82rem;font-family:\'IBM Plex Mono\',monospace;font-weight:700;">'
         'Tab 10: Portfolio Construction</span>'
-        '<span style="color:#8A8278;font-size:0.78rem;"> &nbsp;&mdash;&nbsp; '
+        '<span style="color:#8A8278;font-size:0.78rem;"> &nbsp;-&nbsp; '
         'Momentum (trend) + Carry (level) + Value (mean-reversion) combined into an equal-weight portfolio. '
         'Low pairwise correlations confirm genuine diversification: '
-        'Mom&ndash;Carry +0.05, Mom&ndash;Value &minus;0.21, Carry&ndash;Value +0.03.</span></div>',
+        'Mom-Carry +0.05, Mom-Value &minus;0.21, Carry-Value +0.03.</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -4936,7 +4936,7 @@ This threshold was calibrated for crude oil (higher volatility). Consider ±15-2
 # ══════════════════════════════════════════════════════
 
 with tab10:
-    st.markdown("### Portfolio Construction — LME Copper")
+    st.markdown("### Portfolio Construction - LME Copper")
     st.caption(
         "Equal-weight combination of the three risk premia signals. "
         "All positions sized ±1 per signal; portfolio position ranges −1 to +1. "
@@ -4995,7 +4995,7 @@ with tab10:
             ["V1: F8 5yr (OOS +0.43, robust)", "V2: BG 10yr (OOS +0.07, fragile)"],
             index=0, key="p10_val_choice",
             help="Default V1 F8: walk-forward OOS +0.43 (robust, improves vs IS). "
-                 "V2 BG 10yr has higher IS (+0.51) but collapses OOS to +0.07 — its edge is "
+                 "V2 BG 10yr has higher IS (+0.51) but collapses OOS to +0.07 - its edge is "
                  "concentrated in the 2020-21 COVID window, so it is no longer the default.",
         )
     with _p10_wt_col:
@@ -5109,21 +5109,21 @@ THREE ORTHOGONAL RISK PREMIA &rarr; ONE EQUAL-WEIGHT PORTFOLIO</p>
   <td style="padding:5px 10px">MA(35,43)</td>
   <td style="padding:5px 10px;color:#5BAD72">+0.49 (walk-fwd)</td>
   <td style="padding:5px 10px">Same-Day</td>
-  <td style="padding:5px 10px">Trend persistence — anchor signal</td>
+  <td style="padding:5px 10px">Trend persistence - anchor signal</td>
 </tr>
 <tr style="border-bottom:1px solid #1C1C1C;">
   <td style="padding:5px 10px 5px 0;color:#B87333;font-weight:600">Carry</td>
   <td style="padding:5px 10px">&Delta;20d (F1&minus;F2)/F1</td>
   <td style="padding:5px 10px;color:#5BAD72">+0.50 (walk-fwd OOS)</td>
   <td style="padding:5px 10px">Same-Day</td>
-  <td style="padding:5px 10px">Curve-momentum &mdash; nearly uncorrelated with price-Mom (+0.12)</td>
+  <td style="padding:5px 10px">Curve-momentum - nearly uncorrelated with price-Mom (+0.12)</td>
 </tr>
 <tr>
   <td style="padding:5px 10px 5px 0;color:#B87333;font-weight:600">Value</td>
   <td style="padding:5px 10px">V1 F8 5yr ±10%</td>
   <td style="padding:5px 10px;color:#5BAD72">+0.43 (walk-fwd OOS)</td>
   <td style="padding:5px 10px">Same-Day</td>
-  <td style="padding:5px 10px">Mean-reversion &mdash; negatively correlated with Mom (&minus;0.21)</td>
+  <td style="padding:5px 10px">Mean-reversion - negatively correlated with Mom (&minus;0.21)</td>
 </tr>
 </table>
 <p style="color:#8A8278;font-size:0.75rem;margin:10px 0 0">
@@ -5131,7 +5131,7 @@ All legs use same-day execution (trade at the signal's close; first return next 
 Sleeves updated to best walk-forward OOS variants: carry &rarr; 20-day carry-momentum (+0.50 OOS, was
 level +0.24), value &rarr; V1 F8 (+0.43 OOS, was V2 BG which collapses OOS to +0.07). Momentum MA(35,43)
 +0.49 is partial OOS (IS-selected params).<br>
-Pairwise correlations: Mom&ndash;Carry +0.12 &nbsp;|&nbsp; Mom&ndash;Value &minus;0.21 &nbsp;|&nbsp; Carry&ndash;Value low.
+Pairwise correlations: Mom-Carry +0.12 &nbsp;|&nbsp; Mom-Value &minus;0.21 &nbsp;|&nbsp; Carry-Value low.
 &nbsp;Realised EW portfolio Sharpe &asymp; <b>+1.00 net</b> (full); walk-forward OOS <b>+0.91</b> (13/16 windows);
 inverse-vol &asymp; +0.89.</p>
 </div>""", unsafe_allow_html=True)
@@ -5175,10 +5175,10 @@ inverse-vol &asymp; +0.89.</p>
     # ── Section 2: Portfolio Performance Cards ────────────────────────────────
     st.divider()
     _p10_yr0 = str(pf1c.index[0].year); _p10_yr1 = str(pf1c.index[-1].year)
-    _p10_tc_note_hdr = f" · {_p10_tc_label}" if _p10_tc_bps > 0 else " · 0 TC (Gross)"
+    _p10_tc_note_hdr = f", {_p10_tc_label}" if _p10_tc_bps > 0 else ", 0 TC (Gross)"
     _p10_wt_short = "INVERSE-VOL" if _p10_use_iv else "EQUAL-WEIGHT"
     section_header(f"{_p10_wt_short} PORTFOLIO PERFORMANCE{_p10_tc_note_hdr.upper()}")
-    st.caption(f"Full period {_p10_yr0}–{_p10_yr1}{_p10_tc_note_hdr} · all sleeves same-day execution (shift 1, no look-ahead).")
+    st.caption(f"Full period {_p10_yr0}-{_p10_yr1}{_p10_tc_note_hdr}, all sleeves same-day execution (shift 1, no look-ahead).")
 
     _p10_card_s  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
                     "border-radius:4px;padding:14px 20px")
@@ -5191,8 +5191,8 @@ inverse-vol &asymp; +0.89.</p>
 
     _p10_cc1, _p10_cc2, _p10_cc3, _p10_cc4 = st.columns(4)
     for _col2, _lbl2, _big2, _sub2 in [
-        (_p10_cc1, "Sharpe Ratio", f"{_port_sh:+.3f}", f"Ann.{'  Net' if _p10_tc_bps>0 else ' Gross'} ({_p10_yr0}–{_p10_yr1})"),
-        (_p10_cc2, "Ann. Return",  f"{_port_ann:+.1f}%", f"{'Net' if _p10_tc_bps>0 else 'Gross'} · {_p10_tc_note_hdr.strip(' ·')}"),
+        (_p10_cc1, "Sharpe Ratio", f"{_port_sh:+.3f}", f"Ann.{'  Net' if _p10_tc_bps>0 else ' Gross'} ({_p10_yr0}-{_p10_yr1})"),
+        (_p10_cc2, "Ann. Return",  f"{_port_ann:+.1f}%", f"{'Net' if _p10_tc_bps>0 else 'Gross'}, {_p10_tc_note_hdr.strip(', ')}"),
         (_p10_cc3, "Max Drawdown", f"${_port_dd:,.0f}/MT", "Cumulative USD/MT"),
         (_p10_cc4, "% In Market",  f"{100-_port_flat:.1f}%", f"Flat: {_port_flat:.1f}% of days"),
     ]:
@@ -5207,7 +5207,7 @@ inverse-vol &asymp; +0.89.</p>
         )
 
     # ── EW vs Inverse-Vol comparison ──────────────────────────────────────────
-    with st.expander("⚖️  Equal-Weight vs Inverse-Vol — how it works + side-by-side", expanded=False):
+    with st.expander("⚖️  Equal-Weight vs Inverse-Vol - how it works + side-by-side", expanded=False):
         def _p10_cmp(_pos):
             _sh_f = _p10_sub_sharpe(_pos, None, None, _p10_tc_bps)
             _sh_pre = _p10_sub_sharpe(_pos, None, "2022-01-01", _p10_tc_bps)
@@ -5221,27 +5221,27 @@ inverse-vol &asymp; +0.89.</p>
 **How inverse-vol weighting works**
 
 Equal-weight gives each sleeve a fixed **1/3** of the position. That equalises *position size*, not
-*risk* — an always-on signal (momentum) contributes more variance than one that is flat 40% of the time
+*risk* - an always-on signal (momentum) contributes more variance than one that is flat 40% of the time
 (value). Inverse-vol fixes this:
 
 1. Each day, take each sleeve's trailing **63-day return volatility** σ_m, σ_c, σ_v (lagged one day → no look-ahead).
-2. Weight each sleeve by **w_i = (1/σ_i) / Σ(1/σ_j)** — low-vol sleeves get more weight, so each contributes ≈ equal risk.
-3. Portfolio position = w_m·Mom + w_c·Carry + w_v·Value, rebalanced daily.
+2. Weight each sleeve by **w_i = (1/σ_i) / Σ(1/σ_j)** - low-vol sleeves get more weight, so each contributes ≈ equal risk.
+3. Portfolio position = w_m, Mom + w_c, Carry + w_v, Value, rebalanced daily.
 
 For *these* three copper signals the realised vols are similar, so the average weights land near
-**0.34 / 0.34 / 0.39** — close to equal. The benefit is therefore modest and shows up mostly as
+**0.34 / 0.34 / 0.39** - close to equal. The benefit is therefore modest and shows up mostly as
 **post-2022 stability** (the weights tilt away from whichever sleeve is blowing out in a given regime).
 
 | Metric ({_tcn}, TC={_p10_tc_bps}bps) | Equal-Weight | Inverse-Vol |
 |---|---|---|
-| Sharpe — full period | **{_ew_f:+.3f}** | **{_iv_f:+.3f}** |
-| Sharpe — pre-2022 | {_ew_pre:+.3f} | {_iv_pre:+.3f} |
-| Sharpe — post-2022 | {_ew_post:+.3f} | {_iv_post:+.3f} |
+| Sharpe - full period | **{_ew_f:+.3f}** | **{_iv_f:+.3f}** |
+| Sharpe - pre-2022 | {_ew_pre:+.3f} | {_iv_pre:+.3f} |
+| Sharpe - post-2022 | {_ew_post:+.3f} | {_iv_post:+.3f} |
 | Ann. return | {_ew_ann:+.1f}% | {_iv_ann:+.1f}% |
 | Max drawdown | ${_ew_dd:,.0f}/MT | ${_iv_dd:,.0f}/MT |
 
 **Read:** EW is marginally better on full-period Sharpe and has a smaller drawdown; inverse-vol earns a
-higher annual return and is steadier post-2022. Neither dominates — which is itself the finding: with
+higher annual return and is steadier post-2022. Neither dominates - which is itself the finding: with
 three similar-vol, low-correlation sleeves, equal-weight is already close to risk-parity. EW is kept as
 the default for simplicity; switch to inverse-vol above if you prefer regime stability.
         """)
@@ -5259,7 +5259,7 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
             f'<p style="{_p10_c_lbl}">{_lbl3}</p>'
             f'<p style="{_p10_c_big}">{_sh3:+.3f}</p>'
             f'<hr style="{_p10_c_hr}"/>'
-            f'<p style="{_p10_c_sub}">Sharpe · Ann Ret {_ann3:+.1f}%</p>'
+            f'<p style="{_p10_c_sub}">Sharpe, Ann Ret {_ann3:+.1f}%</p>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -5302,14 +5302,14 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
         _mom_val_corr   = float(_p10_corr.loc["Momentum", "Value"])
         _carry_val_corr = float(_p10_corr.loc["Carry",    "Value"])
         st.markdown(
-            f"**Mom–Carry:** `{_mom_carry_corr:+.3f}`  \n"
-            f"**Mom–Value:** `{_mom_val_corr:+.3f}`  \n"
-            f"**Carry–Value:** `{_carry_val_corr:+.3f}`"
+            f"**Mom-Carry:** `{_mom_carry_corr:+.3f}`  \n"
+            f"**Mom-Value:** `{_mom_val_corr:+.3f}`  \n"
+            f"**Carry-Value:** `{_carry_val_corr:+.3f}`"
         )
         _avg_pairwise = np.mean([abs(_mom_carry_corr), abs(_mom_val_corr), abs(_carry_val_corr)])
         st.caption(
             f"Avg absolute pairwise correlation: {_avg_pairwise:.3f}. "
-            f"{'All pairs < 0.3 — diversification benefit confirmed.' if _avg_pairwise < 0.3 else 'At least one pair > 0.3 — partial correlation, diversification benefit reduced.'}"
+            f"{'All pairs < 0.3 - diversification benefit confirmed.' if _avg_pairwise < 0.3 else 'At least one pair > 0.3 - partial correlation, diversification benefit reduced.'}"
         )
         _theo_sharpe = np.sqrt(3) * np.mean([abs(_mom_sh), abs(_car_sh), abs(_val_sh)])
         st.caption(
@@ -5323,9 +5323,9 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     st.caption("Sharpe ratio by regime. Highlights where each signal adds / detracts value.")
 
     _p10_periods = [
-        (f"Full ({_p10_yr0}–{_p10_yr1})", None,         None),
+        (f"Full ({_p10_yr0}-{_p10_yr1})", None,         None),
         ("Pre-2020",         None,         "2020-01-01"),
-        ("2020–2021",        "2020-01-01", "2022-01-01"),
+        ("2020-2021",        "2020-01-01", "2022-01-01"),
         ("Post-2022",        "2022-01-01", None),
     ]
 
@@ -5342,7 +5342,7 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     _sub_df = pd.DataFrame(_sub_rows).set_index("Period")
 
     def _fmt_sub(v):
-        if v is None or np.isnan(v): return "—"
+        if v is None or np.isnan(v): return "-"
         color = "#5BAD72" if v >= 0.3 else ("#B85450" if v < 0 else "#E8DDD0")
         return f'<span style="color:{color};font-weight:600">{v:+.3f}</span>'
 
@@ -5390,7 +5390,7 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     # ── Section 6: Cumulative PnL Chart ──────────────────────────────────────
     st.divider()
     _p10_pnl_lbl = f"Net ({_p10_tc_label})" if _p10_tc_bps > 0 else "Gross"
-    section_header(f"CUMULATIVE PnL (USD/MT) — {_p10_pnl_lbl}")
+    section_header(f"CUMULATIVE PnL (USD/MT) - {_p10_pnl_lbl}")
     st.caption(f"{_p10_pnl_lbl} cumulative PnL. EW Portfolio vs individual signals on common period.")
 
     def _cum_pnl(pos):
@@ -5434,7 +5434,7 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     section_header("ROLLING SHARPE (252-DAY)")
     _p10_rsh_cc1, _p10_rsh_cc2 = st.columns([4, 1])
     with _p10_rsh_cc1:
-        st.caption(f"Rolling 1yr Sharpe — {_p10_wt_short.title().replace('-',' ')} portfolio vs each sleeve. "
+        st.caption(f"Rolling 1yr Sharpe - {_p10_wt_short.title().replace('-',' ')} portfolio vs each sleeve. "
                    f"Net uses the selected {_p10_tc_label}.")
     with _p10_rsh_cc2:
         _p10_rsh_basis = st.radio("Returns", ["Gross", "Net of TC"], index=0,
@@ -5482,7 +5482,7 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
 
     # ── Section 8: Annual PnL Bars ────────────────────────────────────────────
     st.divider()
-    section_header(f"ANNUAL PnL (USD/MT) — {_p10_pnl_lbl}")
+    section_header(f"ANNUAL PnL (USD/MT) - {_p10_pnl_lbl}")
 
     _p10_pnl_s = _p10_port * _p10_f.diff()
     if _p10_tc_bps > 0:
@@ -5564,19 +5564,19 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
 Portfolio position ranges −1 to +1. When all three signals agree, |port| = 1 (full conviction).
 When signals split 2−1, |port| = 1/3 (reduced size). When two are zero (V1 flat zone), |port| = 1/3 or 0.
 
-**Entry timing — two legitimate conventions (neither has look-ahead):**
+**Entry timing - two legitimate conventions (neither has look-ahead):**
 - **Same-Day (shift 1, default):** signal from close(t) is traded *at that close(t)*; first return is t→t+1.
 - **Lag-1 / next-close (shift 2):** position taken at close(t+1); first return is t+1→t+2 (conservative on execution latency).
 
 The old "Same-Day" booked the t−1→t return that had *already happened* by the time the signal was known (shift 0)
-— that was pure look-ahead and is removed. It had inflated carry from ~0.10 (honest same-day) to ~0.62.
+- that was pure look-ahead and is removed. It had inflated carry from ~0.10 (honest same-day) to ~0.62.
 Same-Day Sharpe: Mom +0.72, Carry +0.10, Value V1 +0.28. Lag-1: Mom +0.63, Carry +0.03, Value V1 +0.33.
 
 **Diversification Claim:**
 If signals are pairwise uncorrelated (ρ ≈ 0) and each has Sharpe S, then EW Sharpe ≈ √3 × S.
-With the best-OOS sleeves (Mom 0.49, Carry-mom 0.50, Value V1 0.43 — avg ≈ 0.47) and low pairwise
+With the best-OOS sleeves (Mom 0.49, Carry-mom 0.50, Value V1 0.43 - avg ≈ 0.47) and low pairwise
 correlations, theoretical EW ≈ 0.81. **Realised EW ≈ +1.00 net full-period, +0.91 walk-forward OOS
-(13/16 windows positive)** — above the naive ceiling thanks to the negative Mom–Value correlation (−0.21).
+(13/16 windows positive)** - above the naive ceiling thanks to the negative Mom-Value correlation (−0.21).
 Inverse-vol weighting ≈ +0.89; EW is the default (marginally higher Sharpe, lower drawdown).
 
 **Disclaimer:** Partial-OOS backtest (params IS-selected, applied walk-forward). Not investment advice.
