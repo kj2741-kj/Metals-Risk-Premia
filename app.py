@@ -2074,7 +2074,7 @@ with tab7:
         st.markdown(
             '<div style="padding:10px 0;color:#7A7068;font-size:0.78rem;">'
             'TC sensitivity for the OOS walk-forward. At 0 bps the gross Sharpe is shown. '
-            'At non-zero TC, positions are re-derived dynamically for MA(35,43) Lag-1 with '
+            'At non-zero TC, positions are re-derived dynamically for MA(35,43) Same-Day with '
             'round-trip costs deducted on every signal flip.</div>',
             unsafe_allow_html=True,
         )
@@ -2092,7 +2092,7 @@ with tab7:
 
     st.markdown("#### Out-of-Sample Walk-Forward Validation")
     st.caption(
-        f"IS = 5yr rolling window · OOS = 1yr · Lag-1 entry · {len(_wf_active)} OOS windows. "
+        f"IS = 5yr rolling window · OOS = 1yr · Same-Day entry · {len(_wf_active)} OOS windows. "
         "MA(35,43) selected a priori — never re-optimised per window. "
         f"Window labels denote the start year of each OOS period; "
         f"data coverage spans {_wf_first_yr}–{_wf_last_yr[:4]}."
@@ -2202,7 +2202,7 @@ with tab7:
         fig_wf_bar.update_layout(
             **CHART_LAYOUT, height=300,
             title=dict(
-                text=f"MA(35,43) — Annual OOS Sharpe  (Walk-Forward · IS=5yr · Lag-1{_tc_note})",
+                text=f"MA(35,43) — Annual OOS Sharpe  (Walk-Forward · IS=5yr · Same-Day{_tc_note})",
                 font=dict(size=13),
             ),
             yaxis_title="OOS Sharpe", xaxis_title=None, showlegend=False,
@@ -2290,25 +2290,25 @@ with tab7:
 
     # ── Strategy Preset ───────────────────────────────────────────────────────
     _MOM_PRESETS = {
-        "MA(35,43) · Lag-1  [WF Best / Default]": {
+        "MA(35,43) · Same-Day  [WF Best / Default]": {
             "mom_sig_type": "MA Crossover",
             "mom_variant":  "MA(35,43) — Best Sharpe [default]",
-            "mom_timing":   "Lag-1 (Next-Day)",
+            "mom_timing":   "Same-Day",
         },
-        "CTA(9,21) · Lag-1  [Baz-Granger Best]": {
+        "CTA(9,21) · Same-Day  [Baz-Granger Best]": {
             "mom_sig_type": "CTA (Baz-Granger)",
             "mom_variant":  "CTA(9,21) — Best Lag-1 Sharpe [default]",
-            "mom_timing":   "Lag-1 (Next-Day)",
+            "mom_timing":   "Same-Day",
         },
         "Anchors EW · Lag-1  [Anchors + IS-Opt]": {
             "mom_sig_type": "Anchors + IS-Opt Weights",
             "mom_variant":  "EW Anchors — MA(10,25) + MA(35,43) + MA(63,100)",
             "mom_timing":   "Lag-1 (Next-Day)",
         },
-        "MA(35,43) · Same-Day  [Sensitivity Check]": {
+        "MA(35,43) · Lag-1  [Sensitivity Check]": {
             "mom_sig_type": "MA Crossover",
             "mom_variant":  "MA(35,43) — Best Sharpe [default]",
-            "mom_timing":   "Same-Day",
+            "mom_timing":   "Lag-1 (Next-Day)",
         },
         "Custom (use controls below)": {},
     }
@@ -2385,7 +2385,7 @@ with tab7:
     with c3:
         timing_label = st.selectbox(
             "Position Entry",
-            ["Lag-1 (Next-Day)", "Same-Day"],
+            ["Same-Day", "Lag-1 (Next-Day)"],
             index=0, key="mom_timing",
         )
         same_day = timing_label == "Same-Day"
@@ -2468,11 +2468,14 @@ with tab7:
 
     T = len(sig_raw)
     pos_np = np.empty(T)
+    # Same-Day = shift 1 (trade at signal's own close, earn t->t+1; no look-ahead).
+    # Lag-1    = shift 2 (trade next close, earn t+1->t+2). Matches carry/value/helpers.
     if same_day:
-        pos_np[:] = np.where(np.isfinite(sig_raw), sig_raw, 0.0)
-    else:
         pos_np[0] = 0.0
         pos_np[1:] = np.where(np.isfinite(sig_raw[:-1]), sig_raw[:-1], 0.0)
+    else:
+        pos_np[:2] = 0.0
+        pos_np[2:] = np.where(np.isfinite(sig_raw[:-2]), sig_raw[:-2], 0.0)
     sig_np = sig_raw
 
     # ── PnL with transaction costs ─────────────────────────────────────────────
@@ -2758,7 +2761,7 @@ with tab7:
             )
             with hm_c1:
                 st.plotly_chart(fig_hm, use_container_width=True)
-            st.caption("White stars = current top-5 by Sharpe (Lag-1). A wide green plateau means the "
+            st.caption("White stars = current top-5 by Sharpe. A wide green plateau means the "
                        "strategy is robust to parameter choice. An isolated peak suggests overfitting.")
 
     else:  # CTA
@@ -2799,7 +2802,7 @@ with tab7:
             )
             with hm_c1:
                 st.plotly_chart(fig_cta, use_container_width=True)
-            st.caption("White stars = top-5 by Sharpe (Lag-1). Each dot is one (S,L) pair.")
+            st.caption("White stars = top-5 by Sharpe. Each dot is one (S,L) pair.")
 
     # ── Signal & Position chart ────────────────────────────────────────────────
     st.divider()
@@ -2895,11 +2898,10 @@ with tab7:
 - Signal = sign(u)
 - CTA Paper uses 3 timescales (S,L) = (8,24), (16,48), (32,96); S_CTA = mean(u₁,u₂,u₃)
 
-**Position timing**
-- *Lag-1*: position[t] = signal[t−1]  → entered at close t−1, PnL from t−1→t
-- *Same-Day*: position[t] = signal[t]  → entered at close t, PnL from t−1→t
-- MA Crossover: Lag-1 outperforms (4/5 top pairs, avg Sharpe delta −0.04)
-- CTA: Same-Day substantially outperforms (5/5 top pairs, avg Sharpe delta +0.30)
+**Position timing** (no look-ahead either way)
+- *Same-Day (shift 1)*: trade at the signal's own close(t); first return t→t+1. Realistic default.
+- *Lag-1 (shift 2)*: trade at the next close(t+1); first return t+1→t+2. Conservative.
+- MA(35,43): Same-Day +0.72 vs Lag-1 +0.63. CTA also leads Same-Day; Anchors near-tied (Lag-1 marginally ahead).
 
 **Transaction costs**
 - Expressed in basis points (bps) of notional, round-trip
@@ -3957,7 +3959,7 @@ with tab9:
     # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD ────────────────────────────────
     st.markdown("#### Out-of-Sample Walk-Forward Validation")
     st.caption(
-        "IS = 5yr rolling window · OOS = 1yr · Lag-1 entry · Fixed parameters — no re-optimisation per window. "
+        "IS = 5yr rolling window · OOS = 1yr · Same-Day entry · Fixed parameters — no re-optimisation per window. "
         "Window labels denote the start year of each OOS period. "
         "V1 F8 and F12 use ±10% threshold throughout. "
         "V2 BG 10yr: signal first valid Jan 2016; only 5 complete OOS windows available."
@@ -3965,10 +3967,10 @@ with tab9:
 
     # Live OOS walk-forward options — all computed dynamically via _wf_value_oos_tc
     _V9_OOS_OPTS = {
-        "V1: F8 · 5yr · Lag-1  [OOS Validated]":       ("v1", 8,    1260),
-        "V1: F12 · 5yr · Lag-1  [Bogorad Reference]":  ("v1", 12,   1260),
-        "V2: BG 3yr · Lag-1  [Fully Testable]":        ("v2", None, 756),
-        "V2: BG 10yr · Lag-1  [Limited to ~5 windows]":("v2", None, 2520),
+        "V1: F8 · 5yr · Same-Day  [OOS Validated]":       ("v1", 8,    1260),
+        "V1: F12 · 5yr · Same-Day  [Bogorad Reference]":  ("v1", 12,   1260),
+        "V2: BG 3yr · Same-Day  [Fully Testable]":        ("v2", None, 756),
+        "V2: BG 10yr · Same-Day  [Limited to ~5 windows]":("v2", None, 2520),
     }
 
     def _v9_build_pos(variant: str, k, N: int) -> pd.Series:
@@ -4250,11 +4252,13 @@ with tab9:
         _v9_sig_bin = np.sign(val_raw.values).astype(float)
 
     _v9_T = len(_v9_idx)
+    # Same-Day = shift 1 (no look-ahead); Lag-1 = shift 2. Matches carry/value helpers.
     if val_same_day:
-        val_pos_np = np.where(np.isfinite(_v9_sig_bin), _v9_sig_bin, 0.0)
-    else:
         val_pos_np = np.empty(_v9_T); val_pos_np[0] = 0.0
         val_pos_np[1:] = np.where(np.isfinite(_v9_sig_bin[:-1]), _v9_sig_bin[:-1], 0.0)
+    else:
+        val_pos_np = np.empty(_v9_T); val_pos_np[:2] = 0.0
+        val_pos_np[2:] = np.where(np.isfinite(_v9_sig_bin[:-2]), _v9_sig_bin[:-2], 0.0)
 
     val_pos = pd.Series(val_pos_np, index=_v9_idx)
     vf1c_a  = vf1c.reindex(_v9_idx)
@@ -4279,7 +4283,7 @@ with tab9:
     st.divider()
     section_header("BEST VALUE SIGNAL — BY VARIANT")
     st.caption(
-        f"Best-performing configuration per variant. IS backtest · Full period {_v9_is_yr0}–{_v9_is_yr1} · 0 TC · Lag-1 entry · Gross Sharpe."
+        f"Best-performing configuration per variant. IS backtest · Full period {_v9_is_yr0}–{_v9_is_yr1} · 0 TC · Same-Day entry · Gross Sharpe."
     )
     _vbsc1, _vbsc2 = st.columns(2)
     _vbcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
@@ -4296,7 +4300,7 @@ with tab9:
 <p style="{_vbbig}">+0.277</p>
 <p style="{_vbsub}">Sharpe Ratio (Gross)</p>
 <hr style="{_vbhr}"/>
-<p style="{_vbsub}">F8 · 5yr Lookback · ±10% Threshold · Lag-1</p>
+<p style="{_vbsub}">F8 · 5yr Lookback · ±10% Threshold · Same-Day</p>
 <p style="{_vbsub}">Ann Ret ≈ +7.1% · Max DD ≈ −67% · 38% Flat Days</p>
 <p style="{_vbsub}">Note: F12 is Bogorad's energy reference (Sharpe +0.184 for copper)</p>
 </div>""", unsafe_allow_html=True)
@@ -4306,13 +4310,14 @@ with tab9:
 <p style="{_vbbig}">+0.512</p>
 <p style="{_vbsub}">Sharpe Ratio (Gross)</p>
 <hr style="{_vbhr}"/>
-<p style="{_vbsub}">F1_raw · 10yr Lookback · Lag-1</p>
+<p style="{_vbsub}">F1_raw · 10yr Lookback · Same-Day</p>
 <p style="{_vbsub}">Ann Ret ≈ +10.2% · Max DD ≈ −44%</p>
 <p style="{_vbsub}">Non-monotonic: 5yr is a trap (Sharpe −0.14) — use 3yr or 10yr</p>
 </div>""", unsafe_allow_html=True)
     st.caption(
-        "Lag-1 entry dominates for value (Same-Day Sharpe = −0.5 to −1.8 across most specs). "
-        "Value edge is regime-conditional — the majority of P&L is concentrated in the 2020–2022 COVID dislocation period."
+        "Same-Day (shift-1, no look-ahead) is the default: for V2 Baz-Granger it beats Lag-1 (+0.51 vs +0.37); "
+        "for V1 MA-Reversion the two are close (Lag-1 marginally ahead, e.g. F8 +0.33 vs +0.28). "
+        "Value edge is regime-conditional — most P&L is concentrated in the 2020–2022 COVID dislocation period."
     )
 
     # ── Live Signal Badge ─────────────────────────────────────────────────────
@@ -4684,11 +4689,12 @@ with tab9:
             _vf1c_k = vf1c.reindex(_vidx_k)
             _vsb_k  = pd.Series(_vsig_k, index=_vraw_k.index).reindex(_vidx_k).values
             _vT_k   = len(_vidx_k)
-            if val_same_day:
-                _vpos_k = np.where(np.isfinite(_vsb_k), _vsb_k, 0.0)
-            else:
+            if val_same_day:   # Same-Day = shift 1
                 _vpos_k = np.empty(_vT_k); _vpos_k[0] = 0.0
                 _vpos_k[1:] = np.where(np.isfinite(_vsb_k[:-1]), _vsb_k[:-1], 0.0)
+            else:              # Lag-1 = shift 2
+                _vpos_k = np.empty(_vT_k); _vpos_k[:2] = 0.0
+                _vpos_k[2:] = np.where(np.isfinite(_vsb_k[:-2]), _vsb_k[:-2], 0.0)
             _vret_k = (pd.Series(_vpos_k, index=_vidx_k) * _vf1c_k.diff() / _vf1c_k.shift(1)).replace([np.inf,-np.inf],np.nan)
             _vact_k = _vret_k[_vpos_k != 0].dropna()
             if len(_vact_k) < 100:
@@ -4883,11 +4889,11 @@ Bogorad chose F12 (1-year-forward contract) because it is:
 For copper, F12 corresponds to the LME 12-month forward, which is well-traded.
 The contract comparison chart above tests F1–F15 to find the empirically optimal contract for copper.
 
-**Position Timing**
-- *Lag-1 (recommended for value)*: `position[t] = signal[t−1]` — entered next day
-- *Same-Day*: `position[t] = signal[t]` — same close as signal
+**Position Timing** (no look-ahead either way)
+- *Same-Day (shift 1)*: `position` uses the prior close's signal; first return t→t+1. Realistic default.
+- *Lag-1 (shift 2)*: one further close of delay; first return t+1→t+2. Conservative.
 
-Unlike carry (where Same-Day dominates due to flip-day dynamics), value signals evolve slowly. Lag-1 is preferable as there is no same-day urgency — the deviation has been building for days/months.
+For V2 Baz-Granger, Same-Day beats Lag-1 (+0.51 vs +0.37). For V1 MA-Reversion the two are close (Lag-1 marginally ahead). Both are free of the look-ahead that affected the earlier shift-0 "Same-Day" definition.
 
 **PnL & Returns**
 All strategies trade F1_continuous regardless of which contract or lookback generates the signal.
@@ -5102,7 +5108,7 @@ THREE ORTHOGONAL RISK PREMIA &rarr; ONE EQUAL-WEIGHT PORTFOLIO</p>
   <td style="padding:5px 10px 5px 0;color:#B87333;font-weight:600">Momentum</td>
   <td style="padding:5px 10px">MA(35,43)</td>
   <td style="padding:5px 10px;color:#5BAD72">+0.49 (walk-fwd)</td>
-  <td style="padding:5px 10px">Lag-1</td>
+  <td style="padding:5px 10px">Same-Day</td>
   <td style="padding:5px 10px">Trend persistence — anchor signal</td>
 </tr>
 <tr style="border-bottom:1px solid #1C1C1C;">
