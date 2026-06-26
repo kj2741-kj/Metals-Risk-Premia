@@ -2948,6 +2948,64 @@ with tab8:
     )
     st.caption("Term structure carry: Long in backwardation, Short in contango. Signal from curve shape; PnL always from F1_continuous.")
 
+    # ── Best Carry Signal — By Variant (headline, top of tab) ─────────────────
+    section_header("BEST CARRY SIGNAL — BY VARIANT")
+    st.caption(
+        "Best configuration per variant family — full-period IS backtest (2006–2025), 0 TC, "
+        "gross Same-Day Sharpe (shift-1, no look-ahead). Past performance is not indicative of future results."
+    )
+    _bcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
+             "border-radius:4px;padding:14px 20px")
+    _bcsx = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #5BAD72;"
+             "border-radius:4px;padding:14px 20px")
+    _blbl = ("color:#B87333;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _blbx = ("color:#5BAD72;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _bbig = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;font-size:1.55rem;font-weight:700;margin:0")
+    _bsub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
+    _bhr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
+    _bsc4, _bsc3, _bsc1, _bsc2 = st.columns(4)
+    with _bsc4:
+        st.markdown(f"""<div style="{_bcsx}">
+<p style="{_blbx}">V4 — Carry Momentum  ★</p>
+<p style="{_bbig}">+0.52</p>
+<p style="{_bsub}">Sharpe Ratio (Gross)</p>
+<hr style="{_bhr}"/>
+<p style="{_bsub}">20-day Δ(F1−F2)/F1 · Same-Day</p>
+<p style="{_bsub}">Ann Ret ≈ +13.5% · Max DD ≈ −47%</p>
+</div>""", unsafe_allow_html=True)
+    with _bsc3:
+        st.markdown(f"""<div style="{_bcs}">
+<p style="{_blbl}">V3 — Z-Score</p>
+<p style="{_bbig}">+0.26</p>
+<p style="{_bsub}">Sharpe Ratio (Gross)</p>
+<hr style="{_bhr}"/>
+<p style="{_bsub}">(F1−F2)/F1 · 252d Z · Same-Day</p>
+<p style="{_bsub}">Ann Ret ≈ +6.2% · Max DD ≈ −80%</p>
+</div>""", unsafe_allow_html=True)
+    with _bsc1:
+        st.markdown(f"""<div style="{_bcs}">
+<p style="{_blbl}">V1 — Roll Yield</p>
+<p style="{_bbig}">+0.10</p>
+<p style="{_bsub}">Sharpe Ratio (Gross)</p>
+<hr style="{_bhr}"/>
+<p style="{_bsub}">(F1−F2)/F1 · Same-Day</p>
+<p style="{_bsub}">Ann Ret ≈ +2.6% · Max DD ≈ −147%</p>
+</div>""", unsafe_allow_html=True)
+    with _bsc2:
+        st.markdown(f"""<div style="{_bcs}">
+<p style="{_blbl}">V2 — Long Slope</p>
+<p style="{_bbig}">+0.18</p>
+<p style="{_bsub}">Sharpe Ratio (Gross)</p>
+<hr style="{_bhr}"/>
+<p style="{_bsub}">F4−F16 slope · Same-Day</p>
+<p style="{_bsub}">Ann Ret ≈ +4.6% · Max DD ≈ −75%</p>
+</div>""", unsafe_allow_html=True)
+    st.caption(
+        "V4 Carry Momentum (sign of the 20-day change in the (F1−F2)/F1 roll yield) is the best carry "
+        "signal and the portfolio carry leg (+0.50 walk-forward OOS). Same-Day (shift-1) entry beats "
+        "Lag-1 for carry; V1 level is the naive baseline. All figures are post the look-ahead fix."
+    )
+
     st.markdown("""
     <div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;border-radius:4px;padding:14px 20px;margin-bottom:8px;">
       <div style="display:flex;gap:40px;flex-wrap:wrap;">
@@ -3192,153 +3250,6 @@ with tab8:
       </div>
     </div>
     """, unsafe_allow_html=True)
-
-    # ── Annualized Carry Reference (display only — not a separate strategy) ───
-    _ann_f1 = c8_curve_px["F1"].dropna() if "F1" in c8_curve_px.columns else pd.Series(dtype=float)
-    _ann_f2 = c8_curve_px["F2"].dropna() if "F2" in c8_curve_px.columns else pd.Series(dtype=float)
-    _ann_f3 = c8_curve_px["F3"].dropna() if "F3" in c8_curve_px.columns else pd.Series(dtype=float)
-
-    def _last_common(s1, s2):
-        idx = s1.index.intersection(s2.index)
-        return (s1.loc[idx[-1]], s2.loc[idx[-1]], idx[-1]) if len(idx) > 0 else (np.nan, np.nan, None)
-
-    _v1, _v2, _dt12 = _last_common(_ann_f1, _ann_f2)
-    _v1b, _v3, _dt13 = _last_common(_ann_f1, _ann_f3)
-    _ann_f1f2 = ((_v1 - _v2) / _v1) * 12 * 100 if pd.notna(_v1) and _v1 != 0 else np.nan
-    _ann_f1f3 = ((_v1b - _v3) / _v1b) * 6 * 100 if pd.notna(_v1b) and _v1b != 0 else np.nan
-    _cash_last = _cash_cu8["cash_price"].dropna() if not _cash_cu8.empty and "cash_price" in _cash_cu8.columns else pd.Series(dtype=float)
-    _3m_last   = _cash_cu8["3m_price"].dropna()   if not _cash_cu8.empty and "3m_price"  in _cash_cu8.columns else pd.Series(dtype=float)
-    _vc, _v3m, _dtc = _last_common(_cash_last, _3m_last)
-    _ann_c3m = ((_vc - _v3m) / _vc) * 100 if pd.notna(_vc) and _vc != 0 else np.nan
-
-    st.markdown("<div style='margin-top:10px;margin-bottom:4px;color:#7A7068;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;'>Annualized Carry Reference (display only — signal = V1)</div>", unsafe_allow_html=True)
-    _ann_cols = st.columns(3)
-    def _ann_card(col, label, val, date_label):
-        color = "#5BAD72" if (pd.notna(val) and val > 0) else "#B85450"
-        val_str = f"{val:+.2f}%" if pd.notna(val) else "—"
-        col.markdown(f"""<div class="metric-compact">
-            <h4>{label}</h4>
-            <p class="value" style="color:{color};">{val_str}</p>
-            <span style="color:#5A5248;font-size:0.65rem;">{date_label}</span>
-        </div>""", unsafe_allow_html=True)
-
-    _ann_card(_ann_cols[0], "(F1-F2)/F1 x12 — Ann. Roll Yield", _ann_f1f2,
-              f"as of {_dt12.strftime('%Y-%m-%d')}" if _dt12 else "")
-    _ann_card(_ann_cols[1], "(F1-F3)/F1 x6 — Ann. Roll Yield",  _ann_f1f3,
-              f"as of {_dt13.strftime('%Y-%m-%d')}" if _dt13 else "")
-    _ann_card(_ann_cols[2], "(Cash-3M)/Cash — Basis %",          _ann_c3m,
-              f"as of {_dtc.strftime('%Y-%m-%d')}" if _dtc else "")
-    st.caption("Annualized values for comparability across tenor pairs. Binary signal (long/short) is identical to V1 raw — multiplying by a positive constant cannot change sign.")
-
-    # ── Best Signal Summary ───────────────────────────────────────────────────
-    st.divider()
-    section_header("BEST CARRY SIGNAL — BY VARIANT")
-    st.caption(
-        f"Best-performing configuration per variant — IS backtest, full period {cf1c.index[0].year}–{cf1c.index[-1].year}, 0 TC, gross Sharpe. "
-        "Figures are computed from historical data; past performance is not indicative of future results."
-    )
-    _bsc1, _bsc2, _bsc3 = st.columns(3)
-    _bcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
-             "border-radius:4px;padding:14px 20px")
-    _blbl = ("color:#B87333;font-family:'IBM Plex Mono',monospace;"
-             "font-size:0.85rem;font-weight:600;margin:0 0 6px")
-    _bbig = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
-             "font-size:1.55rem;font-weight:700;margin:0")
-    _bsub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
-    _bhr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
-    with _bsc1:
-        st.markdown(f"""<div style="{_bcs}">
-<p style="{_blbl}">V1 — Roll Yield</p>
-<p style="{_bbig}">+0.55</p>
-<p style="{_bsub}">Sharpe Ratio (Gross)</p>
-<hr style="{_bhr}"/>
-<p style="{_bsub}">(F1−F2)/F1 · Same-Day</p>
-<p style="{_bsub}">Ann Ret ≈ +13.8% · Max DD ≈ −51%</p>
-</div>""", unsafe_allow_html=True)
-    with _bsc2:
-        st.markdown(f"""<div style="{_bcs}">
-<p style="{_blbl}">V2 — Long Slope</p>
-<p style="{_bbig}">+0.48</p>
-<p style="{_bsub}">Sharpe Ratio (Gross)</p>
-<hr style="{_bhr}"/>
-<p style="{_bsub}">F3−F15 · Same-Day</p>
-<p style="{_bsub}">Ann Ret ≈ +11.4% · Max DD ≈ −55%</p>
-</div>""", unsafe_allow_html=True)
-    with _bsc3:
-        st.markdown(f"""<div style="{_bcs}">
-<p style="{_blbl}">V3 — Z-Score</p>
-<p style="{_bbig}">+0.43</p>
-<p style="{_bsub}">Sharpe Ratio (Gross)</p>
-<hr style="{_bhr}"/>
-<p style="{_bsub}">(F1−F2)/F1 · 252d Z · Same-Day</p>
-<p style="{_bsub}">Ann Ret ≈ +9.7% · Max DD ≈ −56%</p>
-</div>""", unsafe_allow_html=True)
-    st.caption(
-        "Same-Day entry outperforms Lag-1 for all carry variants. "
-        "The flip-day price move is directionally aligned with the carry regime change — "
-        "capturing it Same-Day is structurally valid, unlike momentum where the flip is gradual."
-    )
-
-    # ── Section 3: Carry Signal History ───────────────────────────────────────
-    st.divider()
-    section_header("CARRY SIGNAL HISTORY")
-
-    carry_pct_series = carry_raw * 100
-    fig_csh = make_subplots(
-        rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35],
-        vertical_spacing=0.04,
-    )
-    fig_csh.add_trace(go.Scatter(
-        x=carry_pct_series.index, y=carry_pct_series.values,
-        name="Carry Value (%)", mode="lines",
-        line=dict(color=COLORS["primary"], width=1.5),
-        hovertemplate="%{x|%b %d, %Y}<br>Carry: %{y:.4f}%<extra></extra>",
-    ), row=1, col=1)
-    fig_csh.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1.2, row=1, col=1)
-
-    # Shaded regions for backwardation / contango
-    _back_arr = carry_pct_series.where(_c8_back_mask, np.nan)
-    _cont_arr = carry_pct_series.where(_c8_cont_mask, np.nan)
-    fig_csh.add_trace(go.Scatter(
-        x=_back_arr.index, y=_back_arr.values,
-        name="Backwardation", mode="lines",
-        line=dict(color="#5BAD72", width=0), fill="tozeroy",
-        fillcolor="rgba(91,173,114,0.18)",
-        hovertemplate="%{x|%b %d, %Y}<br>Back.: %{y:.4f}%<extra></extra>",
-    ), row=1, col=1)
-    fig_csh.add_trace(go.Scatter(
-        x=_cont_arr.index, y=_cont_arr.values,
-        name="Contango", mode="lines",
-        line=dict(color="#B85450", width=0), fill="tozeroy",
-        fillcolor="rgba(184,84,80,0.18)",
-        hovertemplate="%{x|%b %d, %Y}<br>Cont.: %{y:.4f}%<extra></extra>",
-    ), row=1, col=1)
-
-    _sig_long_c8  = _c8_sig_bin.where(_c8_sig_bin > 0, 0.0)
-    _sig_short_c8 = _c8_sig_bin.where(_c8_sig_bin < 0, 0.0)
-    fig_csh.add_trace(go.Bar(
-        x=_c8_idx, y=_sig_long_c8.values,
-        name="Long (+1)", marker_color="#00E676", opacity=1.0,
-        hovertemplate="%{x|%b %d, %Y}<br>Long<extra></extra>",
-    ), row=2, col=1)
-    fig_csh.add_trace(go.Bar(
-        x=_c8_idx, y=_sig_short_c8.values,
-        name="Short (-1)", marker_color="#FF1744", opacity=1.0,
-        hovertemplate="%{x|%b %d, %Y}<br>Short<extra></extra>",
-    ), row=2, col=1)
-
-    fig_csh.update_layout(
-        **CHART_LAYOUT, height=500, barmode="overlay",
-        title=dict(text=f"{carry_sub_label} — Raw Carry Value & Binary Signal", font=dict(size=13)),
-        hovermode="x unified", showlegend=True,
-    )
-    fig_csh.update_yaxes(title_text="Carry (%)", row=1, col=1)
-    fig_csh.update_yaxes(title_text="Signal", tickvals=[-1, 0, 1],
-                          ticktext=["Short", "Flat", "Long"], row=2, col=1)
-    fig_csh.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
-    st.plotly_chart(fig_csh, use_container_width=True)
-    st.caption("Top: raw carry value (continuous magnitude). Green fill = backwardation (long), Red fill = contango (short). "
-               "Bottom: resulting binary signal. Unlike momentum, carry has an economic magnitude — deep backwardation periods are visually distinct.")
 
     # ── Section 4: Date Filter + Performance Metrics ──────────────────────────
     st.divider()
@@ -3677,6 +3588,67 @@ with tab8:
     fig_c8cum.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
     st.plotly_chart(fig_c8cum, use_container_width=True)
 
+    # ── Carry Signal History (full timeline) ──────────────────────────────────
+    st.divider()
+    section_header("CARRY SIGNAL HISTORY")
+
+    carry_pct_series = carry_raw * 100
+    fig_csh = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35],
+        vertical_spacing=0.04,
+    )
+    fig_csh.add_trace(go.Scatter(
+        x=carry_pct_series.index, y=carry_pct_series.values,
+        name="Carry Value (%)", mode="lines",
+        line=dict(color=COLORS["primary"], width=1.5),
+        hovertemplate="%{x|%b %d, %Y}<br>Carry: %{y:.4f}%<extra></extra>",
+    ), row=1, col=1)
+    fig_csh.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1.2, row=1, col=1)
+
+    # Shaded regions for backwardation / contango
+    _back_arr = carry_pct_series.where(_c8_back_mask, np.nan)
+    _cont_arr = carry_pct_series.where(_c8_cont_mask, np.nan)
+    fig_csh.add_trace(go.Scatter(
+        x=_back_arr.index, y=_back_arr.values,
+        name="Backwardation", mode="lines",
+        line=dict(color="#5BAD72", width=0), fill="tozeroy",
+        fillcolor="rgba(91,173,114,0.18)",
+        hovertemplate="%{x|%b %d, %Y}<br>Back.: %{y:.4f}%<extra></extra>",
+    ), row=1, col=1)
+    fig_csh.add_trace(go.Scatter(
+        x=_cont_arr.index, y=_cont_arr.values,
+        name="Contango", mode="lines",
+        line=dict(color="#B85450", width=0), fill="tozeroy",
+        fillcolor="rgba(184,84,80,0.18)",
+        hovertemplate="%{x|%b %d, %Y}<br>Cont.: %{y:.4f}%<extra></extra>",
+    ), row=1, col=1)
+
+    _sig_long_c8  = _c8_sig_bin.where(_c8_sig_bin > 0, 0.0)
+    _sig_short_c8 = _c8_sig_bin.where(_c8_sig_bin < 0, 0.0)
+    fig_csh.add_trace(go.Bar(
+        x=_c8_idx, y=_sig_long_c8.values,
+        name="Long (+1)", marker_color="#00E676", opacity=1.0,
+        hovertemplate="%{x|%b %d, %Y}<br>Long<extra></extra>",
+    ), row=2, col=1)
+    fig_csh.add_trace(go.Bar(
+        x=_c8_idx, y=_sig_short_c8.values,
+        name="Short (-1)", marker_color="#FF1744", opacity=1.0,
+        hovertemplate="%{x|%b %d, %Y}<br>Short<extra></extra>",
+    ), row=2, col=1)
+
+    fig_csh.update_layout(
+        **CHART_LAYOUT, height=500, barmode="overlay",
+        title=dict(text=f"{carry_sub_label} — Raw Carry Value & Binary Signal", font=dict(size=13)),
+        hovermode="x unified", showlegend=True,
+    )
+    fig_csh.update_yaxes(title_text="Carry (%)", row=1, col=1)
+    fig_csh.update_yaxes(title_text="Signal", tickvals=[-1, 0, 1],
+                          ticktext=["Short", "Flat", "Long"], row=2, col=1)
+    fig_csh.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
+    st.plotly_chart(fig_csh, use_container_width=True)
+    st.caption("Top: raw carry value (continuous magnitude). Green fill = backwardation (long), Red fill = contango (short). "
+               "Bottom: resulting binary signal.")
+
     # ── Section 8: Annual PnL ─────────────────────────────────────────────────
     st.divider()
     section_header("ANNUAL PnL BREAKDOWN (Gross, USD/MT)")
@@ -3719,11 +3691,12 @@ with tab8:
                 if _vT < 20:
                     _vlst.append(np.nan); continue
                 _vpos = np.empty(_vT)
-                if _vsd:
-                    _vpos[:] = np.where(np.isfinite(_vsig), _vsig, 0.0)
-                else:
+                if _vsd:   # Same-Day = shift 1 (trade at signal close, no look-ahead)
                     _vpos[0] = 0.0
                     _vpos[1:] = np.where(np.isfinite(_vsig[:-1]), _vsig[:-1], 0.0)
+                else:      # Lag-1 = shift 2 (trade next close)
+                    _vpos[:2] = 0.0
+                    _vpos[2:] = np.where(np.isfinite(_vsig[:-2]), _vsig[:-2], 0.0)
                 _vpos_s = pd.Series(_vpos, index=_vi)
                 _vgpnl = _vpos_s * _vf1c.diff()
                 _vgret = (_vgpnl / _vf1c.shift(1)).replace([np.inf, -np.inf], np.nan)
