@@ -3939,178 +3939,6 @@ with tab9:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD ────────────────────────────────
-    st.markdown("#### Out-of-Sample Walk-Forward Validation")
-    st.caption(
-        "IS = 5yr rolling window, OOS = 1yr, Same-Day entry, Fixed parameters - no re-optimisation per window. "
-        "Window labels denote the start year of each OOS period. "
-        "V1 F8 and F12 use ±10% threshold throughout. "
-        "V2 BG 10yr: signal first valid Jan 2016; only 5 complete OOS windows available."
-    )
-
-    # Live OOS walk-forward options - all computed dynamically via _wf_value_oos_tc
-    _V9_OOS_OPTS = {
-        "V1: F8, 5yr, Same-Day  [OOS Validated]":       ("v1", 8,    1260),
-        "V1: F12, 5yr, Same-Day  [Bogorad Reference]":  ("v1", 12,   1260),
-        "V2: BG 3yr, Same-Day  [Fully Testable]":        ("v2", None, 756),
-        "V2: BG 10yr, Same-Day  [Limited to ~5 windows]":("v2", None, 2520),
-    }
-
-    def _v9_build_pos(variant: str, k, N: int) -> pd.Series:
-        if variant == "v1":
-            col = f"F{k}"
-            if col not in v9_curve_px.columns:
-                return pd.Series(dtype=float)
-            p  = v9_curve_px[col].dropna()
-            ma = p.rolling(N, min_periods=N // 2).mean()
-            dev = ((p - ma) / ma).replace([np.inf, -np.inf], np.nan).dropna()
-            sig = np.where(dev < -0.10, 1.0, np.where(dev > 0.10, -1.0, 0.0))
-            return pd.Series(sig, index=dev.index).shift(1).fillna(0)
-        else:
-            rev = vf1r.shift(N) - vf1r
-            s   = np.sign(rev.replace([np.inf, -np.inf], np.nan).dropna())
-            return s.shift(1).fillna(0)
-
-    _v9_oos_ctrl1, _v9_oos_ctrl2 = st.columns([2.8, 1.2])
-    with _v9_oos_ctrl1:
-        _v9_oos_sig = st.selectbox(
-            "Signal - OOS Walk-Forward", list(_V9_OOS_OPTS.keys()),
-            index=0, key="v9_oos_sig",
-        )
-    with _v9_oos_ctrl2:
-        _v9_oos_tc_map   = _tc_label_map(float(vf1c.dropna().iloc[-1]))
-        _v9_oos_tc_label = st.selectbox(
-            "TC - OOS Section", list(_v9_oos_tc_map.keys()),
-            index=0, key="v9_oos_tc",
-        )
-        _v9_oos_tc_bps = _v9_oos_tc_map[_v9_oos_tc_label]
-
-    _v9_var, _v9_k, _v9_N = _V9_OOS_OPTS[_v9_oos_sig]
-    _v9_pos_built = _v9_build_pos(_v9_var, _v9_k, _v9_N)
-    _v9_wf_active = _wf_value_oos_tc(_v9_pos_built, vf1c, _v9_oos_tc_bps) if not _v9_pos_built.empty else {}
-
-    _v9_wf_vals    = [v for v in _v9_wf_active.values() if v is not None and not np.isnan(v)]
-    _v9_wf_avg     = np.nanmean(_v9_wf_vals) if _v9_wf_vals else np.nan
-    _v9_wf_n_pos   = sum(1 for v in _v9_wf_vals if v > 0)
-    _v9_wf_n_tot   = len(_v9_wf_vals)
-    _v9_tc_note    = f", {_v9_oos_tc_label}" if _v9_oos_tc_bps > 0 else ""
-    _v9_recent_yrs = sorted(k for k in _v9_wf_active if not k.endswith("*"))[-3:]
-    _v9_recent_avg = np.nanmean([_v9_wf_active[y] for y in _v9_recent_yrs]) if _v9_recent_yrs else np.nan
-    _v9_is_10yr    = "10yr" in _v9_oos_sig
-    _v9_wf_yrs_s   = sorted(_v9_wf_active.keys())
-    _v9_first_yr   = _v9_wf_yrs_s[0][:4] if _v9_wf_yrs_s else "-"
-    _v9_last_yr    = _v9_wf_yrs_s[-1][:4] if _v9_wf_yrs_s else "-"
-
-    # Summary cards (same style as Momentum Section 1)
-    _v9wf_c1, _v9wf_c2, _v9wf_c3 = st.columns(3)
-    _v9_cs  = ("background:#161616;border:1px solid #2A2A2A;"
-               "border-left:4px solid #B87333;border-radius:4px;padding:14px 20px")
-    _v9_csg = ("background:#161616;border:1px solid #2A2A2A;"
-               "border-left:4px solid #475569;border-radius:4px;padding:14px 20px")
-    _v9_lbl = ("color:#B87333;font-family:'IBM Plex Mono',monospace;"
-               "font-size:0.85rem;font-weight:600;margin:0 0 6px")
-    _v9_lblg= ("color:#94A3B8;font-family:'IBM Plex Mono',monospace;"
-               "font-size:0.85rem;font-weight:600;margin:0 0 6px")
-    _v9_big = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
-               "font-size:1.55rem;font-weight:700;margin:0")
-    _v9_med = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
-               "font-size:1.15rem;font-weight:600;margin:0")
-    _v9_sub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
-    _v9_hr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
-
-    with _v9wf_c1:
-        _win_lbl = f"{_v9_wf_n_tot} Windows ({_v9_first_yr}-{_v9_last_yr})"
-        st.markdown(f"""<div style="{_v9_cs}">
-<p style="{_v9_lbl}">{_v9_oos_sig.split(', ')[0].strip()} - Fixed Parameter</p>
-<p style="{_v9_big}">{_v9_wf_avg:+.3f}</p>
-<p style="{_v9_sub}">Avg OOS Sharpe, {_win_lbl}{_v9_tc_note}</p>
-<hr style="{_v9_hr}"/>
-<p style="{_v9_sub}">Recent 3 windows ({", ".join(_v9_recent_yrs)}) avg</p>
-<p style="{_v9_med}">{_v9_recent_avg:+.3f}</p>
-<p style="{_v9_sub}">Zero re-optimisation across all windows</p>
-</div>""", unsafe_allow_html=True)
-
-    with _v9wf_c2:
-        if _v9_is_10yr:
-            st.markdown(f"""<div style="{_v9_cs}">
-<p style="{_v9_lbl}">V2 BG 10yr - Data Constraint</p>
-<p style="{_v9_big}">5</p>
-<p style="{_v9_sub}">OOS windows available (2020-2024)</p>
-<hr style="{_v9_hr}"/>
-<p style="{_v9_sub}">Signal first valid: Jan 2016</p>
-<p style="{_v9_sub}">IS window (5yr) consumes 2016-2021 data</p>
-<p style="{_v9_sub}">Full-period Sharpe = entire signal history - no true IS holdout</p>
-</div>""", unsafe_allow_html=True)
-        else:
-            _v9_wf_n_gt03 = sum(1 for v in _v9_wf_vals if v > 0.30)
-            st.markdown(f"""<div style="{_v9_cs}">
-<p style="{_v9_lbl}">OOS Performance vs IS</p>
-<p style="{_v9_big}">{'Higher' if _v9_wf_avg > 0.20 else 'Lower'}</p>
-<p style="{_v9_sub}">OOS avg vs IS full-period Sharpe</p>
-<hr style="{_v9_hr}"/>
-<p style="{_v9_sub}">OOS above +0.30 Sharpe</p>
-<p style="{_v9_med}">{_v9_wf_n_gt03} / {_v9_wf_n_tot} windows</p>
-<p style="{_v9_sub}">IS Sharpe shown in Section 2 below</p>
-</div>""", unsafe_allow_html=True)
-
-    with _v9wf_c3:
-        st.markdown(f"""<div style="{_v9_csg}">
-<p style="{_v9_lblg}">OOS Consistency</p>
-<p style="{_v9_sub}">Positive OOS Sharpe</p>
-<p style="{_v9_med}">{_v9_wf_n_pos} / {_v9_wf_n_tot} windows</p>
-<hr style="{_v9_hr}"/>
-<p style="{_v9_sub}">Best window</p>
-<p style="{_v9_med}">{max(_v9_wf_vals):+.3f} ({max(_v9_wf_active, key=lambda y: _v9_wf_active[y])})</p>
-<hr style="{_v9_hr}"/>
-<p style="{_v9_sub}">Worst window</p>
-<p style="{_v9_med}">{min(_v9_wf_vals):+.3f} ({min(_v9_wf_active, key=lambda y: _v9_wf_active[y])})</p>
-</div>""", unsafe_allow_html=True)
-
-    # OOS bar chart
-    _v9_wf_yrs  = list(_v9_wf_active.keys())
-    _v9_wf_shps = [_v9_wf_active[y] for y in _v9_wf_yrs]
-    _v9_bar_clr = ["#5BAD72" if (v is not None and not np.isnan(v) and v >= 0) else "#B85450"
-                   for v in _v9_wf_shps]
-    _v9_border  = ["gold" if y in ("2022", "2023", "2024") else "rgba(0,0,0,0)" for y in _v9_wf_yrs]
-
-    fig_v9_oos = go.Figure(go.Bar(
-        x=_v9_wf_yrs,
-        y=[v if (v is not None and not np.isnan(v)) else 0 for v in _v9_wf_shps],
-        marker_color=_v9_bar_clr,
-        marker_line_color=_v9_border,
-        marker_line_width=2,
-        text=[f"{v:+.2f}" if (v is not None and not np.isnan(v)) else "-" for v in _v9_wf_shps],
-        textposition="outside",
-        hovertemplate="%{x}: Sharpe %{y:+.3f}<extra></extra>",
-    ))
-    fig_v9_oos.add_hline(y=0, line_color="#475569", line_width=1.2)
-    fig_v9_oos.add_hline(y=_v9_wf_avg, line_dash="dot", line_color="#B87333", line_width=1.5,
-                         annotation_text=f"Avg {_v9_wf_avg:+.3f}", annotation_position="right")
-    fig_v9_oos.update_layout(
-        height=320, margin=dict(l=0, r=60, t=30, b=0),
-        paper_bgcolor="#0E1117", plot_bgcolor="#131922",
-        font=dict(color="#E8DDD0", family="IBM Plex Mono", size=11),
-        xaxis=dict(gridcolor="#1C2333", title="OOS Window Start Year"),
-        yaxis=dict(gridcolor="#1C2333", title="OOS Sharpe Ratio", zeroline=False),
-        showlegend=False,
-    )
-    st.plotly_chart(fig_v9_oos, use_container_width=True)
-
-    if _v9_is_10yr:
-        st.info(
-            "**V2 BG 10yr data note:** Signal first computable in Jan 2016 (requires 10yr of price history). "
-            "With a 5yr IS window, first OOS window begins 2020. Only 5 windows exist - "
-            "the full-period Sharpe (+0.512) is the entire track record of this signal. "
-            "Strong 2020-2021 performance is COVID mean-reversion; 2023-2024 is negative.",
-            icon="ℹ️",
-        )
-    else:
-        st.caption(
-            f"Gold-bordered bars = most recent {len(_v9_recent_yrs)} complete OOS windows ({', '.join(_v9_recent_yrs)}). "
-            + (f"TC = {_v9_oos_tc_label} deducted on each position change." if _v9_oos_tc_bps > 0 else "Gross returns shown (0 TC).")
-            + (" Partial windows (marked *) excluded from gold highlighting." if any(k.endswith("*") for k in _v9_wf_active) else "")
-        )
-
     # ── SECTION 2: IS PARAMETER SEARCH ───────────────────────────────────────
     st.divider()
     _v9_is_yr0 = str(vf1c.index[0].year); _v9_is_yr1 = str(vf1c.index[-1].year)
@@ -4455,6 +4283,181 @@ with tab9:
         _cmcard(_v9_cols1[7], "Profit Factor",   vm9.get("profit_factor"),  ".2f")
     else:
         st.warning("Insufficient active trading days to compute metrics.")
+
+    # ── Out-of-Sample Walk-Forward Validation (moved below metrics) ──────────
+    st.divider()
+    # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD ────────────────────────────────
+    st.markdown("#### Out-of-Sample Walk-Forward Validation")
+    st.caption(
+        "IS = 5yr rolling window, OOS = 1yr, Same-Day entry, Fixed parameters - no re-optimisation per window. "
+        "Window labels denote the start year of each OOS period. "
+        "V1 F8 and F12 use ±10% threshold throughout. "
+        "V2 BG 10yr: signal first valid Jan 2016; only 5 complete OOS windows available."
+    )
+
+    # Live OOS walk-forward options - all computed dynamically via _wf_value_oos_tc
+    _V9_OOS_OPTS = {
+        "V1: F8, 5yr, Same-Day  [OOS Validated]":       ("v1", 8,    1260),
+        "V1: F12, 5yr, Same-Day  [Bogorad Reference]":  ("v1", 12,   1260),
+        "V2: BG 3yr, Same-Day  [Fully Testable]":        ("v2", None, 756),
+        "V2: BG 10yr, Same-Day  [Limited to ~5 windows]":("v2", None, 2520),
+    }
+
+    def _v9_build_pos(variant: str, k, N: int) -> pd.Series:
+        if variant == "v1":
+            col = f"F{k}"
+            if col not in v9_curve_px.columns:
+                return pd.Series(dtype=float)
+            p  = v9_curve_px[col].dropna()
+            ma = p.rolling(N, min_periods=N // 2).mean()
+            dev = ((p - ma) / ma).replace([np.inf, -np.inf], np.nan).dropna()
+            sig = np.where(dev < -0.10, 1.0, np.where(dev > 0.10, -1.0, 0.0))
+            return pd.Series(sig, index=dev.index).shift(1).fillna(0)
+        else:
+            rev = vf1r.shift(N) - vf1r
+            s   = np.sign(rev.replace([np.inf, -np.inf], np.nan).dropna())
+            return s.shift(1).fillna(0)
+
+    _v9_oos_ctrl1, _v9_oos_ctrl2 = st.columns([2.8, 1.2])
+    with _v9_oos_ctrl1:
+        _v9_oos_sig = st.selectbox(
+            "Signal - OOS Walk-Forward", list(_V9_OOS_OPTS.keys()),
+            index=0, key="v9_oos_sig",
+        )
+    with _v9_oos_ctrl2:
+        _v9_oos_tc_map   = _tc_label_map(float(vf1c.dropna().iloc[-1]))
+        _v9_oos_tc_label = st.selectbox(
+            "TC - OOS Section", list(_v9_oos_tc_map.keys()),
+            index=0, key="v9_oos_tc",
+        )
+        _v9_oos_tc_bps = _v9_oos_tc_map[_v9_oos_tc_label]
+
+    _v9_var, _v9_k, _v9_N = _V9_OOS_OPTS[_v9_oos_sig]
+    _v9_pos_built = _v9_build_pos(_v9_var, _v9_k, _v9_N)
+    _v9_wf_active = _wf_value_oos_tc(_v9_pos_built, vf1c, _v9_oos_tc_bps) if not _v9_pos_built.empty else {}
+
+    _v9_wf_vals    = [v for v in _v9_wf_active.values() if v is not None and not np.isnan(v)]
+    _v9_wf_avg     = np.nanmean(_v9_wf_vals) if _v9_wf_vals else np.nan
+    _v9_wf_n_pos   = sum(1 for v in _v9_wf_vals if v > 0)
+    _v9_wf_n_tot   = len(_v9_wf_vals)
+    _v9_tc_note    = f", {_v9_oos_tc_label}" if _v9_oos_tc_bps > 0 else ""
+    _v9_recent_yrs = sorted(k for k in _v9_wf_active if not k.endswith("*"))[-3:]
+    _v9_recent_avg = np.nanmean([_v9_wf_active[y] for y in _v9_recent_yrs]) if _v9_recent_yrs else np.nan
+    _v9_is_10yr    = "10yr" in _v9_oos_sig
+    _v9_wf_yrs_s   = sorted(_v9_wf_active.keys())
+    _v9_first_yr   = _v9_wf_yrs_s[0][:4] if _v9_wf_yrs_s else "-"
+    _v9_last_yr    = _v9_wf_yrs_s[-1][:4] if _v9_wf_yrs_s else "-"
+
+    # Summary cards (same style as Momentum Section 1)
+    _v9wf_c1, _v9wf_c2, _v9wf_c3 = st.columns(3)
+    _v9_cs  = ("background:#161616;border:1px solid #2A2A2A;"
+               "border-left:4px solid #B87333;border-radius:4px;padding:14px 20px")
+    _v9_csg = ("background:#161616;border:1px solid #2A2A2A;"
+               "border-left:4px solid #475569;border-radius:4px;padding:14px 20px")
+    _v9_lbl = ("color:#B87333;font-family:'IBM Plex Mono',monospace;"
+               "font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _v9_lblg= ("color:#94A3B8;font-family:'IBM Plex Mono',monospace;"
+               "font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _v9_big = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
+               "font-size:1.55rem;font-weight:700;margin:0")
+    _v9_med = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
+               "font-size:1.15rem;font-weight:600;margin:0")
+    _v9_sub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
+    _v9_hr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
+
+    with _v9wf_c1:
+        _win_lbl = f"{_v9_wf_n_tot} Windows ({_v9_first_yr}-{_v9_last_yr})"
+        st.markdown(f"""<div style="{_v9_cs}">
+<p style="{_v9_lbl}">{_v9_oos_sig.split(', ')[0].strip()} - Fixed Parameter</p>
+<p style="{_v9_big}">{_v9_wf_avg:+.3f}</p>
+<p style="{_v9_sub}">Avg OOS Sharpe, {_win_lbl}{_v9_tc_note}</p>
+<hr style="{_v9_hr}"/>
+<p style="{_v9_sub}">Recent 3 windows ({", ".join(_v9_recent_yrs)}) avg</p>
+<p style="{_v9_med}">{_v9_recent_avg:+.3f}</p>
+<p style="{_v9_sub}">Zero re-optimisation across all windows</p>
+</div>""", unsafe_allow_html=True)
+
+    with _v9wf_c2:
+        if _v9_is_10yr:
+            st.markdown(f"""<div style="{_v9_cs}">
+<p style="{_v9_lbl}">V2 BG 10yr - Data Constraint</p>
+<p style="{_v9_big}">5</p>
+<p style="{_v9_sub}">OOS windows available (2020-2024)</p>
+<hr style="{_v9_hr}"/>
+<p style="{_v9_sub}">Signal first valid: Jan 2016</p>
+<p style="{_v9_sub}">IS window (5yr) consumes 2016-2021 data</p>
+<p style="{_v9_sub}">Full-period Sharpe = entire signal history - no true IS holdout</p>
+</div>""", unsafe_allow_html=True)
+        else:
+            _v9_wf_n_gt03 = sum(1 for v in _v9_wf_vals if v > 0.30)
+            st.markdown(f"""<div style="{_v9_cs}">
+<p style="{_v9_lbl}">OOS Performance vs IS</p>
+<p style="{_v9_big}">{'Higher' if _v9_wf_avg > 0.20 else 'Lower'}</p>
+<p style="{_v9_sub}">OOS avg vs IS full-period Sharpe</p>
+<hr style="{_v9_hr}"/>
+<p style="{_v9_sub}">OOS above +0.30 Sharpe</p>
+<p style="{_v9_med}">{_v9_wf_n_gt03} / {_v9_wf_n_tot} windows</p>
+<p style="{_v9_sub}">IS Sharpe shown in Section 2 below</p>
+</div>""", unsafe_allow_html=True)
+
+    with _v9wf_c3:
+        st.markdown(f"""<div style="{_v9_csg}">
+<p style="{_v9_lblg}">OOS Consistency</p>
+<p style="{_v9_sub}">Positive OOS Sharpe</p>
+<p style="{_v9_med}">{_v9_wf_n_pos} / {_v9_wf_n_tot} windows</p>
+<hr style="{_v9_hr}"/>
+<p style="{_v9_sub}">Best window</p>
+<p style="{_v9_med}">{max(_v9_wf_vals):+.3f} ({max(_v9_wf_active, key=lambda y: _v9_wf_active[y])})</p>
+<hr style="{_v9_hr}"/>
+<p style="{_v9_sub}">Worst window</p>
+<p style="{_v9_med}">{min(_v9_wf_vals):+.3f} ({min(_v9_wf_active, key=lambda y: _v9_wf_active[y])})</p>
+</div>""", unsafe_allow_html=True)
+
+    # OOS bar chart
+    _v9_wf_yrs  = list(_v9_wf_active.keys())
+    _v9_wf_shps = [_v9_wf_active[y] for y in _v9_wf_yrs]
+    _v9_bar_clr = ["#5BAD72" if (v is not None and not np.isnan(v) and v >= 0) else "#B85450"
+                   for v in _v9_wf_shps]
+    _v9_border  = ["gold" if y in ("2022", "2023", "2024") else "rgba(0,0,0,0)" for y in _v9_wf_yrs]
+
+    fig_v9_oos = go.Figure(go.Bar(
+        x=_v9_wf_yrs,
+        y=[v if (v is not None and not np.isnan(v)) else 0 for v in _v9_wf_shps],
+        marker_color=_v9_bar_clr,
+        marker_line_color=_v9_border,
+        marker_line_width=2,
+        text=[f"{v:+.2f}" if (v is not None and not np.isnan(v)) else "-" for v in _v9_wf_shps],
+        textposition="outside",
+        hovertemplate="%{x}: Sharpe %{y:+.3f}<extra></extra>",
+    ))
+    fig_v9_oos.add_hline(y=0, line_color="#475569", line_width=1.2)
+    fig_v9_oos.add_hline(y=_v9_wf_avg, line_dash="dot", line_color="#B87333", line_width=1.5,
+                         annotation_text=f"Avg {_v9_wf_avg:+.3f}", annotation_position="right")
+    fig_v9_oos.update_layout(
+        height=320, margin=dict(l=0, r=60, t=30, b=0),
+        paper_bgcolor="#0E1117", plot_bgcolor="#131922",
+        font=dict(color="#E8DDD0", family="IBM Plex Mono", size=11),
+        xaxis=dict(gridcolor="#1C2333", title="OOS Window Start Year"),
+        yaxis=dict(gridcolor="#1C2333", title="OOS Sharpe Ratio", zeroline=False),
+        showlegend=False,
+    )
+    st.plotly_chart(fig_v9_oos, use_container_width=True)
+
+    if _v9_is_10yr:
+        st.info(
+            "**V2 BG 10yr data note:** Signal first computable in Jan 2016 (requires 10yr of price history). "
+            "With a 5yr IS window, first OOS window begins 2020. Only 5 windows exist - "
+            "the full-period Sharpe (+0.512) is the entire track record of this signal. "
+            "Strong 2020-2021 performance is COVID mean-reversion; 2023-2024 is negative.",
+            icon="ℹ️",
+        )
+    else:
+        st.caption(
+            f"Gold-bordered bars = most recent {len(_v9_recent_yrs)} complete OOS windows ({', '.join(_v9_recent_yrs)}). "
+            + (f"TC = {_v9_oos_tc_label} deducted on each position change." if _v9_oos_tc_bps > 0 else "Gross returns shown (0 TC).")
+            + (" Partial windows (marked *) excluded from gold highlighting." if any(k.endswith("*") for k in _v9_wf_active) else "")
+        )
+
 
     # ── Section 2: Deviation History ──────────────────────────────────────────
     st.divider()
