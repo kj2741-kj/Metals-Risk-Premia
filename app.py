@@ -2059,18 +2059,370 @@ with tab7:
     f1r: pd.Series = _f1_df["F1_raw"]
     f1c: pd.Series = _f1_df["F1_continuous"]
 
-    # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD EVIDENCE ────────────────────────
-    # Anchors+IS-Opt OOS Sharpes are now computed LIVE (all windows) - see below,
-    # after the TC selector is known, via _wf_anchors_isopt_tc().
+    # ── Best Momentum Signal - By Variant (headline) ──────────────────────────
+    section_header("BEST MOMENTUM SIGNAL - BY VARIANT")
+    st.caption(
+        "Best configuration per signal family, full-period IS backtest (2006-2025), 0 TC, "
+        "gross Same-Day Sharpe (shift-1, no look-ahead). Past performance is not indicative of future results."
+    )
+    _mb_cs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
+               "border-radius:4px;padding:14px 20px")
+    _mb_csx = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #5BAD72;"
+               "border-radius:4px;padding:14px 20px")
+    _mb_lbl = ("color:#B87333;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _mb_lbx = ("color:#5BAD72;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _mb_big = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;font-size:1.55rem;font-weight:700;margin:0")
+    _mb_sub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
+    _mb_hr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
+    _mbc1, _mbc2, _mbc3 = st.columns(3)
+    with _mbc1:
+        st.markdown(f"""<div style="{_mb_csx}">
+<p style="{_mb_lbx}">MA Crossover  ★</p>
+<p style="{_mb_big}">+0.72</p>
+<p style="{_mb_sub}">Sharpe Ratio (Gross)</p>
+<hr style="{_mb_hr}"/>
+<p style="{_mb_sub}">MA(35,43), Same-Day</p>
+<p style="{_mb_sub}">Ann Ret ≈ +18.3%, Max DD ≈ −64%</p>
+</div>""", unsafe_allow_html=True)
+    with _mbc2:
+        st.markdown(f"""<div style="{_mb_cs}">
+<p style="{_mb_lbl}">Anchors EW</p>
+<p style="{_mb_big}">+0.47</p>
+<p style="{_mb_sub}">Sharpe Ratio (Gross)</p>
+<hr style="{_mb_hr}"/>
+<p style="{_mb_sub}">MA(10,25)+MA(35,43)+MA(63,100), Lag-1</p>
+<p style="{_mb_sub}">Ann Ret ≈ +8.7%, Max DD ≈ −46%</p>
+</div>""", unsafe_allow_html=True)
+    with _mbc3:
+        st.markdown(f"""<div style="{_mb_cs}">
+<p style="{_mb_lbl}">CTA Baz-Granger</p>
+<p style="{_mb_big}">+0.11</p>
+<p style="{_mb_sub}">Sharpe Ratio (Gross)</p>
+<hr style="{_mb_hr}"/>
+<p style="{_mb_sub}">3-timescale, Same-Day</p>
+<p style="{_mb_sub}">Ann Ret ≈ +2.5%, Max DD ≈ −89%</p>
+</div>""", unsafe_allow_html=True)
+    st.caption(
+        "MA(35,43) is the standout momentum signal and the portfolio momentum leg (+0.49 walk-forward OOS). "
+        "Anchors blend three timescales for a shallower drawdown; CTA is weak on copper."
+    )
 
-    _oos_tc_row = st.columns([1.8, 4.2])
-    with _oos_tc_row[0]:
-        _oos_tc_map = _tc_label_map(float(f1c.dropna().iloc[-1]))
-        _oos_tc_label = st.selectbox(
-            "TC - OOS Section", list(_oos_tc_map.keys()), index=0, key="oos_tc_sel"
+    # ── SECTION 2: IS PARAMETER SEARCH (IN-SAMPLE) ────────────────────────────
+    _m_is_yr0 = str(f1r.index[0].year); _m_is_yr1 = str(f1r.index[-1].year)
+    st.divider()
+    section_header(f"IN-SAMPLE PARAMETER SEARCH ({_m_is_yr0}-{_m_is_yr1})")
+    st.markdown(
+        '<div style="background:#1A1200;border:1px solid #3A2E00;border-left:4px solid #F59E0B;'
+        'border-radius:4px;padding:8px 14px;margin-bottom:10px;font-size:0.82rem;color:#D4A843;">'
+        f'&#9888;  IN-SAMPLE BACKTEST - Results use full {_m_is_yr0}-{_m_is_yr1} history. '
+        'Not held-out data. See the walk-forward section for OOS estimates.</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Strategy Preset ───────────────────────────────────────────────────────
+    _MOM_PRESETS = {
+        "MA(35,43), Same-Day  [WF Best / Default]": {
+            "mom_sig_type": "MA Crossover",
+            "mom_variant":  "MA(35,43) - Best Sharpe [default]",
+            "mom_timing":   "Same-Day",
+        },
+        "CTA(9,21), Same-Day  [Baz-Granger Best]": {
+            "mom_sig_type": "CTA (Baz-Granger)",
+            "mom_variant":  "CTA(9,21) - Best Lag-1 Sharpe [default]",
+            "mom_timing":   "Same-Day",
+        },
+        "Anchors EW, Lag-1  [Anchors + IS-Opt]": {
+            "mom_sig_type": "Anchors + IS-Opt Weights",
+            "mom_variant":  "EW Anchors - MA(10,25) + MA(35,43) + MA(63,100)",
+            "mom_timing":   "Lag-1 (Next-Day)",
+        },
+        "MA(35,43), Lag-1  [Sensitivity Check]": {
+            "mom_sig_type": "MA Crossover",
+            "mom_variant":  "MA(35,43) - Best Sharpe [default]",
+            "mom_timing":   "Lag-1 (Next-Day)",
+        },
+        "Custom (use controls below)": {},
+    }
+
+    def _apply_mom_preset():
+        cfg = _MOM_PRESETS.get(st.session_state.get("mom_preset", "Custom (use controls below)"), {})
+        for k, v in cfg.items():
+            st.session_state[k] = v
+
+    _mom_preset_col, _mom_preset_info = st.columns([2.5, 3.5])
+    with _mom_preset_col:
+        st.selectbox(
+            "Strategy Preset",
+            list(_MOM_PRESETS.keys()),
+            index=0,
+            key="mom_preset",
+            on_change=_apply_mom_preset,
         )
-        _oos_tc_bps = _oos_tc_map[_oos_tc_label]
+    with _mom_preset_info:
+        st.markdown(
+            '<div style="padding:8px 0;color:#7A7068;font-size:0.78rem;">'
+            'Selecting a preset auto-fills all controls below. '
+            'Switch to <b>Custom</b> to edit individual parameters freely.</div>',
+            unsafe_allow_html=True,
+        )
 
+    # ── Controls ──────────────────────────────────────────────────────────────
+    c1, c2, c3, c4 = st.columns([1.5, 1.7, 1.3, 1.3])
+
+    with c1:
+        sig_type = st.selectbox(
+            "Signal Type",
+            ["MA Crossover", "CTA (Baz-Granger)", "Anchors + IS-Opt Weights"],
+            key="mom_sig_type",
+        )
+
+    with c2:
+        if sig_type == "MA Crossover":
+            variant_opts = {
+                "MA(35,43) - Best Sharpe [default]": (35, 43),
+                "MA(33,48)": (33, 48),
+                "MA(35,44)": (35, 44),
+                "MA(34,47)": (34, 47),
+                "MA(36,44)": (36, 44),
+                "MA(1,5)":   (1, 5),
+                "MA(5,20)":  (5, 20),
+                "MA(10,60)": (10, 60),
+            }
+            default_idx = 0
+        elif sig_type == "CTA (Baz-Granger)":
+            variant_opts = {
+                "CTA(8,21) - Best Same-Day Sharpe": ("cta_single", 8, 21),
+                "CTA(9,21) - Best Lag-1 Sharpe [default]": ("cta_single", 9, 21),
+                "CTA(9,20)": ("cta_single", 9, 20),
+                "CTA(10,19)": ("cta_single", 10, 19),
+                "CTA(14,15)": ("cta_single", 14, 15),
+                "CTA Paper (8-16-32 / 24-48-96)": ("cta_paper",),
+            }
+            default_idx = 1
+        else:  # Anchors
+            variant_opts = {
+                "EW Anchors - MA(10,25) + MA(35,43) + MA(63,100)": ("anchors_ew",),
+            }
+            default_idx = 0
+        # Guard: reset if session value no longer valid for current sig_type
+        if st.session_state.get("mom_variant", "") not in variant_opts:
+            st.session_state["mom_variant"] = list(variant_opts.keys())[default_idx]
+        variant_label = st.selectbox(
+            "Strategy Variant", list(variant_opts.keys()),
+            index=default_idx, key="mom_variant",
+        )
+        variant_params = variant_opts[variant_label]
+
+    with c3:
+        timing_label = st.selectbox(
+            "Position Entry",
+            ["Same-Day", "Lag-1 (Next-Day)"],
+            index=0, key="mom_timing",
+        )
+        same_day = timing_label == "Same-Day"
+
+    with c4:
+        _oos_tc_map = _tc_label_map(float(f1c.dropna().iloc[-1]))
+        _oos_tc_label = st.selectbox("TC (bps)", list(_oos_tc_map.keys()), index=0, key="oos_tc_sel")
+        _oos_tc_bps = _oos_tc_map[_oos_tc_label]
+    tc_bps   = _oos_tc_bps
+    tc_label = _oos_tc_label
+
+    if sig_type == "Anchors + IS-Opt Weights":
+        st.info(
+            "**Anchors + IS-Opt Weights** - IS backtest uses equal-weight combination of the three anchor MAs. "
+            "The IS-optimised walk-forward Sharpe (+0.442 avg) is shown in Section 1. "
+            "Position shown here is a continuous range −1 to +1 (average of three ±1 signals).",
+            icon="ℹ️",
+        )
+
+    # ── Custom parameter override ─────────────────────────────────────────────
+    if sig_type != "Anchors + IS-Opt Weights":
+        with st.expander("Custom Parameters (override dropdown selection)", expanded=False):
+            if sig_type == "MA Crossover":
+                cp1, cp2, cp3 = st.columns([1, 1, 2])
+                with cp1:
+                    m_cust = st.number_input("Fast window m", min_value=1, max_value=124, value=35, step=1, key="cust_m")
+                with cp2:
+                    n_cust = st.number_input("Slow window n", min_value=m_cust + 1, max_value=126, value=43, step=1, key="cust_n")
+                with cp3:
+                    use_custom = st.checkbox("Use custom MA(m,n)", value=False, key="cust_ma_on")
+                if use_custom and n_cust > m_cust:
+                    variant_params = (m_cust, n_cust)
+                    variant_label  = f"Custom MA({m_cust},{n_cust})"
+            else:
+                cp1, cp2, cp3 = st.columns([1, 1, 2])
+                with cp1:
+                    s_cust = st.number_input("Short EWMA S", min_value=1, max_value=49, value=9,  step=1, key="cust_s")
+                with cp2:
+                    l_cust = st.number_input("Long EWMA L",  min_value=s_cust + 1, max_value=100, value=21, step=1, key="cust_l")
+                with cp3:
+                    use_custom = st.checkbox("Use custom CTA(S,L)", value=False, key="cust_cta_on")
+                if use_custom and l_cust > s_cust:
+                    variant_params = ("cta_single", s_cust, l_cust)
+                    variant_label  = f"Custom CTA({s_cust},{l_cust})"
+
+    # ── Signal & position computation ─────────────────────────────────────────
+    def _ewma(s: pd.Series, n: int) -> pd.Series:
+        return s.ewm(com=n - 1, adjust=False).mean()
+
+    if sig_type == "Anchors + IS-Opt Weights":
+        _anc_sigs = [
+            np.sign(f1r.rolling(m).mean() - f1r.rolling(n).mean()).values.astype(float)
+            for m, n in [(10, 25), (35, 43), (63, 100)]
+        ]
+        _anc_stack = np.column_stack(_anc_sigs)
+        sig_raw = np.nanmean(np.where(np.isfinite(_anc_stack), _anc_stack, np.nan), axis=1)
+
+    elif sig_type == "MA Crossover":
+        m_val, n_val = variant_params
+        sig_raw = np.sign(f1r.rolling(m_val).mean() - f1r.rolling(n_val).mean()).values.astype(float)
+
+    elif isinstance(variant_params, tuple) and variant_params[0] == "cta_paper":
+        pv = f1r.rolling(63).std()
+        us = []
+        for sk, lk in zip((8, 16, 32), (24, 48, 96)):
+            x = _ewma(f1r, sk) - _ewma(f1r, lk)
+            y = x / pv
+            with np.errstate(invalid="ignore"):
+                z = (y / y.rolling(252).std()).values
+                u = z * np.exp(-z ** 2 / 4) / 0.89
+            us.append(u)
+        sig_raw = np.sign(np.nanmean(np.stack(us, axis=1), axis=1))
+
+    else:  # cta_single
+        _, s_val, l_val = variant_params
+        x = _ewma(f1r, s_val) - _ewma(f1r, l_val)
+        y = x / f1r.rolling(63).std()
+        with np.errstate(invalid="ignore"):
+            z = (y / y.rolling(252).std()).values
+            u = z * np.exp(-z ** 2 / 4) / 0.89
+        sig_raw = np.sign(u)
+
+    T = len(sig_raw)
+    pos_np = np.empty(T)
+    # Same-Day = shift 1 (trade at signal's own close, earn t->t+1; no look-ahead).
+    # Lag-1    = shift 2 (trade next close, earn t+1->t+2). Matches carry/value/helpers.
+    if same_day:
+        pos_np[0] = 0.0
+        pos_np[1:] = np.where(np.isfinite(sig_raw[:-1]), sig_raw[:-1], 0.0)
+    else:
+        pos_np[:2] = 0.0
+        pos_np[2:] = np.where(np.isfinite(sig_raw[:-2]), sig_raw[:-2], 0.0)
+    sig_np = sig_raw
+
+    # ── PnL with transaction costs ─────────────────────────────────────────────
+    delta_np  = f1c.diff().values.astype(float)
+    pos_s     = pd.Series(pos_np, index=f1r.index)
+    delta_s   = pd.Series(delta_np, index=f1r.index)
+    gross_pnl = pos_s * delta_s
+
+    # TC in bps: cost per position change = |Δpos| × (bps/10000 / 2) × F1_price
+    pos_change   = pos_s.diff().abs()
+    pos_change.iloc[0] = abs(pos_s.iloc[0])
+    tc_cost_s    = pos_change * (tc_bps / 10000.0 / 2.0) * f1c
+    net_pnl      = gross_pnl - tc_cost_s
+
+    cum_pnl_gross = gross_pnl.cumsum()
+    cum_pnl_net   = net_pnl.cumsum()
+
+    # ── Pre-compute daily returns (full period, needed for rolling Sharpe) ─────
+    f1_prev_full  = f1c.shift(1)
+    gross_ret_all = (gross_pnl / f1_prev_full).replace([np.inf, -np.inf], np.nan)
+    net_ret_all   = (net_pnl   / f1_prev_full).replace([np.inf, -np.inf], np.nan)
+
+    # ── Date filter for performance metrics ───────────────────────────────────
+    st.divider()
+    pf_c1, pf_c2 = st.columns([3, 1])
+    with pf_c1:
+        perf_dates = st.date_input(
+            "Performance period  (signal uses full history - only metrics & charts below update)",
+            value=(f1r.index[0].date(), f1r.index[-1].date()),
+            min_value=f1r.index[0].date(), max_value=f1r.index[-1].date(),
+            key="mom_perf_dates",
+        )
+    p_start = pd.Timestamp(perf_dates[0]) if len(perf_dates) >= 1 else f1r.index[0]
+    p_end   = pd.Timestamp(perf_dates[1]) if len(perf_dates) == 2 else f1r.index[-1]
+    pmask   = (gross_pnl.index >= p_start) & (gross_pnl.index <= p_end)
+
+    gross_pnl_f = gross_pnl[pmask];   net_pnl_f = net_pnl[pmask]
+    pos_s_f     = pos_s[pmask]
+    gross_ret_f = gross_ret_all[pmask]; net_ret_f = net_ret_all[pmask]
+
+    # ── Performance metrics ────────────────────────────────────────────────────
+    def _perf(daily_pnl: pd.Series, daily_ret: pd.Series,
+              position: pd.Series, label: str) -> dict:
+        active  = daily_ret[position != 0].dropna()
+        pnl_act = daily_pnl[position != 0].dropna()
+        n = len(active)
+        if n < 20:
+            return {}
+        ann_r  = float(active.mean() * 252 * 100)
+        ann_sd = float(active.std()  * np.sqrt(252) * 100)
+        sharpe = ann_r / ann_sd if ann_sd > 0 else np.nan
+        down   = active[active < 0]
+        srt_d  = float(down.std() * np.sqrt(252) * 100) if len(down) > 1 else np.nan
+        sortino = ann_r / srt_d if srt_d and srt_d > 0 else np.nan
+        cum_r   = daily_ret.fillna(0).cumsum() * 100
+        mdd_pct = float((cum_r - cum_r.cummax()).min())
+        calmar  = ann_r / abs(mdd_pct) if mdd_pct != 0 else np.nan
+        wins, losses = pnl_act[pnl_act > 0], pnl_act[pnl_act < 0]
+        return {
+            "label": label, "n": n,
+            "sharpe": sharpe, "sortino": sortino,
+            "ann_ret_pct": ann_r, "ann_std_pct": ann_sd,
+            "mdd_pct": mdd_pct, "calmar": calmar,
+            "hit_rate": float((active > 0).mean()) * 100,
+            "profit_factor": abs(wins.sum() / losses.sum()) if len(losses) > 0 else np.nan,
+            "total_pnl_usdmt": float(pnl_act.sum()),
+        }
+
+    m_gross = _perf(gross_pnl_f, gross_ret_f, pos_s_f, "Gross (No TC)")
+    m_net   = _perf(net_pnl_f,   net_ret_f,   pos_s_f, f"Net ({tc_label})")
+
+    # ── Metric cards ──────────────────────────────────────────────────────────
+    def _mcard(col, label, val, fmt=".2f", suffix="", good_high=True):
+        if val is None or (isinstance(val, float) and np.isnan(val)):
+            col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">-</p></div>',
+                         unsafe_allow_html=True)
+            return
+        v_str = f"{val:{fmt}}{suffix}"
+        col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">{v_str}</p></div>',
+                     unsafe_allow_html=True)
+
+    section_header = lambda t: st.markdown(f'<div class="section-header">{t}</div>', unsafe_allow_html=True)
+
+    st.divider()
+    section_header("PERFORMANCE METRICS")
+    st.caption(f"**Strategy:** {variant_label}  |  **Entry:** {timing_label}  |  **TC:** {tc_label}")
+
+    if m_gross and m_net:
+        # Row 1: Sharpe, Sortino, Ann Return, Std Dev, Active Days
+        cols = st.columns(8)
+        _mcard(cols[0], "Sharpe Gross",      m_gross.get("sharpe"),       ".2f")
+        _mcard(cols[1], "Sharpe Net",        m_net.get("sharpe"),         ".2f")
+        _mcard(cols[2], "Sortino Gross",     m_gross.get("sortino"),      ".2f")
+        _mcard(cols[3], "Sortino Net",       m_net.get("sortino"),        ".2f")
+        _mcard(cols[4], "Ann Ret% Gross",    m_gross.get("ann_ret_pct"),  ".2f", "%")
+        _mcard(cols[5], "Ann Ret% Net",      m_net.get("ann_ret_pct"),    ".2f", "%")
+        _mcard(cols[6], "Ann Std Dev%",      m_gross.get("ann_std_pct"),  ".2f", "%")
+        _mcard(cols[7], "Active Days",       float(m_gross.get("n", 0)), ",.0f")
+
+        # Row 2: MaxDD, Calmar, Hit Rate, Profit Factor, Total PnL
+        cols2 = st.columns(8)
+        _mcard(cols2[0], "Max DD% Gross",    m_gross.get("mdd_pct"),      ".2f", "%", good_high=False)
+        _mcard(cols2[1], "Max DD% Net",      m_net.get("mdd_pct"),        ".2f", "%", good_high=False)
+        _mcard(cols2[2], "Calmar Gross",     m_gross.get("calmar"),       ".2f")
+        _mcard(cols2[3], "Calmar Net",       m_net.get("calmar"),         ".2f")
+        _mcard(cols2[4], "Hit Rate",         m_gross.get("hit_rate"),     ".2f", "%")
+        _mcard(cols2[5], "Profit Factor",    m_gross.get("profit_factor"),".2f")
+        _mcard(cols2[6], "PnL Gross $/MT",   m_gross.get("total_pnl_usdmt"), ",.2f")
+        _mcard(cols2[7], "PnL Net $/MT",     m_net.get("total_pnl_usdmt"),   ",.2f")
+    else:
+        st.warning("Insufficient active trading days to compute metrics.")
+
+    # ── Out-of-Sample Walk-Forward Validation ──────────────────────────────────
+    st.divider()
     _wf_active     = _wf_ma3543_tc(f1r, f1c, _oos_tc_bps)
     # Anchors + IS-opt walk-forward - computed live for ALL OOS windows (TC-aware).
     _WF_ANC_OPT      = _wf_anchors_isopt_tc(f1r, f1c, _oos_tc_bps)
@@ -2267,317 +2619,6 @@ with tab7:
 
     st.divider()
 
-    # ── SECTION 2: IS PARAMETER SEARCH (IN-SAMPLE) ────────────────────────────
-    _m_is_yr0 = str(f1r.index[0].year); _m_is_yr1 = str(f1r.index[-1].year)
-    st.divider()
-    section_header(f"IN-SAMPLE PARAMETER SEARCH ({_m_is_yr0}-{_m_is_yr1})")
-    st.markdown(
-        '<div style="background:#1A1200;border:1px solid #3A2E00;border-left:4px solid #F59E0B;'
-        'border-radius:4px;padding:8px 14px;margin-bottom:10px;font-size:0.82rem;color:#D4A843;">'
-        f'&#9888;  IN-SAMPLE BACKTEST - Results use full {_m_is_yr0}-{_m_is_yr1} history. '
-        'Not held-out data. See the walk-forward section for OOS estimates.</div>',
-        unsafe_allow_html=True,
-    )
-
-    # ── Strategy Preset ───────────────────────────────────────────────────────
-    _MOM_PRESETS = {
-        "MA(35,43), Same-Day  [WF Best / Default]": {
-            "mom_sig_type": "MA Crossover",
-            "mom_variant":  "MA(35,43) - Best Sharpe [default]",
-            "mom_timing":   "Same-Day",
-        },
-        "CTA(9,21), Same-Day  [Baz-Granger Best]": {
-            "mom_sig_type": "CTA (Baz-Granger)",
-            "mom_variant":  "CTA(9,21) - Best Lag-1 Sharpe [default]",
-            "mom_timing":   "Same-Day",
-        },
-        "Anchors EW, Lag-1  [Anchors + IS-Opt]": {
-            "mom_sig_type": "Anchors + IS-Opt Weights",
-            "mom_variant":  "EW Anchors - MA(10,25) + MA(35,43) + MA(63,100)",
-            "mom_timing":   "Lag-1 (Next-Day)",
-        },
-        "MA(35,43), Lag-1  [Sensitivity Check]": {
-            "mom_sig_type": "MA Crossover",
-            "mom_variant":  "MA(35,43) - Best Sharpe [default]",
-            "mom_timing":   "Lag-1 (Next-Day)",
-        },
-        "Custom (use controls below)": {},
-    }
-
-    def _apply_mom_preset():
-        cfg = _MOM_PRESETS.get(st.session_state.get("mom_preset", "Custom (use controls below)"), {})
-        for k, v in cfg.items():
-            st.session_state[k] = v
-
-    _mom_preset_col, _mom_preset_info = st.columns([2.5, 3.5])
-    with _mom_preset_col:
-        st.selectbox(
-            "Strategy Preset",
-            list(_MOM_PRESETS.keys()),
-            index=0,
-            key="mom_preset",
-            on_change=_apply_mom_preset,
-        )
-    with _mom_preset_info:
-        st.markdown(
-            '<div style="padding:8px 0;color:#7A7068;font-size:0.78rem;">'
-            'Selecting a preset auto-fills all controls below. '
-            'Switch to <b>Custom</b> to edit individual parameters freely.</div>',
-            unsafe_allow_html=True,
-        )
-
-    # ── Controls ──────────────────────────────────────────────────────────────
-    c1, c2, c3 = st.columns([1.6, 1.8, 1.4])
-
-    with c1:
-        sig_type = st.selectbox(
-            "Signal Type",
-            ["MA Crossover", "CTA (Baz-Granger)", "Anchors + IS-Opt Weights"],
-            key="mom_sig_type",
-        )
-
-    with c2:
-        if sig_type == "MA Crossover":
-            variant_opts = {
-                "MA(35,43) - Best Sharpe [default]": (35, 43),
-                "MA(33,48)": (33, 48),
-                "MA(35,44)": (35, 44),
-                "MA(34,47)": (34, 47),
-                "MA(36,44)": (36, 44),
-                "MA(1,5)":   (1, 5),
-                "MA(5,20)":  (5, 20),
-                "MA(10,60)": (10, 60),
-            }
-            default_idx = 0
-        elif sig_type == "CTA (Baz-Granger)":
-            variant_opts = {
-                "CTA(8,21) - Best Same-Day Sharpe": ("cta_single", 8, 21),
-                "CTA(9,21) - Best Lag-1 Sharpe [default]": ("cta_single", 9, 21),
-                "CTA(9,20)": ("cta_single", 9, 20),
-                "CTA(10,19)": ("cta_single", 10, 19),
-                "CTA(14,15)": ("cta_single", 14, 15),
-                "CTA Paper (8-16-32 / 24-48-96)": ("cta_paper",),
-            }
-            default_idx = 1
-        else:  # Anchors
-            variant_opts = {
-                "EW Anchors - MA(10,25) + MA(35,43) + MA(63,100)": ("anchors_ew",),
-            }
-            default_idx = 0
-        # Guard: reset if session value no longer valid for current sig_type
-        if st.session_state.get("mom_variant", "") not in variant_opts:
-            st.session_state["mom_variant"] = list(variant_opts.keys())[default_idx]
-        variant_label = st.selectbox(
-            "Strategy Variant", list(variant_opts.keys()),
-            index=default_idx, key="mom_variant",
-        )
-        variant_params = variant_opts[variant_label]
-
-    with c3:
-        timing_label = st.selectbox(
-            "Position Entry",
-            ["Same-Day", "Lag-1 (Next-Day)"],
-            index=0, key="mom_timing",
-        )
-        same_day = timing_label == "Same-Day"
-
-    # TC inherited from Section 1 OOS dropdown
-    tc_bps   = _oos_tc_bps
-    tc_label = _oos_tc_label
-    st.caption(f"TC applied to all metrics below: **{tc_label}** - change via the OOS TC selector in Section 1.")
-
-    if sig_type == "Anchors + IS-Opt Weights":
-        st.info(
-            "**Anchors + IS-Opt Weights** - IS backtest uses equal-weight combination of the three anchor MAs. "
-            "The IS-optimised walk-forward Sharpe (+0.442 avg) is shown in Section 1. "
-            "Position shown here is a continuous range −1 to +1 (average of three ±1 signals).",
-            icon="ℹ️",
-        )
-
-    # ── Custom parameter override ─────────────────────────────────────────────
-    if sig_type != "Anchors + IS-Opt Weights":
-        with st.expander("Custom Parameters (override dropdown selection)", expanded=False):
-            if sig_type == "MA Crossover":
-                cp1, cp2, cp3 = st.columns([1, 1, 2])
-                with cp1:
-                    m_cust = st.number_input("Fast window m", min_value=1, max_value=124, value=35, step=1, key="cust_m")
-                with cp2:
-                    n_cust = st.number_input("Slow window n", min_value=m_cust + 1, max_value=126, value=43, step=1, key="cust_n")
-                with cp3:
-                    use_custom = st.checkbox("Use custom MA(m,n)", value=False, key="cust_ma_on")
-                if use_custom and n_cust > m_cust:
-                    variant_params = (m_cust, n_cust)
-                    variant_label  = f"Custom MA({m_cust},{n_cust})"
-            else:
-                cp1, cp2, cp3 = st.columns([1, 1, 2])
-                with cp1:
-                    s_cust = st.number_input("Short EWMA S", min_value=1, max_value=49, value=9,  step=1, key="cust_s")
-                with cp2:
-                    l_cust = st.number_input("Long EWMA L",  min_value=s_cust + 1, max_value=100, value=21, step=1, key="cust_l")
-                with cp3:
-                    use_custom = st.checkbox("Use custom CTA(S,L)", value=False, key="cust_cta_on")
-                if use_custom and l_cust > s_cust:
-                    variant_params = ("cta_single", s_cust, l_cust)
-                    variant_label  = f"Custom CTA({s_cust},{l_cust})"
-
-    # ── Signal & position computation ─────────────────────────────────────────
-    def _ewma(s: pd.Series, n: int) -> pd.Series:
-        return s.ewm(com=n - 1, adjust=False).mean()
-
-    if sig_type == "Anchors + IS-Opt Weights":
-        _anc_sigs = [
-            np.sign(f1r.rolling(m).mean() - f1r.rolling(n).mean()).values.astype(float)
-            for m, n in [(10, 25), (35, 43), (63, 100)]
-        ]
-        _anc_stack = np.column_stack(_anc_sigs)
-        sig_raw = np.nanmean(np.where(np.isfinite(_anc_stack), _anc_stack, np.nan), axis=1)
-
-    elif sig_type == "MA Crossover":
-        m_val, n_val = variant_params
-        sig_raw = np.sign(f1r.rolling(m_val).mean() - f1r.rolling(n_val).mean()).values.astype(float)
-
-    elif isinstance(variant_params, tuple) and variant_params[0] == "cta_paper":
-        pv = f1r.rolling(63).std()
-        us = []
-        for sk, lk in zip((8, 16, 32), (24, 48, 96)):
-            x = _ewma(f1r, sk) - _ewma(f1r, lk)
-            y = x / pv
-            with np.errstate(invalid="ignore"):
-                z = (y / y.rolling(252).std()).values
-                u = z * np.exp(-z ** 2 / 4) / 0.89
-            us.append(u)
-        sig_raw = np.sign(np.nanmean(np.stack(us, axis=1), axis=1))
-
-    else:  # cta_single
-        _, s_val, l_val = variant_params
-        x = _ewma(f1r, s_val) - _ewma(f1r, l_val)
-        y = x / f1r.rolling(63).std()
-        with np.errstate(invalid="ignore"):
-            z = (y / y.rolling(252).std()).values
-            u = z * np.exp(-z ** 2 / 4) / 0.89
-        sig_raw = np.sign(u)
-
-    T = len(sig_raw)
-    pos_np = np.empty(T)
-    # Same-Day = shift 1 (trade at signal's own close, earn t->t+1; no look-ahead).
-    # Lag-1    = shift 2 (trade next close, earn t+1->t+2). Matches carry/value/helpers.
-    if same_day:
-        pos_np[0] = 0.0
-        pos_np[1:] = np.where(np.isfinite(sig_raw[:-1]), sig_raw[:-1], 0.0)
-    else:
-        pos_np[:2] = 0.0
-        pos_np[2:] = np.where(np.isfinite(sig_raw[:-2]), sig_raw[:-2], 0.0)
-    sig_np = sig_raw
-
-    # ── PnL with transaction costs ─────────────────────────────────────────────
-    delta_np  = f1c.diff().values.astype(float)
-    pos_s     = pd.Series(pos_np, index=f1r.index)
-    delta_s   = pd.Series(delta_np, index=f1r.index)
-    gross_pnl = pos_s * delta_s
-
-    # TC in bps: cost per position change = |Δpos| × (bps/10000 / 2) × F1_price
-    pos_change   = pos_s.diff().abs()
-    pos_change.iloc[0] = abs(pos_s.iloc[0])
-    tc_cost_s    = pos_change * (tc_bps / 10000.0 / 2.0) * f1c
-    net_pnl      = gross_pnl - tc_cost_s
-
-    cum_pnl_gross = gross_pnl.cumsum()
-    cum_pnl_net   = net_pnl.cumsum()
-
-    # ── Pre-compute daily returns (full period, needed for rolling Sharpe) ─────
-    f1_prev_full  = f1c.shift(1)
-    gross_ret_all = (gross_pnl / f1_prev_full).replace([np.inf, -np.inf], np.nan)
-    net_ret_all   = (net_pnl   / f1_prev_full).replace([np.inf, -np.inf], np.nan)
-
-    # ── Date filter for performance metrics ───────────────────────────────────
-    st.divider()
-    pf_c1, pf_c2 = st.columns([3, 1])
-    with pf_c1:
-        perf_dates = st.date_input(
-            "Performance period  (signal uses full history - only metrics & charts below update)",
-            value=(f1r.index[0].date(), f1r.index[-1].date()),
-            min_value=f1r.index[0].date(), max_value=f1r.index[-1].date(),
-            key="mom_perf_dates",
-        )
-    p_start = pd.Timestamp(perf_dates[0]) if len(perf_dates) >= 1 else f1r.index[0]
-    p_end   = pd.Timestamp(perf_dates[1]) if len(perf_dates) == 2 else f1r.index[-1]
-    pmask   = (gross_pnl.index >= p_start) & (gross_pnl.index <= p_end)
-
-    gross_pnl_f = gross_pnl[pmask];   net_pnl_f = net_pnl[pmask]
-    pos_s_f     = pos_s[pmask]
-    gross_ret_f = gross_ret_all[pmask]; net_ret_f = net_ret_all[pmask]
-
-    # ── Performance metrics ────────────────────────────────────────────────────
-    def _perf(daily_pnl: pd.Series, daily_ret: pd.Series,
-              position: pd.Series, label: str) -> dict:
-        active  = daily_ret[position != 0].dropna()
-        pnl_act = daily_pnl[position != 0].dropna()
-        n = len(active)
-        if n < 20:
-            return {}
-        ann_r  = float(active.mean() * 252 * 100)
-        ann_sd = float(active.std()  * np.sqrt(252) * 100)
-        sharpe = ann_r / ann_sd if ann_sd > 0 else np.nan
-        down   = active[active < 0]
-        srt_d  = float(down.std() * np.sqrt(252) * 100) if len(down) > 1 else np.nan
-        sortino = ann_r / srt_d if srt_d and srt_d > 0 else np.nan
-        cum_r   = daily_ret.fillna(0).cumsum() * 100
-        mdd_pct = float((cum_r - cum_r.cummax()).min())
-        calmar  = ann_r / abs(mdd_pct) if mdd_pct != 0 else np.nan
-        wins, losses = pnl_act[pnl_act > 0], pnl_act[pnl_act < 0]
-        return {
-            "label": label, "n": n,
-            "sharpe": sharpe, "sortino": sortino,
-            "ann_ret_pct": ann_r, "ann_std_pct": ann_sd,
-            "mdd_pct": mdd_pct, "calmar": calmar,
-            "hit_rate": float((active > 0).mean()) * 100,
-            "profit_factor": abs(wins.sum() / losses.sum()) if len(losses) > 0 else np.nan,
-            "total_pnl_usdmt": float(pnl_act.sum()),
-        }
-
-    m_gross = _perf(gross_pnl_f, gross_ret_f, pos_s_f, "Gross (No TC)")
-    m_net   = _perf(net_pnl_f,   net_ret_f,   pos_s_f, f"Net ({tc_label})")
-
-    # ── Metric cards ──────────────────────────────────────────────────────────
-    def _mcard(col, label, val, fmt=".2f", suffix="", good_high=True):
-        if val is None or (isinstance(val, float) and np.isnan(val)):
-            col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">-</p></div>',
-                         unsafe_allow_html=True)
-            return
-        v_str = f"{val:{fmt}}{suffix}"
-        col.markdown(f'<div class="metric-compact"><h4>{label}</h4><p class="value">{v_str}</p></div>',
-                     unsafe_allow_html=True)
-
-    section_header = lambda t: st.markdown(f'<div class="section-header">{t}</div>', unsafe_allow_html=True)
-
-    st.divider()
-    section_header("PERFORMANCE METRICS")
-    st.caption(f"**Strategy:** {variant_label}  |  **Entry:** {timing_label}  |  **TC:** {tc_label}")
-
-    if m_gross and m_net:
-        # Row 1: Sharpe, Sortino, Ann Return, Std Dev, Active Days
-        cols = st.columns(8)
-        _mcard(cols[0], "Sharpe Gross",      m_gross.get("sharpe"),       ".2f")
-        _mcard(cols[1], "Sharpe Net",        m_net.get("sharpe"),         ".2f")
-        _mcard(cols[2], "Sortino Gross",     m_gross.get("sortino"),      ".2f")
-        _mcard(cols[3], "Sortino Net",       m_net.get("sortino"),        ".2f")
-        _mcard(cols[4], "Ann Ret% Gross",    m_gross.get("ann_ret_pct"),  ".2f", "%")
-        _mcard(cols[5], "Ann Ret% Net",      m_net.get("ann_ret_pct"),    ".2f", "%")
-        _mcard(cols[6], "Ann Std Dev%",      m_gross.get("ann_std_pct"),  ".2f", "%")
-        _mcard(cols[7], "Active Days",       float(m_gross.get("n", 0)), ",.0f")
-
-        # Row 2: MaxDD, Calmar, Hit Rate, Profit Factor, Total PnL
-        cols2 = st.columns(8)
-        _mcard(cols2[0], "Max DD% Gross",    m_gross.get("mdd_pct"),      ".2f", "%", good_high=False)
-        _mcard(cols2[1], "Max DD% Net",      m_net.get("mdd_pct"),        ".2f", "%", good_high=False)
-        _mcard(cols2[2], "Calmar Gross",     m_gross.get("calmar"),       ".2f")
-        _mcard(cols2[3], "Calmar Net",       m_net.get("calmar"),         ".2f")
-        _mcard(cols2[4], "Hit Rate",         m_gross.get("hit_rate"),     ".2f", "%")
-        _mcard(cols2[5], "Profit Factor",    m_gross.get("profit_factor"),".2f")
-        _mcard(cols2[6], "PnL Gross $/MT",   m_gross.get("total_pnl_usdmt"), ",.2f")
-        _mcard(cols2[7], "PnL Net $/MT",     m_net.get("total_pnl_usdmt"),   ",.2f")
-    else:
-        st.warning("Insufficient active trading days to compute metrics.")
 
     # ── Rolling Sharpe ─────────────────────────────────────────────────────────
     st.divider()
