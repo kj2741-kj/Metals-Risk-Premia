@@ -3300,18 +3300,45 @@ with tab8:
     cm8_gross = _carry_perf(c8_gross_pnl_f, c8_gross_ret_f, c8_pos_f, "Gross (No TC)")
     cm8_net   = _carry_perf(c8_net_pnl_f,   c8_net_ret_f,   c8_pos_f, f"Net ({carry_tc_label})")
 
-    # ── Multi-strategy selector (shared for Performance Metrics + Rolling Sharpe) ──
+    st.divider()
+    section_header("PERFORMANCE METRICS")
+    st.caption(f"**Strategy:** {carry_vgroup} / {carry_sub_label}  |  **Entry:** {carry_timing}  |  **TC:** {carry_tc_label}")
+
+    if cm8_gross and cm8_net:
+        _c8_cols1 = st.columns(8)
+        _cmcard(_c8_cols1[0], "Sharpe Gross",    cm8_gross.get("sharpe"),      ".2f")
+        _cmcard(_c8_cols1[1], "Sharpe Net",      cm8_net.get("sharpe"),        ".2f")
+        _cmcard(_c8_cols1[2], "Sortino Gross",   cm8_gross.get("sortino"),     ".2f")
+        _cmcard(_c8_cols1[3], "Sortino Net",     cm8_net.get("sortino"),       ".2f")
+        _cmcard(_c8_cols1[4], "Ann Ret% Gross",  cm8_gross.get("ann_ret_pct"), ".2f", "%")
+        _cmcard(_c8_cols1[5], "Ann Ret% Net",    cm8_net.get("ann_ret_pct"),   ".2f", "%")
+        _cmcard(_c8_cols1[6], "Ann Std Dev%",    cm8_gross.get("ann_std_pct"), ".2f", "%")
+        _cmcard(_c8_cols1[7], "Active Days",     float(cm8_gross.get("n", 0)), ",.0f")
+
+        _c8_cols2 = st.columns(8)
+        _cmcard(_c8_cols2[0], "Max DD% Gross",   cm8_gross.get("mdd_pct"),        ".2f", "%")
+        _cmcard(_c8_cols2[1], "Max DD% Net",     cm8_net.get("mdd_pct"),          ".2f", "%")
+        _cmcard(_c8_cols2[2], "Calmar Gross",    cm8_gross.get("calmar"),         ".2f")
+        _cmcard(_c8_cols2[3], "Calmar Net",      cm8_net.get("calmar"),           ".2f")
+        _cmcard(_c8_cols2[4], "Hit Rate",        cm8_gross.get("hit_rate"),       ".2f", "%")
+        _cmcard(_c8_cols2[5], "Profit Factor",   cm8_gross.get("profit_factor"),  ".2f")
+        _cmcard(_c8_cols2[6], "PnL Gross $/MT",  cm8_gross.get("total_pnl_usdmt"), ",.2f")
+        _cmcard(_c8_cols2[7], "PnL Net $/MT",    cm8_net.get("total_pnl_usdmt"),   ",.2f")
+    else:
+        st.warning("Insufficient active trading days to compute metrics.")
+
+    # ── Multi-strategy selector (drives the comparison table + Rolling Sharpe overlay) ──
     st.divider()
     section_header("MULTI-STRATEGY COMPARISON")
     _cmp_all_opts = [k for k in _CARRY_CMP_OPTIONS.keys() if _CARRY_CMP_OPTIONS[k] is not None]
     _carry_multi_sel = st.multiselect(
-        "Select strategies to compare - Performance Metrics & Rolling Sharpe",
+        "Select strategies to compare",
         _cmp_all_opts,
         default=[_cmp_all_opts[0]] if _cmp_all_opts else [],
         key="carry_multi_sel",
     )
-    st.caption("Metrics and rolling Sharpe below reflect all selected strategies. "
-               "The main strategy panel (upper controls) remains independent.")
+    st.caption("The comparison table here and the Rolling Sharpe overlay below reflect every strategy you select. "
+               "The Performance Metrics above use the primary strategy from the upper controls.")
 
     def _carry_gross_daily_ret_for(spec: dict) -> pd.Series:
         """Gross daily return series for a given carry spec."""
@@ -3387,33 +3414,6 @@ with tab8:
         st.dataframe(pd.DataFrame(_cmp_rows), use_container_width=True, hide_index=True)
     elif _carry_multi_sel:
         st.info("Unable to compute metrics for the selected strategies - check data availability.")
-
-    st.divider()
-    section_header("PERFORMANCE METRICS")
-    st.caption(f"**Strategy:** {carry_vgroup} / {carry_sub_label}  |  **Entry:** {carry_timing}  |  **TC:** {carry_tc_label}")
-
-    if cm8_gross and cm8_net:
-        _c8_cols1 = st.columns(8)
-        _cmcard(_c8_cols1[0], "Sharpe Gross",    cm8_gross.get("sharpe"),      ".2f")
-        _cmcard(_c8_cols1[1], "Sharpe Net",      cm8_net.get("sharpe"),        ".2f")
-        _cmcard(_c8_cols1[2], "Sortino Gross",   cm8_gross.get("sortino"),     ".2f")
-        _cmcard(_c8_cols1[3], "Sortino Net",     cm8_net.get("sortino"),       ".2f")
-        _cmcard(_c8_cols1[4], "Ann Ret% Gross",  cm8_gross.get("ann_ret_pct"), ".2f", "%")
-        _cmcard(_c8_cols1[5], "Ann Ret% Net",    cm8_net.get("ann_ret_pct"),   ".2f", "%")
-        _cmcard(_c8_cols1[6], "Ann Std Dev%",    cm8_gross.get("ann_std_pct"), ".2f", "%")
-        _cmcard(_c8_cols1[7], "Active Days",     float(cm8_gross.get("n", 0)), ",.0f")
-
-        _c8_cols2 = st.columns(8)
-        _cmcard(_c8_cols2[0], "Max DD% Gross",   cm8_gross.get("mdd_pct"),        ".2f", "%")
-        _cmcard(_c8_cols2[1], "Max DD% Net",     cm8_net.get("mdd_pct"),          ".2f", "%")
-        _cmcard(_c8_cols2[2], "Calmar Gross",    cm8_gross.get("calmar"),         ".2f")
-        _cmcard(_c8_cols2[3], "Calmar Net",      cm8_net.get("calmar"),           ".2f")
-        _cmcard(_c8_cols2[4], "Hit Rate",        cm8_gross.get("hit_rate"),       ".2f", "%")
-        _cmcard(_c8_cols2[5], "Profit Factor",   cm8_gross.get("profit_factor"),  ".2f")
-        _cmcard(_c8_cols2[6], "PnL Gross $/MT",  cm8_gross.get("total_pnl_usdmt"), ",.2f")
-        _cmcard(_c8_cols2[7], "PnL Net $/MT",    cm8_net.get("total_pnl_usdmt"),   ",.2f")
-    else:
-        st.warning("Insufficient active trading days to compute metrics.")
 
     # ── Section 5: Rolling Sharpe ──────────────────────────────────────────────
     st.divider()
@@ -4332,6 +4332,99 @@ with tab9:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Section 3: Date Filter + Performance Metrics ──────────────────────────
+    st.divider()
+    pf9_c1, _ = st.columns([3, 1])
+    with pf9_c1:
+        val_perf_dates = st.date_input(
+            "Performance period  (signal uses full history - only metrics & charts below update)",
+            value=(_v9_idx[0].date(), _v9_idx[-1].date()),
+            min_value=_v9_idx[0].date(), max_value=_v9_idx[-1].date(),
+            key="val_perf_dates",
+        )
+    vp9_start = pd.Timestamp(val_perf_dates[0]) if len(val_perf_dates) >= 1 else _v9_idx[0]
+    vp9_end   = pd.Timestamp(val_perf_dates[1]) if len(val_perf_dates) == 2 else _v9_idx[-1]
+    vp9_mask  = (_v9_idx >= vp9_start) & (_v9_idx <= vp9_end)
+
+    v9_pos_f      = val_pos[vp9_mask]
+    v9_pnl_f      = v9_gross_pnl[vp9_mask]
+    v9_ret_f      = v9_gross_ret[vp9_mask]
+    v9_net_pnl_f  = v9_net_pnl[vp9_mask]
+    v9_net_ret_f  = v9_net_ret[vp9_mask]
+
+    def _val_perf(daily_pnl, daily_ret, position, label):
+        active  = daily_ret[position != 0].dropna()
+        pnl_act = daily_pnl[position != 0].dropna()
+        n = len(active)
+        if n < 20:
+            return {}
+        ann_r   = float(active.mean() * 252 * 100)
+        ann_sd  = float(active.std() * np.sqrt(252) * 100)
+        sharpe  = ann_r / ann_sd if ann_sd > 0 else np.nan
+        down    = active[active < 0]
+        srt_d   = float(down.std() * np.sqrt(252) * 100) if len(down) > 1 else np.nan
+        sortino = ann_r / srt_d if srt_d and srt_d > 0 else np.nan
+        cum_r   = daily_ret.fillna(0).cumsum() * 100
+        mdd_pct = float((cum_r - cum_r.cummax()).min())
+        calmar  = ann_r / abs(mdd_pct) if mdd_pct != 0 else np.nan
+        wins, losses = pnl_act[pnl_act > 0], pnl_act[pnl_act < 0]
+        T   = len(position)
+        return {
+            "label": label, "n": n,
+            "sharpe": sharpe, "sortino": sortino,
+            "ann_ret_pct": ann_r, "ann_std_pct": ann_sd,
+            "mdd_pct": mdd_pct, "calmar": calmar,
+            "hit_rate": float((active > 0).mean()) * 100,
+            "profit_factor": abs(wins.sum() / losses.sum()) if len(losses) > 0 else np.nan,
+            "total_pnl_usdmt": float(pnl_act.sum()),
+            "pct_long":  float((position > 0).sum()) / T * 100,
+            "pct_flat":  float((position == 0).sum()) / T * 100,
+            "pct_short": float((position < 0).sum()) / T * 100,
+        }
+
+    vm9     = _val_perf(v9_pnl_f,     v9_ret_f,     v9_pos_f, val_vgroup)
+    vm9_net = _val_perf(v9_net_pnl_f, v9_net_ret_f, v9_pos_f, f"Net ({val_tc_label})")
+
+    st.divider()
+    section_header("PERFORMANCE METRICS")
+    _v9_title = (f"**Strategy:** {val_vgroup}  |  " +
+                 (f"**Contract:** F{val_k}  |  **Lookback:** {val_lb_label}  |  **Threshold:** {val_thr_label}  |  " if val_is_v1 else f"**Lookback:** {val_lb_label}  |  ") +
+                 f"**Entry:** {val_timing}  |  **TC:** {val_tc_label}")
+    st.caption(_v9_title)
+
+    if vm9 and vm9_net:
+        _v9_cols1 = st.columns(8)
+        _cmcard(_v9_cols1[0], "Sharpe Gross",    vm9.get("sharpe"),         ".2f")
+        _cmcard(_v9_cols1[1], "Sharpe Net",      vm9_net.get("sharpe"),     ".2f")
+        _cmcard(_v9_cols1[2], "Ann Ret% Gross",  vm9.get("ann_ret_pct"),    ".2f", "%")
+        _cmcard(_v9_cols1[3], "Ann Ret% Net",    vm9_net.get("ann_ret_pct"),".2f", "%")
+        _cmcard(_v9_cols1[4], "Max DD% Gross",   vm9.get("mdd_pct"),        ".2f", "%")
+        _cmcard(_v9_cols1[5], "Max DD% Net",     vm9_net.get("mdd_pct"),    ".2f", "%")
+        _cmcard(_v9_cols1[6], "Calmar Gross",    vm9.get("calmar"),         ".2f")
+        _cmcard(_v9_cols1[7], "Calmar Net",      vm9_net.get("calmar"),     ".2f")
+
+        _v9_cols2 = st.columns(8)
+        _cmcard(_v9_cols2[0], "Sortino Gross",   vm9.get("sortino"),        ".2f")
+        _cmcard(_v9_cols2[1], "Sortino Net",     vm9_net.get("sortino"),    ".2f")
+        _cmcard(_v9_cols2[2], "Hit Rate",        vm9.get("hit_rate"),       ".2f", "%")
+        _cmcard(_v9_cols2[3], "Profit Factor",   vm9.get("profit_factor"),  ".2f")
+        _cmcard(_v9_cols2[4], "PnL Gross $/MT",  vm9.get("total_pnl_usdmt"), ",.2f")
+        _cmcard(_v9_cols2[5], "PnL Net $/MT",    vm9_net.get("total_pnl_usdmt"), ",.2f")
+        _cmcard(_v9_cols2[6], "n Flips",         float(int(_v9_flip_mask.sum())), ",.0f")
+        _cmcard(_v9_cols2[7], "Days In State",   float(_v9_days_in_state),  ",.0f", "d")
+    elif vm9:
+        _v9_cols1 = st.columns(8)
+        _cmcard(_v9_cols1[0], "Sharpe",         vm9.get("sharpe"),         ".2f")
+        _cmcard(_v9_cols1[1], "Sortino",         vm9.get("sortino"),        ".2f")
+        _cmcard(_v9_cols1[2], "Ann Return %",    vm9.get("ann_ret_pct"),    ".2f", "%")
+        _cmcard(_v9_cols1[3], "Ann Std Dev %",   vm9.get("ann_std_pct"),    ".2f", "%")
+        _cmcard(_v9_cols1[4], "Max DD %",        vm9.get("mdd_pct"),        ".2f", "%")
+        _cmcard(_v9_cols1[5], "Calmar",          vm9.get("calmar"),         ".2f")
+        _cmcard(_v9_cols1[6], "Hit Rate",        vm9.get("hit_rate"),       ".2f", "%")
+        _cmcard(_v9_cols1[7], "Profit Factor",   vm9.get("profit_factor"),  ".2f")
+    else:
+        st.warning("Insufficient active trading days to compute metrics.")
+
     # ── Section 2: Deviation History ──────────────────────────────────────────
     st.divider()
     section_header("FAIR VALUE DEVIATION HISTORY")
@@ -4432,99 +4525,6 @@ with tab9:
         st.plotly_chart(fig_v9dev, use_container_width=True)
         st.caption(f"Top: F1_raw[t−{val_N}d] − F1_raw[t]. Positive = price has fallen over {val_N} trading days → contrarian Long. "
                    "Bottom: resulting binary signal (always in market - no flat zone for V2).")
-
-    # ── Section 3: Date Filter + Performance Metrics ──────────────────────────
-    st.divider()
-    pf9_c1, _ = st.columns([3, 1])
-    with pf9_c1:
-        val_perf_dates = st.date_input(
-            "Performance period  (signal uses full history - only metrics & charts below update)",
-            value=(_v9_idx[0].date(), _v9_idx[-1].date()),
-            min_value=_v9_idx[0].date(), max_value=_v9_idx[-1].date(),
-            key="val_perf_dates",
-        )
-    vp9_start = pd.Timestamp(val_perf_dates[0]) if len(val_perf_dates) >= 1 else _v9_idx[0]
-    vp9_end   = pd.Timestamp(val_perf_dates[1]) if len(val_perf_dates) == 2 else _v9_idx[-1]
-    vp9_mask  = (_v9_idx >= vp9_start) & (_v9_idx <= vp9_end)
-
-    v9_pos_f      = val_pos[vp9_mask]
-    v9_pnl_f      = v9_gross_pnl[vp9_mask]
-    v9_ret_f      = v9_gross_ret[vp9_mask]
-    v9_net_pnl_f  = v9_net_pnl[vp9_mask]
-    v9_net_ret_f  = v9_net_ret[vp9_mask]
-
-    def _val_perf(daily_pnl, daily_ret, position, label):
-        active  = daily_ret[position != 0].dropna()
-        pnl_act = daily_pnl[position != 0].dropna()
-        n = len(active)
-        if n < 20:
-            return {}
-        ann_r   = float(active.mean() * 252 * 100)
-        ann_sd  = float(active.std() * np.sqrt(252) * 100)
-        sharpe  = ann_r / ann_sd if ann_sd > 0 else np.nan
-        down    = active[active < 0]
-        srt_d   = float(down.std() * np.sqrt(252) * 100) if len(down) > 1 else np.nan
-        sortino = ann_r / srt_d if srt_d and srt_d > 0 else np.nan
-        cum_r   = daily_ret.fillna(0).cumsum() * 100
-        mdd_pct = float((cum_r - cum_r.cummax()).min())
-        calmar  = ann_r / abs(mdd_pct) if mdd_pct != 0 else np.nan
-        wins, losses = pnl_act[pnl_act > 0], pnl_act[pnl_act < 0]
-        T   = len(position)
-        return {
-            "label": label, "n": n,
-            "sharpe": sharpe, "sortino": sortino,
-            "ann_ret_pct": ann_r, "ann_std_pct": ann_sd,
-            "mdd_pct": mdd_pct, "calmar": calmar,
-            "hit_rate": float((active > 0).mean()) * 100,
-            "profit_factor": abs(wins.sum() / losses.sum()) if len(losses) > 0 else np.nan,
-            "total_pnl_usdmt": float(pnl_act.sum()),
-            "pct_long":  float((position > 0).sum()) / T * 100,
-            "pct_flat":  float((position == 0).sum()) / T * 100,
-            "pct_short": float((position < 0).sum()) / T * 100,
-        }
-
-    vm9     = _val_perf(v9_pnl_f,     v9_ret_f,     v9_pos_f, val_vgroup)
-    vm9_net = _val_perf(v9_net_pnl_f, v9_net_ret_f, v9_pos_f, f"Net ({val_tc_label})")
-
-    st.divider()
-    section_header("PERFORMANCE METRICS")
-    _v9_title = (f"**Strategy:** {val_vgroup}  |  " +
-                 (f"**Contract:** F{val_k}  |  **Lookback:** {val_lb_label}  |  **Threshold:** {val_thr_label}  |  " if val_is_v1 else f"**Lookback:** {val_lb_label}  |  ") +
-                 f"**Entry:** {val_timing}  |  **TC:** {val_tc_label}")
-    st.caption(_v9_title)
-
-    if vm9 and vm9_net:
-        _v9_cols1 = st.columns(8)
-        _cmcard(_v9_cols1[0], "Sharpe Gross",    vm9.get("sharpe"),         ".2f")
-        _cmcard(_v9_cols1[1], "Sharpe Net",      vm9_net.get("sharpe"),     ".2f")
-        _cmcard(_v9_cols1[2], "Ann Ret% Gross",  vm9.get("ann_ret_pct"),    ".2f", "%")
-        _cmcard(_v9_cols1[3], "Ann Ret% Net",    vm9_net.get("ann_ret_pct"),".2f", "%")
-        _cmcard(_v9_cols1[4], "Max DD% Gross",   vm9.get("mdd_pct"),        ".2f", "%")
-        _cmcard(_v9_cols1[5], "Max DD% Net",     vm9_net.get("mdd_pct"),    ".2f", "%")
-        _cmcard(_v9_cols1[6], "Calmar Gross",    vm9.get("calmar"),         ".2f")
-        _cmcard(_v9_cols1[7], "Calmar Net",      vm9_net.get("calmar"),     ".2f")
-
-        _v9_cols2 = st.columns(8)
-        _cmcard(_v9_cols2[0], "Sortino Gross",   vm9.get("sortino"),        ".2f")
-        _cmcard(_v9_cols2[1], "Sortino Net",     vm9_net.get("sortino"),    ".2f")
-        _cmcard(_v9_cols2[2], "Hit Rate",        vm9.get("hit_rate"),       ".2f", "%")
-        _cmcard(_v9_cols2[3], "Profit Factor",   vm9.get("profit_factor"),  ".2f")
-        _cmcard(_v9_cols2[4], "PnL Gross $/MT",  vm9.get("total_pnl_usdmt"), ",.2f")
-        _cmcard(_v9_cols2[5], "PnL Net $/MT",    vm9_net.get("total_pnl_usdmt"), ",.2f")
-        _cmcard(_v9_cols2[6], "n Flips",         float(int(_v9_flip_mask.sum())), ",.0f")
-        _cmcard(_v9_cols2[7], "Days In State",   float(_v9_days_in_state),  ",.0f", "d")
-    elif vm9:
-        _v9_cols1 = st.columns(8)
-        _cmcard(_v9_cols1[0], "Sharpe",         vm9.get("sharpe"),         ".2f")
-        _cmcard(_v9_cols1[1], "Sortino",         vm9.get("sortino"),        ".2f")
-        _cmcard(_v9_cols1[2], "Ann Return %",    vm9.get("ann_ret_pct"),    ".2f", "%")
-        _cmcard(_v9_cols1[3], "Ann Std Dev %",   vm9.get("ann_std_pct"),    ".2f", "%")
-        _cmcard(_v9_cols1[4], "Max DD %",        vm9.get("mdd_pct"),        ".2f", "%")
-        _cmcard(_v9_cols1[5], "Calmar",          vm9.get("calmar"),         ".2f")
-        _cmcard(_v9_cols1[6], "Hit Rate",        vm9.get("hit_rate"),       ".2f", "%")
-        _cmcard(_v9_cols1[7], "Profit Factor",   vm9.get("profit_factor"),  ".2f")
-    else:
-        st.warning("Insufficient active trading days to compute metrics.")
 
     # ── Section 4: Rolling Sharpe ──────────────────────────────────────────────
     st.divider()
