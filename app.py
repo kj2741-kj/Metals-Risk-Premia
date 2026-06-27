@@ -3927,7 +3927,7 @@ with tab9:
           <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V1 - MA Reversion</span><br>
           <span style="color:#8A8278;font-size:0.78rem;">Long-run moving-average reversion on Fk<br>
           (k = F1-F15). Three states: +1 (cheap), 0 (fair), −1 (expensive).<br>
-          F12 is Mark Bogorad's reference contract for energy risk premia.</span>
+          F12 is the reference contract used in the NGL energy risk-premia paper.</span>
         </div>
         <div style="min-width:220px;">
           <span style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.9rem;">V2 - Baz-Granger Reversal</span><br>
@@ -3962,7 +3962,7 @@ with tab9:
 <hr style="{_vbhr}"/>
 <p style="{_vbsub}">F8, 5yr Lookback, ±10% Threshold, Same-Day</p>
 <p style="{_vbsub}">Ann Ret ≈ +7.1%, Max DD ≈ −67%, 38% Flat Days</p>
-<p style="{_vbsub}">Note: F12 is Bogorad's energy reference (Sharpe +0.184 for copper)</p>
+<p style="{_vbsub}">Note: F12 is the NGL paper's energy reference; for copper, F8 scores higher</p>
 </div>""", unsafe_allow_html=True)
     with _vbsc2:
         st.markdown(f"""<div style="{_vbcs}">
@@ -4004,7 +4004,7 @@ with tab9:
             "val_thr":      "±10% (default)",
             "val_timing":   "Lag-1 (Next-Day)",
         },
-        "V1 - F12, 5yr, ±10%, Lag-1  [Bogorad Reference]": {
+        "V1 - F12, 5yr, ±10%, Lag-1  [NGL paper tenor]": {
             "val_vgroup":   "V1 - MA Reversion",
             "val_contract": "F12",
             "val_lb":       "5yr  (1260d)",
@@ -4298,7 +4298,7 @@ with tab9:
     # Live OOS walk-forward options - all computed dynamically via _wf_value_oos_tc
     _V9_OOS_OPTS = {
         "V1: F8, 5yr, Same-Day  [OOS Validated]":       ("v1", 8,    1260),
-        "V1: F12, 5yr, Same-Day  [Bogorad Reference]":  ("v1", 12,   1260),
+        "V1: F12, 5yr, Same-Day  [NGL paper tenor]":  ("v1", 12,   1260),
         "V2: BG 3yr, Same-Day  [Fully Testable]":        ("v2", None, 756),
         "V2: BG 10yr, Same-Day  [Limited to ~5 windows]":("v2", None, 2520),
     }
@@ -4600,7 +4600,7 @@ with tab9:
         fig_vrs9.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
         st.plotly_chart(fig_vrs9, use_container_width=True)
     st.caption("Value signals are strongly regime-dependent - COVID-era price dislocations (2020-2021) created a rare "
-               "mean-reversion opportunity. The 2022 vertical line marks the post-COVID sub-period used in Mark Bogorad's paper.")
+               "mean-reversion opportunity. The 2022 vertical line marks the post-COVID sub-period used in the NGL energy risk-premia paper.")
 
     # ── Section 5: Sub-period Analysis ────────────────────────────────────────
     st.divider()
@@ -4656,7 +4656,7 @@ with tab9:
         st.divider()
         section_header("CONTRACT COMPARISON - F1 THROUGH F15 (SHARPE, GROSS)")
         st.caption(f"Sharpe for each reference contract at {val_lb_label} lookback, ±{int(val_thr*100)}% threshold, {val_timing}. "
-                   "Identifies the empirically optimal contract. Mark Bogorad chose F12 for energy - is the same true for copper?")
+                   "Identifies the empirically optimal contract. The NGL energy paper chose F12 for energy - is the same true for copper?")
 
         _vc_sharpes = {}
         for _vk in range(1, 16):
@@ -4817,7 +4817,7 @@ Position (three states):
 - `−1` (Short): `deviation > +threshold`  → price above long-run mean → *expensive*
 - ` 0` (Flat):  deviation within ±threshold → *near fair value*
 
-The flat zone is a distinguishing feature: unlike momentum and carry, value is *not always* in the market. The ±10% default threshold is calibrated to Mark Bogorad's energy paper. For copper (lower realized volatility than crude oil), consider testing ±15-20% as the flat zone may be very small at ±10%.
+The flat zone is a distinguishing feature: unlike momentum and carry, value is *not always* in the market. The ±10% default threshold is calibrated to the NGL energy risk-premia paper. For copper (lower realized volatility than crude oil), consider testing ±15-20% as the flat zone may be very small at ±10%.
 
 **V2 - Baz-Granger N-year Reversal**
 
@@ -4830,7 +4830,7 @@ Position (two states):
 No flat zone - always in the market. This is a pure reversal bet on medium/long-run mean reversion. Positive reversal means the market is cheaper than it was N years ago, which the strategy treats as a buy signal.
 
 **Why F12 as Reference (V1)?**
-Bogorad chose F12 (1-year-forward contract) because it is:
+The NGL energy paper chose F12 (1-year-forward contract) because it is:
 1. Far enough from the prompt to avoid roll/squeeze noise
 2. Close enough to have continuous liquidity and price discovery
 3. Closely correlated with long-run supply/demand expectations
@@ -4859,7 +4859,7 @@ copper - the ±10% threshold leaves copper in the flat zone most of the time (60
 This threshold was calibrated for crude oil (higher volatility). Consider ±15-20% for copper.
 
 **References**
-- Bogorad, M. (2023). *Risk Premia in Diversified Energy Portfolios.* (Unpublished)
+- NGL Energy Risk-Premia paper - *Risk Premia in Diversified Energy Portfolios.*
 - Baz, J., Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Section and Time Series. SSRN.
         """)
 

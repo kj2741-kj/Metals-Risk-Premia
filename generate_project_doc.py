@@ -216,7 +216,7 @@ body("Timing correction: an earlier 'Same-Day' carry of ~0.55 was a one-day look
 heading2("2.3  Value")
 mixed_bullet([("V1 MA Reversion — copper optimal: ", True), ("F8, 5yr lookback, ±10% threshold, Lag-1.  ", False),
               ("Sharpe +0.277.  ", True),
-              ("F12 (Bogorad's energy reference) gives +0.184 for copper — energy calibration sub-optimal.", False)])
+              ("F12 (the NGL energy paper's reference contract) is weaker for copper — energy calibration sub-optimal.", False)])
 mixed_bullet([("V1 is the chosen sleeve — walk-forward OOS Sharpe +0.43 ", True),
               ("(it improves out-of-sample vs its +0.28 IS, i.e. robust).", False)])
 mixed_bullet([("V2 Baz-Granger Reversal: ", True),
@@ -468,7 +468,7 @@ mixed_bullet([("Risk parity variant: ", True), ("Inverse-volatility weighting to
               "across signals — reduces dominance of high-vol momentum signal in volatile regimes.", False)])
 mixed_bullet([("Regime-conditional weights: ", True), ("Downweight carry post-2022 (contango regime); "
               "upweight value in dislocation regimes (high VIX + low positioning z-score).", False)])
-mixed_bullet([("Sub-period attribution: ", True), ("Reproduce Bogorad (2023) sub-period table across "
+mixed_bullet([("Sub-period attribution: ", True), ("Reproduce the NGL energy paper's sub-period table across "
               "Pre-2022 / Post-2022 and extend to Pre-2020 / COVID / Post-COVID splits.", False)])
 mixed_bullet([("10-metal extension: ", True), ("Apply same framework to all LME base metals "
               "(Aluminium, Zinc, Lead, Nickel, Tin, Cobalt, Molybdenum, Lithium, Steel).", False)])
@@ -500,7 +500,7 @@ space(4)
 heading1("References")
 body("Baz, J. & Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Section and Time Series. SSRN 2695101.")
 body("Bouchoev, I. (2024). Lecture notes on commodity risk premia. NYU.")
-body("Bogorad, M. (2023). Risk Premia in Diversified Energy Portfolios. (Unpublished, Hartree Partners.)")
+body("NGL Energy Risk-Premia paper. Risk Premia in Diversified Energy Portfolios.")
 body("CFTC (2025). Commitments of Traders — Disaggregated Futures Only Report. cftc.gov.")
 body("Caldara, D. & Iacoviello, M. (2022). Measuring Geopolitical Risk. American Economic Review 112(4).")
 

@@ -1,0 +1,312 @@
+================================================================================
+TRADEBOOK VERIFICATION PROMPT  (LME Copper Risk Premia)
+================================================================================
+Purpose: independently verify the logic and numbers in every Excel tradebook
+under the `tradebooks/` directory. This prompt describes the INTENDED logic of
+each file. Do not assume any file is correct or incorrect. Recompute everything
+from the raw data and compare. Treat any performance/ranking words in labels ("best", "validated")
+in filenames as CLAIMS to be checked, not facts. Report every discrepancy with
+the file name, column, row/date, expected value, and observed value.
+
+--------------------------------------------------------------------------------
+0. ROLE AND METHOD
+--------------------------------------------------------------------------------
+You are an independent quant auditor. For each tradebook:
+  (a) Load the raw inputs yourself (files listed in section 1).
+  (b) Recompute every formula column from scratch using the definitions below.
+  (c) Compare your recomputation to the values in the Excel "Tradebook" sheet
+      and the "Performance" / "OOS_Summary" sheets, cell by cell where feasible
+      (at minimum: spot-check 20+ random rows + first/last active rows, and
+      recompute ALL summary statistics).
+  (d) Flag ANY mismatch beyond floating-point rounding (values are rounded in the
+      files: prices to 2 dp, most signal/return columns to 4-6 dp).
+Do NOT trust any label, caption, or Sharpe figure printed inside the file.
+Do NOT "fix" toward an expected answer. Just report what you find.
+
+--------------------------------------------------------------------------------
+1. RAW DATA SOURCES (all in the same directory as the tradebooks' parent)
+--------------------------------------------------------------------------------
+- LME_Copper_Rolling_F1_v2.csv
+    Columns used: Date, F1_raw, F1_continuous.
+    Define f1r = F1_raw (unadjusted front price, sorted ascending by Date).
+    Define f1c = F1_continuous (ratio back-adjusted front price). Index normalized
+    to date (no time component).
+- Metals Futures Curve.csv  (read as Excel; multi-row header)
+    Sheet: the one whose name contains both "copper" and "lme" (e.g. "Copper LME").
+    Define crv[Fk] = the price column for tenor Fk (k = 1..27), numeric, indexed
+    by Date. These are the curve contracts F1..F27.
+- Metals Cash and 3M.xlsx
+    Sheet: the one containing "copper". Define cash_price and 3m_price columns
+    (the non-spread cash and 3-month price series), indexed by Date.
+
+ALL PnL in EVERY tradebook is computed on f1c (F1_continuous), regardless of which
+series produced the signal. Signals may come from f1r, from crv[Fk], or from cash.
+
+--------------------------------------------------------------------------------
+2. SHARED DEFINITIONS — apply identically to every tradebook unless noted
+--------------------------------------------------------------------------------
+Let pos = the Position series (may be ±1, 0, or fractional for composites).
+Let f = f1c reindexed to the tradebook's date index.
+
+  Price_Change(t)      = f(t) - f(t-1)                      [= f.diff()]
+  Gross_PnL(t)         = pos(t) * (f(t) - f(t-1))           [USD/MT]
+  Gross_Return(t)      = Gross_PnL(t) / f(t-1)              [stored as *100 = pct]
+  Gross_CumPnL(t)      = cumulative sum of Gross_PnL up to t
+
+Transaction cost (TC), base case = 5 bps:
+  chg(t)               = |pos(t) - pos(t-1)|   with chg at the first row = |pos(first)|
+  TC_Cost(t)           = chg(t) * (5 / 10000 / 2) * f(t)    [note the /2; rate=0.00025]
+  Net_PnL(t)           = Gross_PnL(t) - TC_Cost(t)
+  Net_Return(t)        = Net_PnL(t) / f(t-1)                [stored as *100 = pct]
+  Net_CumPnL(t)        = cumulative sum of Net_PnL up to t
+
+Performance statistics (computed separately for Gross and for Net):
+  "active days"        = days where pos != 0  (|pos| > 0).
+  Sharpe (annualized)  = mean(Return on active days) / std(Return on active days, ddof=1)
+                         * sqrt(252).  ONLY active-day returns enter the Sharpe.
+  Ann Return %         = mean(Return over ALL days, NaNs dropped) * 252 * 100.
+  Max Drawdown         = min(CumPnL - running_max(CumPnL))   [in USD/MT, NOT percent].
+  Total PnL            = sum of PnL series [USD/MT].
+
+WARMUP / TIME-SERIES INTEGRITY (applies to every IS Tradebook sheet):
+  * No rows are dropped. Every sheet spans the full date axis (2006-01-03 → end),
+    5053 rows. Date, F1_Continuous and Price_Change are populated from day 1.
+  * Indicator, Signal, Position, PnL and TC cells are BLANK (empty) during the
+    rolling/EWMA warmup of that signal — NOT 0. A blank = undefined (no trade).
+  * A 0 in Position means a GENUINE flat day inside an initialised signal (e.g. a
+    value deviation inside the ±10% band). Do not confuse blank (warmup) with 0 (flat).
+  * Verify the first non-blank Position row equals the warmup length + lag + 1:
+      MA(35,43): ~row 45 (43 + shift1 + header).
+      CTA Baz-Granger: ~row 316 (63 for sigma63, then 252 for sigma252 of y, + shift1 + header).
+      V1 (N=1260, min_periods=630): ~row 632.  V2 BG 10yr (N=2520): ~row 2523.
+      V3 z-score (252d): ~row 254.  Portfolio (Value-limited): ~row 631.
+  * Metrics ignore warmup: Sharpe = active days only; annualised return drops
+    undefined days; CumPnL starts at the first initialised day. Active-day Sharpe is
+    therefore independent of whether warmup is shown as blank or 0.
+  * OOS walk-forward sheets begin well past all warmups, so OOS positions are fully
+    defined (0 there means a real flat day, shown as 0).
+
+CRITICAL CHECKS that apply everywhere:
+  * Signal series and PnL series must be aligned by date (intersection of indices).
+  * The position must already include any intended lag (shift). Verify there is NO
+    look-ahead: Gross_PnL(t) must use only information available at or before the
+    time the position was set. Specifically verify the shift count stated per file.
+  * TC must use (5/10000/2) = 0.00025, and chg at the first row = |pos(first)|.
+  * Sharpe denominator must use ddof=1 (sample std) and active days only.
+  * Max DD is on the PnL cumsum in USD/MT, not on returns and not in percent.
+
+================================================================================
+3. MOMENTUM TRADEBOOKS
+================================================================================
+
+FILE: tradebooks/momentum/IS/MOM_IS_MA35_43_Lag1.xlsx
+  Signal source: f1r. PnL: f1c. Lag = shift 1.
+  MA_35(t)   = f1r.rolling(35).mean()
+  MA_43(t)   = f1r.rolling(43).mean()
+  MA_Diff(t) = MA_35(t) - MA_43(t)
+  Raw_Signal(t) = sign(MA_Diff(t))            (in {-1, 0, +1})
+  Position(t)   = sign(MA_Diff(t-1)), i.e. Raw_Signal shifted forward by 1 row,
+                  first values filled with 0.
+  Position is binary ±1 once MA_43 is defined; 0 only during warmup.
+  VERIFY: warmup (first 42 rows) handling, the single-row shift, and that PnL uses f1c.
+
+FILE: tradebooks/momentum/IS/MOM_IS_CTA_BazGranger_Lag1.xlsx
+  Signal source: f1r. PnL: f1c. Lag = shift 1. Three timescales: (S,L) in
+  {(8,24), (16,48), (32,96)}. For each pair i:
+    EWMA_S = f1r.ewm(com = S-1, adjust=False).mean()    (com=n-1 => alpha = 1/n)
+    EWMA_L = f1r.ewm(com = L-1, adjust=False).mean()
+    x_i    = EWMA_S - EWMA_L
+    sigma63 = f1r.rolling(63).std()        (same series for all three timescales)
+    y_i    = x_i / sigma63
+    sigma252_y_i = y_i.rolling(252).std()
+    z_i    = y_i / sigma252_y_i
+    u_i    = z_i * exp(-(z_i^2)/4) / 0.89
+  u_mean(t)   = mean(u_1, u_2, u_3)          (nan-aware mean across the 3)
+  Raw_Signal(t) = sign(u_mean(t))
+  Position(t)   = sign(u_mean(t-1))  (shift 1, blank in warmup).
+  VERIFY: com=S-1 (NOT span=S); the /0.89; exp(-z^2/4); rolling windows 63 then 252;
+  that all three u_i are equally weighted in u_mean.
+
+FILE: tradebooks/momentum/IS/MOM_IS_Anchors_EW_Lag1.xlsx
+  Three "anchor" MA crossovers, each Lag-1, equal-weighted:
+    Signal_MA1025(t)  = sign(MA_10(t-1)  - MA_25(t-1))
+    Signal_MA3543(t)  = sign(MA_35(t-1)  - MA_43(t-1))
+    Signal_MA63100(t) = sign(MA_63(t-1)  - MA_100(t-1))
+    (each computed as sign(MA_short - MA_long) then shifted forward 1 row, blank in warmup)
+  Port_Position_EW(t) = (Signal_MA1025 + Signal_MA3543 + Signal_MA63100) / 3
+    -> ranges in {-1, -1/3, +1/3, +1} (and intermediate during warmup); fractional
+       when the three anchors disagree.
+  PnL uses Port_Position_EW on f1c.
+  Performance sheet also lists standalone Sharpe of each anchor — recompute those too.
+  VERIFY: equal 1/3 weights, each anchor independently Lag-1, composite PnL.
+
+FILE: tradebooks/momentum/OOS/MOM_OOS_MA35_43_WalkForward.xlsx
+  Walk-forward, parameters FIXED at (35,43), NO re-optimization.
+  Windows: IS length = 1260 rows, OOS length = 252 rows, on idx_all =
+  intersection(f1r.index, f1c.index). First OOS window starts at index position
+  1260; each subsequent OOS window starts 252 rows later (NON-overlapping OOS).
+  A trailing window shorter than 252 rows is allowed and marked with "*"; it IS
+  included in averages.
+  Position = sign(MA_35 - MA_43).shift(1).fillna(0) computed on FULL history (the
+  MA state is NOT restarted at each window boundary), then sliced to each OOS window.
+  Per window report: Gross Sharpe, Net 5bps Sharpe, Gross/Net Ann Return %, Max DD
+  (gross & net), % active. CumPnL columns reset within each window.
+  VERIFY: window boundaries/positions, full-history MA (no per-window restart),
+  per-window Sharpe on active days, the AVERAGE and "% Positive Windows" rows.
+
+FILE: tradebooks/momentum/OOS/MOM_OOS_Anchors_ISopt_WalkForward.xlsx
+  Same walk-forward windowing (IS=1260, OOS=252, non-overlapping OOS) BUT weights
+  are re-optimized on each IS window:
+    For the IS window (idx positions is_s:oos_s), for each anchor in
+    {(10,25),(35,43),(63,100)}: compute its Lag-1 position on f1r, then its IS daily
+    return = pos * f1c.diff() / f1c.shift(1) (inf->NaN->0).
+    Solve for weights w=(w_fast, w_med, w_slow) that MAXIMIZE the annualized Sharpe
+    of the combined IS return (w · returns), subject to w >= 0 and sum(w) = 1.
+    Solver: SLSQP with multiple starting points; Sharpe uses active days, ddof=1.
+    Apply these IS-optimized weights to the anchors' OOS positions:
+      Port_Position(t) = w_fast*Pos_MA1025 + w_med*Pos_MA3543 + w_slow*Pos_MA63100
+  Per-window columns include w_fast/w_med/w_slow (constant within a window).
+  VERIFY: weights are computed from IS data ONLY (no OOS leakage), w>=0 & sum=1,
+  the objective is Sharpe of the IS-combined return, and OOS PnL uses these weights.
+
+================================================================================
+4. CARRY TRADEBOOKS  (all "Same-Day"; PnL on f1c)
+================================================================================
+CARRY TIMING CONVENTION (verify carefully — this is the most error-prone part):
+  "Same-Day"  => Position(t) = sign(Carry_Raw).shift(1)   [shift by 1 row]
+  "Lag-1"     => Position(t) = sign(Carry_Raw).shift(2)   [shift by 2 rows]
+  All carry files below are Same-Day, i.e. shift 1. (Rationale: a shift-0 same-day
+  position would earn the contemporaneous move = look-ahead, which is disallowed.)
+  Raw_Signal(t) = sign(Carry_Raw(t)) (unshifted); Position(t) = that, shifted 1, blank in warmup.
+
+FILE: tradebooks/carry/IS/V4_CarryMom20d_SameDay.xlsx
+  RollYield(t)  = (F1(t) - F2(t)) / F1(t)
+  Carry_Raw(t)  = RollYield(t) - RollYield(t-20)        [20-row change in roll yield]
+  Position(t)   = sign(Carry_Raw(t)) shifted forward 1 row, blank in warmup.
+  VERIFY: the 20-row difference, division by F1 (not F2), shift 1.
+
+FILE: tradebooks/carry/IS/V1a_(F1-F2)-F1_SameDay.xlsx
+  Carry_Raw(t)  = (F1(t) - F2(t)) / F1(t)
+  Position(t)   = sign(Carry_Raw(t)) shifted forward 1 row, blank in warmup.
+
+FILE: tradebooks/carry/IS/V1b_(F1-F3)-F1_SameDay.xlsx
+  Carry_Raw(t)  = (F1(t) - F3(t)) / F1(t)
+  Position(t)   = sign(Carry_Raw(t)) shifted forward 1 row, blank in warmup.
+
+FILE: tradebooks/carry/IS/V1c_(Cash-3M)-Cash_SameDay.xlsx
+  Carry_Raw(t)  = (cash_price(t) - 3m_price(t)) / cash_price(t)
+  Position(t)   = sign(Carry_Raw(t)) shifted forward 1 row, blank in warmup.
+  NOTE: signal comes from cash/3M, but PnL is still on f1c (front-month continuous).
+  VERIFY this intentional basis mismatch is handled as stated.
+
+FILE: tradebooks/carry/IS/V2_(F3-F15)-F15_SameDay.xlsx
+  This file is the IS-best of a scan over tenor pairs (j,k) in
+  {(3,15),(4,16),(5,17),(6,18),(7,19),(8,20),(9,21),(10,22),(11,23),(12,24)},
+  where for each pair Carry_Raw = (Fj - Fk)/Fk, Position = sign.shift(1), and IS
+  Sharpe (active days, ddof=1, sqrt(252)) is computed; the pair with the highest IS
+  Sharpe is saved. The filename asserts the winner is (3,15).
+  VERIFY: (a) recompute IS Sharpe for ALL 10 pairs and confirm (3,15) is in fact the
+  max (do not assume it); (b) for the saved file, Carry_Raw(t) = (F3(t)-F15(t))/F15(t),
+  Position = sign.shift(1), blank in warmup.
+
+FILE: tradebooks/carry/IS/V3_Zscore_252d_SameDay.xlsx
+  base(t)    = (F1(t) - F2(t)) / F1(t)
+  RY_Mean(t) = base.rolling(252).mean()
+  RY_Std(t)  = base.rolling(252).std()        (ddof=1)
+  Z(t)       = (base(t) - RY_Mean(t)) / RY_Std(t)
+  Carry_Raw  = Z;  Position(t) = sign(Z(t)) shifted forward 1 row, blank in warmup.
+  First 251 rows have undefined Z (rolling warmup) -> Position 0.
+
+================================================================================
+5. VALUE TRADEBOOKS
+================================================================================
+Two families:
+  V1 (MA Reversion on a curve contract Fk), threshold = ±0.10, Lag = shift 1:
+    p(t)    = crv[Fk](t)
+    MA(t)   = p.rolling(N, min_periods = N//2).mean()
+    Dev(t)  = (p(t) - MA(t)) / MA(t)
+    Raw_Signal(t) = +1 if Dev(t) < -0.10 ; -1 if Dev(t) > +0.10 ; else 0
+        (NOTE the direction: price BELOW MA by >10% => +1 LONG; ABOVE by >10% => -1 SHORT)
+    Position(t)   = Raw_Signal(t-1)  (shift 1, blank in warmup).
+    PnL on f1c. Threshold band creates flat (0) days.
+  V2 (Baz-Granger reversal on f1r), no threshold, Lag = shift 1:
+    Reversal(t)   = f1r(t-N) - f1r(t)
+    Raw_Signal(t) = sign(Reversal(t))     (+1 if price fell over N rows)
+    Position(t)   = Raw_Signal(t-1)  (shift 1, blank in warmup).  Always ±1 once defined.
+
+V1 FILES (k = contract index, N = lookback in rows):
+  tradebooks/value/IS/V1_F8_5yr_Lag1.xlsx             -> k=8,  N=1260
+  tradebooks/value/IS/V1_F12_5yr_Lag1.xlsx            -> k=12, N=1260
+  tradebooks/value/IS/V1_F14_7yr_Lag1.xlsx            -> k=14, N=1764
+  tradebooks/value/IS/V1_F14_10yr_Lag1.xlsx           -> k=14, N=2520
+  VERIFY for each: correct Fk column, rolling window N with min_periods = N//2,
+  deviation sign/threshold mapping (the LONG-when-cheap direction above), shift 1,
+  PnL on f1c. Do NOT assume F8 (or any) is the "best" — recompute and compare Sharpes.
+
+V2 FILES (N = lookback in rows):
+  tradebooks/value/IS/V2_BG_3yr_Lag1.xlsx             -> N=756
+  tradebooks/value/IS/V2_BG_10yr_Lag1.xlsx            -> N=2520
+  VERIFY: Reversal = f1r.shift(N) - f1r (order matters: past minus present),
+  sign, shift 1, blank in warmup, PnL on f1c.
+
+VALUE OOS WALK-FORWARD (IS=1260, OOS=252, non-overlapping OOS, params FIXED):
+  The full-history position is computed once with the file's fixed params, then
+  sliced into each OOS window; per-window Gross/Net Sharpe, Ann Return %, % active.
+  tradebooks/value/OOS/V1_F8_5yr_OOS_WalkForward.xlsx   -> v1, k=8,  N=1260
+  tradebooks/value/OOS/V1_F12_5yr_OOS_WalkForward.xlsx  -> v1, k=12, N=1260
+  tradebooks/value/OOS/V2_BG_3yr_OOS_WalkForward.xlsx   -> v2, N=756
+  tradebooks/value/OOS/V2_BG_10yr_OOS_WalkForward.xlsx  -> v2, N=2520
+  VERIFY: identical position formula to the IS files; window boundaries; CumPnL
+  resets per window; AVERAGE row.
+
+================================================================================
+6. PORTFOLIO TRADEBOOKS  (equal-weight of three legs)
+================================================================================
+The three legs (each a position series, all PnL on f1c):
+  Mom_Position(t)   = sign(MA_35(f1r) - MA_43(f1r)).shift(1).fillna(0)   [Lag-1]
+  Carry_Position(t) = let cr_base = (F1-F2)/F1, cr_mom = cr_base - cr_base.shift(20);
+                      = sign(cr_mom).shift(1)   [Carry Momentum 20d, Same-Day = shift 1]
+  Val_Position(t)   = V1 with k=8, N=1260, threshold ±0.10, shift 1 (same as the V1
+                      value definition in section 5).
+  Port_Position_EW(t) = (Mom_Position + Carry_Position + Val_Position) / 3
+  All legs are aligned on the intersection of their indices with f1c before combining.
+
+FILE: tradebooks/portfolio/IS/PORT_IS_EW_Fixed.xlsx
+  Full-history EW portfolio. Tradebook shows each leg's position, each leg's
+  Gross PnL and CumPnL, and the composite Port PnL/CumPnL plus TC/Net columns
+  (TC computed on the composite Port_Position).
+  Performance sheet compares Portfolio vs each standalone leg.
+  VERIFY: the three leg definitions EXACTLY (especially the carry leg = 20-row
+  momentum of roll yield, shift 1, NOT the raw level), the 1/3 averaging, and that
+  composite TC uses chg of the COMPOSITE position (a single-leg flip changes the
+  composite by ±2/3, so its TC = (1/3) of a one-signal flip TC).
+
+FILE: tradebooks/portfolio/OOS/PORT_OOS_MethodA_EW_WalkForward.xlsx
+  Method A = EW Fixed walk-forward. Same three legs, fixed 1/3 weights (NO weight
+  optimization). Windows IS=1260 / OOS=252, non-overlapping OOS. Per window report
+  each leg's Sharpe, the portfolio Gross & Net 5bps Sharpe, Ann Return %, Max DD.
+  VERIFY: legs identical to the IS file; weights stay 1/3 (this is Method A, not an
+  optimized variant); per-window Sharpe on active days; AVERAGE and "% Positive" rows.
+
+================================================================================
+7. CROSS-CUTTING CHECKS TO REPORT ON
+================================================================================
+  1. Look-ahead: for every file confirm the exact shift count stated. Momentum and
+     Value positions use shift 1 on the (already-defined) signal. Carry "Same-Day"
+     uses shift 1 on sign(raw). The carry-momentum and portfolio carry leg use
+     shift 1 on sign(20-row diff). Any file where PnL(t) could use a position
+     derived from data at time > t-? is a FAIL — state it explicitly.
+  2. PnL series: every file must use f1c (F1_continuous) for PnL, even when the
+     signal uses f1r, crv[Fk], or cash. Confirm.
+  3. TC: rate 0.00025 (=5/10000/2); first-row chg = |first position|; Net = Gross - TC.
+  4. Sharpe: active days only, ddof=1, *sqrt(252). Ann Return: ALL days, *252*100.
+     Max DD: USD/MT on PnL cumsum (negative number), not percent.
+  5. Walk-forward (all OOS files): IS=1260, OOS=252, OOS windows non-overlapping,
+     first OOS at index position 1260, trailing partial window marked "*" and kept.
+  6. Some labels assert performance rankings (IS-best
+     pair). Independently recompute and confirm or refute each ranking claim.
+  7. Report, per file: PASS (matches stated logic within rounding) or FAIL (list the
+     column, date, expected vs observed). If a stated ranking/label is wrong but the
+     math is internally consistent, report that separately as a LABEL issue.
+
+End of prompt.

@@ -81,7 +81,7 @@ F1_continuous column is used for ALL PnL calculations regardless of signal sourc
 | 7yr | F14 | 0.193 | +4.3% | −61% | 34% |
 | 10yr | F14 | 0.165 | +3.5% | −55% | 30% |
 
-Mark Bogorad's reference (F12, 5yr): Sharpe = 0.184 — valid for energy, sub-optimal for copper.
+NGL energy risk-premia paper reference (F12, 5yr): valid for energy, sub-optimal for copper.
 Empirically optimal for copper: **F8 at 5yr lookback**.
 
 ### V2 Baz-Granger — All Lookbacks
