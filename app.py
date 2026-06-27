@@ -2070,14 +2070,6 @@ with tab7:
             "TC - OOS Section", list(_oos_tc_map.keys()), index=0, key="oos_tc_sel"
         )
         _oos_tc_bps = _oos_tc_map[_oos_tc_label]
-    with _oos_tc_row[1]:
-        st.markdown(
-            '<div style="padding:10px 0;color:#7A7068;font-size:0.78rem;">'
-            'TC sensitivity for the OOS walk-forward. At 0 bps the gross Sharpe is shown. '
-            'At non-zero TC, positions are re-derived dynamically for MA(35,43) Same-Day with '
-            'round-trip costs deducted on every signal flip.</div>',
-            unsafe_allow_html=True,
-        )
 
     _wf_active     = _wf_ma3543_tc(f1r, f1c, _oos_tc_bps)
     # Anchors + IS-opt walk-forward - computed live for ALL OOS windows (TC-aware).
@@ -2277,14 +2269,13 @@ with tab7:
 
     # ── SECTION 2: IS PARAMETER SEARCH (IN-SAMPLE) ────────────────────────────
     _m_is_yr0 = str(f1r.index[0].year); _m_is_yr1 = str(f1r.index[-1].year)
-    _mom_is_exp = st.expander(f"IS Parameter Search ({_m_is_yr0}-{_m_is_yr1} In-Sample)", expanded=False)
-    _mom_is_exp.__enter__()
-
+    st.divider()
+    section_header(f"IN-SAMPLE PARAMETER SEARCH ({_m_is_yr0}-{_m_is_yr1})")
     st.markdown(
         '<div style="background:#1A1200;border:1px solid #3A2E00;border-left:4px solid #F59E0B;'
         'border-radius:4px;padding:8px 14px;margin-bottom:10px;font-size:0.82rem;color:#D4A843;">'
         f'&#9888;  IN-SAMPLE BACKTEST - Results use full {_m_is_yr0}-{_m_is_yr1} history. '
-        'Not held-out data. See walk-forward section above for OOS estimates.</div>',
+        'Not held-out data. See the walk-forward section for OOS estimates.</div>',
         unsafe_allow_html=True,
     )
 
@@ -2915,7 +2906,6 @@ with tab7:
 - All % metrics (Ann Return, Std Dev, Max DD, Calmar, Sortino) computed from daily_ret
 - Sharpe = Ann_ret / Ann_std (unitless, consistent across gross/net)
         """)
-    _mom_is_exp.__exit__(None, None, None)
 
     st.markdown(
         '<div style="background:#0D1117;border:1px solid #2A2A2A;border-left:4px solid #475569;'
