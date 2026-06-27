@@ -3590,67 +3590,6 @@ with tab8:
     fig_c8cum.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
     st.plotly_chart(fig_c8cum, use_container_width=True)
 
-    # ── Carry Signal History (full timeline) ──────────────────────────────────
-    st.divider()
-    section_header("CARRY SIGNAL HISTORY")
-
-    carry_pct_series = carry_raw * 100
-    fig_csh = make_subplots(
-        rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35],
-        vertical_spacing=0.04,
-    )
-    fig_csh.add_trace(go.Scatter(
-        x=carry_pct_series.index, y=carry_pct_series.values,
-        name="Carry Value (%)", mode="lines",
-        line=dict(color=COLORS["primary"], width=1.5),
-        hovertemplate="%{x|%b %d, %Y}<br>Carry: %{y:.4f}%<extra></extra>",
-    ), row=1, col=1)
-    fig_csh.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1.2, row=1, col=1)
-
-    # Shaded regions for backwardation / contango
-    _back_arr = carry_pct_series.where(_c8_back_mask, np.nan)
-    _cont_arr = carry_pct_series.where(_c8_cont_mask, np.nan)
-    fig_csh.add_trace(go.Scatter(
-        x=_back_arr.index, y=_back_arr.values,
-        name="Backwardation", mode="lines",
-        line=dict(color="#5BAD72", width=0), fill="tozeroy",
-        fillcolor="rgba(91,173,114,0.18)",
-        hovertemplate="%{x|%b %d, %Y}<br>Back.: %{y:.4f}%<extra></extra>",
-    ), row=1, col=1)
-    fig_csh.add_trace(go.Scatter(
-        x=_cont_arr.index, y=_cont_arr.values,
-        name="Contango", mode="lines",
-        line=dict(color="#B85450", width=0), fill="tozeroy",
-        fillcolor="rgba(184,84,80,0.18)",
-        hovertemplate="%{x|%b %d, %Y}<br>Cont.: %{y:.4f}%<extra></extra>",
-    ), row=1, col=1)
-
-    _sig_long_c8  = _c8_sig_bin.where(_c8_sig_bin > 0, 0.0)
-    _sig_short_c8 = _c8_sig_bin.where(_c8_sig_bin < 0, 0.0)
-    fig_csh.add_trace(go.Bar(
-        x=_c8_idx, y=_sig_long_c8.values,
-        name="Long (+1)", marker_color="#00E676", opacity=1.0,
-        hovertemplate="%{x|%b %d, %Y}<br>Long<extra></extra>",
-    ), row=2, col=1)
-    fig_csh.add_trace(go.Bar(
-        x=_c8_idx, y=_sig_short_c8.values,
-        name="Short (-1)", marker_color="#FF1744", opacity=1.0,
-        hovertemplate="%{x|%b %d, %Y}<br>Short<extra></extra>",
-    ), row=2, col=1)
-
-    fig_csh.update_layout(
-        **CHART_LAYOUT, height=500, barmode="overlay",
-        title=dict(text=f"{carry_sub_label} - Raw Carry Value & Binary Signal", font=dict(size=13)),
-        hovermode="x unified", showlegend=True,
-    )
-    fig_csh.update_yaxes(title_text="Carry (%)", row=1, col=1)
-    fig_csh.update_yaxes(title_text="Signal", tickvals=[-1, 0, 1],
-                          ticktext=["Short", "Flat", "Long"], row=2, col=1)
-    fig_csh.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
-    st.plotly_chart(fig_csh, use_container_width=True)
-    st.caption("Top: raw carry value (continuous magnitude). Green fill = backwardation (long), Red fill = contango (short). "
-               "Bottom: resulting binary signal.")
-
     # ── Section 8: Annual PnL ─────────────────────────────────────────────────
     st.divider()
     section_header("ANNUAL PnL BREAKDOWN (Gross, USD/MT)")
@@ -3737,43 +3676,64 @@ with tab8:
         st.caption("Short-to-medium tenors (F3-F15, F4-F16) typically carry more predictive power than long-end pairs (F12-F24), "
                    "where price noise dominates. A decaying Sharpe across tenor pairs is a structural finding.")
 
-    # ── Section 10: Signal & Position Over Time ────────────────────────────────
+    # ── Section 9: Carry Signal & Position (merged) ───────────────────────────
     st.divider()
-    section_header("SIGNAL & POSITION OVER TIME")
-    st.caption("F1_continuous price (USD/MT) with carry-driven position overlay. "
-               "Unlike the Carry History chart above, this shows *which price moves* the position captured.")
+    section_header("CARRY SIGNAL & POSITION")
+    st.caption("The whole strategy in one view: the raw carry value with regime shading (top), "
+               "the F1 price it trades (middle), and the resulting long/short position (bottom).")
 
+    _c8_carry_pct = carry_raw * 100
     fig_c8sig = make_subplots(
-        rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35],
+        rows=3, cols=1, shared_xaxes=True, row_heights=[0.38, 0.38, 0.24],
         vertical_spacing=0.04,
     )
+    # Row 1: carry value with backwardation / contango shading
+    fig_c8sig.add_trace(go.Scatter(
+        x=_c8_carry_pct.index, y=_c8_carry_pct.values, name="Carry Value (%)",
+        line=dict(color=COLORS["amber"], width=1.4),
+        hovertemplate="%{x|%b %d, %Y}<br>Carry: %{y:.4f}%<extra></extra>",
+    ), row=1, col=1)
+    fig_c8sig.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1, row=1, col=1)
+    fig_c8sig.add_trace(go.Scatter(
+        x=_c8_carry_pct.where(_c8_back_mask, np.nan).index,
+        y=_c8_carry_pct.where(_c8_back_mask, np.nan).values,
+        name="Backwardation", line=dict(color="#5BAD72", width=0), fill="tozeroy",
+        fillcolor="rgba(91,173,114,0.18)", showlegend=False, hoverinfo="skip",
+    ), row=1, col=1)
+    fig_c8sig.add_trace(go.Scatter(
+        x=_c8_carry_pct.where(_c8_cont_mask, np.nan).index,
+        y=_c8_carry_pct.where(_c8_cont_mask, np.nan).values,
+        name="Contango", line=dict(color="#B85450", width=0), fill="tozeroy",
+        fillcolor="rgba(184,84,80,0.18)", showlegend=False, hoverinfo="skip",
+    ), row=1, col=1)
+    # Row 2: F1 continuous price
     fig_c8sig.add_trace(go.Scatter(
         x=cf1c_a.index, y=cf1c_a.values, name="F1 Continuous ($/MT)",
         line=dict(color=COLORS["primary"], width=1.5),
         hovertemplate="%{x|%b %d, %Y}<br>F1_cont: $%{y:,.1f}<extra></extra>",
-    ), row=1, col=1)
-
+    ), row=2, col=1)
+    # Row 3: position
     _c8p_long  = carry_pos.where(carry_pos > 0, 0.0)
     _c8p_short = carry_pos.where(carry_pos < 0, 0.0)
     fig_c8sig.add_trace(go.Bar(
-        x=carry_pos.index, y=_c8p_long.values,
-        name="Long (+1)", marker_color="#00E676", opacity=1.0,
+        x=carry_pos.index, y=_c8p_long.values, name="Long (+1)",
+        marker_color="#00E676", opacity=1.0,
         hovertemplate="%{x|%b %d, %Y}<br>Long<extra></extra>",
-    ), row=2, col=1)
+    ), row=3, col=1)
     fig_c8sig.add_trace(go.Bar(
-        x=carry_pos.index, y=_c8p_short.values,
-        name="Short (-1)", marker_color="#FF1744", opacity=1.0,
+        x=carry_pos.index, y=_c8p_short.values, name="Short (-1)",
+        marker_color="#FF1744", opacity=1.0,
         hovertemplate="%{x|%b %d, %Y}<br>Short<extra></extra>",
-    ), row=2, col=1)
-
+    ), row=3, col=1)
     fig_c8sig.update_layout(
-        **CHART_LAYOUT, height=480, barmode="overlay",
-        title=dict(text=f"{carry_sub_label} - F1 Price & Position ({carry_timing})", font=dict(size=13)),
+        **CHART_LAYOUT, height=560, barmode="overlay",
+        title=dict(text=f"{carry_sub_label} - Carry Value, Price & Position ({carry_timing})", font=dict(size=13)),
         hovermode="x unified", showlegend=True,
     )
-    fig_c8sig.update_yaxes(title_text="F1_cont ($/MT)", row=1, col=1)
+    fig_c8sig.update_yaxes(title_text="Carry (%)", row=1, col=1)
+    fig_c8sig.update_yaxes(title_text="F1 ($/MT)", row=2, col=1)
     fig_c8sig.update_yaxes(title_text="Position", tickvals=[-1, 0, 1],
-                             ticktext=["Short", "Flat", "Long"], row=2, col=1)
+                             ticktext=["Short", "Flat", "Long"], row=3, col=1)
     fig_c8sig.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
     st.plotly_chart(fig_c8sig, use_container_width=True)
 
@@ -4787,43 +4747,7 @@ with tab9:
     )
     st.plotly_chart(fig_v9ann, use_container_width=True)
 
-    # ── Section 9: Signal & Position Over Time ────────────────────────────────
-    st.divider()
-    section_header("SIGNAL & POSITION OVER TIME")
-    st.caption("F1_continuous price with three-state value-driven position overlay.")
-
-    fig_v9sig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                               row_heights=[0.65, 0.35], vertical_spacing=0.04)
-    fig_v9sig.add_trace(go.Scatter(
-        x=vf1c_a.index, y=vf1c_a.values, name="F1 Continuous ($/MT)",
-        line=dict(color=COLORS["primary"], width=1.5),
-        hovertemplate="%{x|%b %d, %Y}<br>F1_cont: $%{y:,.1f}<extra></extra>",
-    ), row=1, col=1)
-
-    _v9p_long  = val_pos.where(val_pos > 0, 0.0)
-    _v9p_short = val_pos.where(val_pos < 0, 0.0)
-    _v9p_flat  = val_pos.where(val_pos == 0, 0.5) if val_is_v1 else None
-    fig_v9sig.add_trace(go.Bar(x=val_pos.index, y=_v9p_long.values,
-        name="Long (+1)", marker_color="#00E676", opacity=1.0), row=2, col=1)
-    fig_v9sig.add_trace(go.Bar(x=val_pos.index, y=_v9p_short.values,
-        name="Short (-1)", marker_color="#FF1744", opacity=1.0), row=2, col=1)
-    if _v9p_flat is not None:
-        fig_v9sig.add_trace(go.Bar(x=val_pos.index, y=_v9p_flat.values,
-            name="Flat (0)", marker_color="#475569", opacity=0.4), row=2, col=1)
-
-    fig_v9sig.update_layout(
-        **CHART_LAYOUT, height=480, barmode="overlay",
-        title=dict(text=f"{val_vgroup} - F1 Price & Three-State Position", font=dict(size=13)),
-        hovermode="x unified", showlegend=True,
-    )
-    fig_v9sig.update_yaxes(title_text="F1_cont ($/MT)", row=1, col=1)
-    _tickvals = [-1, 0, 1] if val_is_v1 else [-1, 1]
-    _ticktext  = ["Short", "Flat", "Long"] if val_is_v1 else ["Short", "Long"]
-    fig_v9sig.update_yaxes(title_text="Position", tickvals=_tickvals, ticktext=_ticktext, row=2, col=1)
-    fig_v9sig.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
-    st.plotly_chart(fig_v9sig, use_container_width=True)
-
-    # ── Section 10: Recent Signal Changes ─────────────────────────────────────
+    # ── Section 9: Recent Signal Changes ──────────────────────────────────────
     st.divider()
     section_header("RECENT SIGNAL CHANGES (Last 20)")
 
