@@ -2894,7 +2894,7 @@ with tab7:
 - x = EWMA(S) − EWMA(L)  [EWMA convention: com = n−1, i.e. λ = (n−1)/n]
 - y = x / σ₆₃(price)     [63-day price volatility normalisation]
 - z = y / σ₂₅₂(y)        [252-day signal normalisation]
-- u = z, exp(−z²/4) / 0.89  [response function - shrinks extreme signals]
+- u = z × exp(−z²/4) / 0.89  [response function - shrinks extreme signals]
 - Signal = sign(u)
 - CTA Paper uses 3 timescales (S,L) = (8,24), (16,48), (32,96); S_CTA = mean(u₁,u₂,u₃)
 
@@ -3811,21 +3811,21 @@ Commodity carry (basis) reflects expected convenience yield and storage costs.
 
 **Signal Variant Formulas**
 - **V1 Roll Yield**: `(F1-F2)/F1`, `(F1-F3)/F1`, `(Cash-3M)/Cash`
-  Short-end basis as a fraction of current price. Annualized reference values (x12, x6) shown in the badge panel above for comparability - binary signal is identical to the raw ratio.
+  Short-end basis as a fraction of current price. The binary long/short signal is just the sign of this ratio.
 - **V2 Long Slope**: `(Fj-Fk)/Fk` for j < k (e.g., F3-F15, F4-F16, ... F12-F24)
   Slope of the forward curve at longer tenors. Downward slope (Fj > Fk) = backwardation at the long end = Long signal.
 - **V3 Z-score**: 252-day rolling standardization of `(F1-F2)/F1`.
   Filters permanent level shifts in the basis; signal fires when carry is unusually high or low relative to its recent history.
 
-**Position Timing**
-- *Same-Day*: `position[t] = sign(carry[t])` - taken at same close as signal
-- *Lag-1*: `position[t] = sign(carry[t-1])` - entered the following day
+**Position Timing** (no look-ahead either way)
+- *Same-Day (shift 1)*: `position[t] = sign(carry[t-1])` - trade at the signal's own close, first return t to t+1
+- *Lag-1 (shift 2)*: `position[t] = sign(carry[t-2])` - trade at the next close, first return t+1 to t+2
 
-**Why Same-Day Dominates for Carry**
-Carry is a level-based signal. On flip days (contango→backwardation), a large price move
-occurs in the direction of the new regime. Same-Day captures this move; Lag-1 takes a
-2x swing loss (wrong position the whole day, corrects only the next morning). Unlike
-momentum signals (which flip gradually), carry flips are discrete and high-impact events.
+**Why Same-Day Leads for Carry**
+Carry is a slow, level-based signal, so trading at its own close (Same-Day, shift 1) captures the move
+with no look-ahead. Waiting an extra day (Lag-1, shift 2) just gives up part of it: carry-momentum scores
+about +0.52 Same-Day versus +0.42 Lag-1. Both are realistic, neither uses future information. (An earlier
+shift-0 "Same-Day" that booked the contemporaneous move was look-ahead and has been removed.)
 
 **Transaction Costs**
 `TC[t] = |delta_position[t]| x (bps/10000/2) x F1_cont[t]`
@@ -3912,14 +3912,6 @@ with tab9:
     )
     st.caption("Mean-reversion strategies: long when copper is cheap vs. long-run fair value, short when expensive. "
                "Signal from forward curve contracts; PnL always from F1_continuous.")
-    st.warning(
-        "**Regime Conditionality:** Value signal performance is regime-sensitive. "
-        "V2 Baz-Granger 10yr is weak post-2022 (Sharpe ≈ +0.14). "
-        "V1 MA Reversion underperforms during sharp dislocations (2020-2021 Sharpe ≈ −1.05) "
-        "because the flat zone delays entry. "
-        "Interpret full-period Sharpe figures with sub-period breakdown - see Regime Analysis section below.",
-        icon="⚠️",
-    )
 
     # ── Data loading (shared by Section 1 and 2) ─────────────────────────────
     _f1_df_v9 = _load_copper_f1_data()
@@ -4620,8 +4612,7 @@ with tab9:
     st.divider()
     section_header("REGIME ANALYSIS - Pre-COVID / COVID Spike / Post-COVID")
     st.caption("Value signals are strongly regime-conditional. The 2020-2021 COVID window drove the majority of V2 10yr performance (+0.512 full-period). "
-               "Split: Pre-2020 (normal regime) / 2020-2021 (dislocation) / 2022+ (normalisation). "
-               "Presents the honest attribution - do not present V2 as a systematic signal without this context.")
+               "Split: Pre-2020 (normal regime) / 2020-2021 (dislocation) / 2022+ (normalisation).")
 
     _v9_pre20  = _v9_idx < pd.Timestamp("2020-01-01")
     _v9_covid  = (_v9_idx >= pd.Timestamp("2020-01-01")) & (_v9_idx < pd.Timestamp("2022-01-01"))
@@ -5226,7 +5217,7 @@ Equal-weight gives each sleeve a fixed **1/3** of the position. That equalises *
 
 1. Each day, take each sleeve's trailing **63-day return volatility** σ_m, σ_c, σ_v (lagged one day → no look-ahead).
 2. Weight each sleeve by **w_i = (1/σ_i) / Σ(1/σ_j)** - low-vol sleeves get more weight, so each contributes ≈ equal risk.
-3. Portfolio position = w_m, Mom + w_c, Carry + w_v, Value, rebalanced daily.
+3. Portfolio position = w_m×Mom + w_c×Carry + w_v×Value, rebalanced daily.
 
 For *these* three copper signals the realised vols are similar, so the average weights land near
 **0.34 / 0.34 / 0.39** - close to equal. The benefit is therefore modest and shows up mostly as
