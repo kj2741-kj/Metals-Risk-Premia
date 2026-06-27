@@ -3939,6 +3939,47 @@ with tab9:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Best Value Signal Summary ─────────────────────────────────────────────
+    st.divider()
+    section_header("BEST VALUE SIGNAL - BY VARIANT")
+    st.caption(
+        f"Best-performing configuration per variant. IS backtest, Full period {vf1c.index[0].year}-{vf1c.index[-1].year}, 0 TC, Same-Day entry, Gross Sharpe."
+    )
+    _vbsc1, _vbsc2 = st.columns(2)
+    _vbcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
+              "border-radius:4px;padding:14px 20px")
+    _vblbl = ("color:#B87333;font-family:'IBM Plex Mono',monospace;"
+              "font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _vbbig = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
+              "font-size:1.55rem;font-weight:700;margin:0")
+    _vbsub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
+    _vbhr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
+    with _vbsc1:
+        st.markdown(f"""<div style="{_vbcs}">
+<p style="{_vblbl}">V1 - MA Reversion</p>
+<p style="{_vbbig}">+0.277</p>
+<p style="{_vbsub}">Sharpe Ratio (Gross)</p>
+<hr style="{_vbhr}"/>
+<p style="{_vbsub}">F8, 5yr Lookback, ±10% Threshold, Same-Day</p>
+<p style="{_vbsub}">Ann Ret ≈ +7.1%, Max DD ≈ −67%, 38% Flat Days</p>
+<p style="{_vbsub}">Note: F12 is Bogorad's energy reference (Sharpe +0.184 for copper)</p>
+</div>""", unsafe_allow_html=True)
+    with _vbsc2:
+        st.markdown(f"""<div style="{_vbcs}">
+<p style="{_vblbl}">V2 - Baz-Granger Reversal</p>
+<p style="{_vbbig}">+0.512</p>
+<p style="{_vbsub}">Sharpe Ratio (Gross)</p>
+<hr style="{_vbhr}"/>
+<p style="{_vbsub}">F1_raw, 10yr Lookback, Same-Day</p>
+<p style="{_vbsub}">Ann Ret ≈ +10.2%, Max DD ≈ −44%</p>
+<p style="{_vbsub}">Non-monotonic: 5yr is a trap (Sharpe −0.14) - use 3yr or 10yr</p>
+</div>""", unsafe_allow_html=True)
+    st.caption(
+        "Same-Day (shift-1, no look-ahead) is the default: for V2 Baz-Granger it beats Lag-1 (+0.51 vs +0.37); "
+        "for V1 MA-Reversion the two are close (Lag-1 marginally ahead, e.g. F8 +0.33 vs +0.28). "
+        "Value edge is regime-conditional - most P&L is concentrated in the 2020-2022 COVID dislocation period."
+    )
+
     # ── SECTION 2: IS PARAMETER SEARCH ───────────────────────────────────────
     st.divider()
     _v9_is_yr0 = str(vf1c.index[0].year); _v9_is_yr1 = str(vf1c.index[-1].year)
@@ -4089,47 +4130,6 @@ with tab9:
         v9_net_ret   = (v9_net_pnl   / v9_f1c_prev).replace([np.inf, -np.inf], np.nan)
 
     last_date_v9 = _v9_idx[-1]
-
-    # ── Best Value Signal Summary ─────────────────────────────────────────────
-    st.divider()
-    section_header("BEST VALUE SIGNAL - BY VARIANT")
-    st.caption(
-        f"Best-performing configuration per variant. IS backtest, Full period {_v9_is_yr0}-{_v9_is_yr1}, 0 TC, Same-Day entry, Gross Sharpe."
-    )
-    _vbsc1, _vbsc2 = st.columns(2)
-    _vbcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
-              "border-radius:4px;padding:14px 20px")
-    _vblbl = ("color:#B87333;font-family:'IBM Plex Mono',monospace;"
-              "font-size:0.85rem;font-weight:600;margin:0 0 6px")
-    _vbbig = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
-              "font-size:1.55rem;font-weight:700;margin:0")
-    _vbsub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
-    _vbhr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
-    with _vbsc1:
-        st.markdown(f"""<div style="{_vbcs}">
-<p style="{_vblbl}">V1 - MA Reversion</p>
-<p style="{_vbbig}">+0.277</p>
-<p style="{_vbsub}">Sharpe Ratio (Gross)</p>
-<hr style="{_vbhr}"/>
-<p style="{_vbsub}">F8, 5yr Lookback, ±10% Threshold, Same-Day</p>
-<p style="{_vbsub}">Ann Ret ≈ +7.1%, Max DD ≈ −67%, 38% Flat Days</p>
-<p style="{_vbsub}">Note: F12 is Bogorad's energy reference (Sharpe +0.184 for copper)</p>
-</div>""", unsafe_allow_html=True)
-    with _vbsc2:
-        st.markdown(f"""<div style="{_vbcs}">
-<p style="{_vblbl}">V2 - Baz-Granger Reversal</p>
-<p style="{_vbbig}">+0.512</p>
-<p style="{_vbsub}">Sharpe Ratio (Gross)</p>
-<hr style="{_vbhr}"/>
-<p style="{_vbsub}">F1_raw, 10yr Lookback, Same-Day</p>
-<p style="{_vbsub}">Ann Ret ≈ +10.2%, Max DD ≈ −44%</p>
-<p style="{_vbsub}">Non-monotonic: 5yr is a trap (Sharpe −0.14) - use 3yr or 10yr</p>
-</div>""", unsafe_allow_html=True)
-    st.caption(
-        "Same-Day (shift-1, no look-ahead) is the default: for V2 Baz-Granger it beats Lag-1 (+0.51 vs +0.37); "
-        "for V1 MA-Reversion the two are close (Lag-1 marginally ahead, e.g. F8 +0.33 vs +0.28). "
-        "Value edge is regime-conditional - most P&L is concentrated in the 2020-2022 COVID dislocation period."
-    )
 
     # ── Live Signal Badge ─────────────────────────────────────────────────────
     _v9_last_raw = float(val_raw.iloc[-1])
