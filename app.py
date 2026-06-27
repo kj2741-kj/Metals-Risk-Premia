@@ -4908,7 +4908,10 @@ with tab10:
     p10_crv.index = pd.to_datetime(p10_crv.index).normalize()
     p10_crv = p10_crv.sort_index()
 
-    # ── Signal 1: Momentum MA(35,43) Lag-1 ────────────────────────────────────
+    # ── Signal 1: Momentum MA(35,43), shift-1 execution ───────────────────────
+    # shift-1 = signal at close(t) sets the position for the t->t+1 return (the
+    # Momentum tab labels this timing "Same-Day"; no look-ahead). All three legs
+    # below use the same shift-1 convention.
     _p10_mom_pos = np.sign(pf1r.rolling(35).mean() - pf1r.rolling(43).mean()).shift(1).fillna(0)
 
     # ── Signal 2: Carry Momentum 20d (best walk-forward OOS carry signal +0.50) ─
@@ -4921,7 +4924,7 @@ with tab10:
         st.error("F1 or F2 column missing from curve data.")
         st.stop()
 
-    # ── Signal 3A: Value V1 F8 5yr Lag-1 ±10% ────────────────────────────────
+    # ── Signal 3A: Value V1 F8 5yr ±10%, shift-1 execution ───────────────────
     _p10_val_v1_ok = "F8" in p10_crv.columns
     if _p10_val_v1_ok:
         _p10_f8 = p10_crv["F8"].dropna()
@@ -4932,7 +4935,7 @@ with tab10:
     else:
         _p10_val_v1_pos = pd.Series(0.0, index=pf1c.index)
 
-    # ── Signal 3B: Value V2 BG 10yr Lag-1 ────────────────────────────────────
+    # ── Signal 3B: Value V2 BG 10yr, shift-1 execution ───────────────────────
     _p10_rev10 = (pf1r.shift(2520) - pf1r).replace([np.inf, -np.inf], np.nan).dropna()
     _p10_val_v2_pos = np.sign(_p10_rev10).shift(1).fillna(0).reindex(pf1c.index).fillna(0)
 
@@ -5358,7 +5361,7 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     for _name, _series, _color, _width in [
         ("EW Portfolio",         _p10_cum_port, COLORS["primary"], 2.5),
         ("Momentum MA(35,43)",   _p10_cum_mom,  "#5BAD72",         1.2),
-        ("Carry V1 Same-Day",    _p10_cum_car,  COLORS["amber"],   1.2),
+        ("Carry Mom 20d",        _p10_cum_car,  COLORS["amber"],   1.2),
         ("Value (selected)",     _p10_cum_val,  "#7B8FC0",         1.2),
     ]:
         fig_p10_cum.add_trace(go.Scatter(
@@ -5518,8 +5521,10 @@ When signals split 2−1, |port| = 1/3 (reduced size). When two are zero (V1 fla
 - **Lag-1 / next-close (shift 2):** position taken at close(t+1); first return is t+1→t+2 (conservative on execution latency).
 
 The old "Same-Day" booked the t−1→t return that had *already happened* by the time the signal was known (shift 0)
-- that was pure look-ahead and is removed. It had inflated carry from ~0.10 (honest same-day) to ~0.62.
-Same-Day Sharpe: Mom +0.72, Carry +0.10, Value V1 +0.28. Lag-1: Mom +0.63, Carry +0.03, Value V1 +0.33.
+- that was pure look-ahead and is removed. (On the *level* (F1−F2)/F1 carry it had inflated the same-day
+Sharpe from ~0.10 honest to ~0.62 - which is why the portfolio carry leg uses the 20d roll-yield momentum instead.)
+Per-leg Sharpe (the actual portfolio legs): Mom MA(35,43) +0.72, Carry-Mom 20d +0.52, Value V1 F8 +0.28 (Same-Day, shift 1);
+Mom +0.63, Carry-Mom +0.42, Value +0.33 (Lag-1, shift 2).
 
 **Diversification Claim:**
 If signals are pairwise uncorrelated (ρ ≈ 0) and each has Sharpe S, then EW Sharpe ≈ √3 × S.
