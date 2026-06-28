@@ -458,6 +458,8 @@ def parse_cash_3m_columns(df, metal_name):
 # ═══════════════════════════════════════════════
 
 LOCAL_F1_CONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LME_Copper_Rolling_F1_v2.csv")
+LOCAL_AL_F1_PATH   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LME_Aluminium_Rolling_F1_v2.csv")
+_F1_PATHS = {"Copper": LOCAL_F1_CONT_PATH, "Aluminium": LOCAL_AL_F1_PATH}
 
 
 @st.cache_data(show_spinner=False)
@@ -473,6 +475,24 @@ def _load_copper_f1_data() -> pd.DataFrame:
     df.index = df.index.normalize()
     df = df.sort_index()
     return df[["F1_raw", "F1_continuous"]]
+
+
+@st.cache_data(show_spinner=False)
+def _load_f1_data(metal: str = "Copper") -> pd.DataFrame:
+    """Metal-aware rolling F1 loader (Copper / Aluminium). Same schema as _load_copper_f1_data.
+    Both files are ratio back-adjusted with the identical 4-phase roll logic."""
+    path = _F1_PATHS.get(metal, LOCAL_F1_CONT_PATH)
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    df = pd.read_csv(path, parse_dates=["Date"]).set_index("Date")
+    df.index = df.index.normalize()
+    df = df.sort_index()
+    return df[["F1_raw", "F1_continuous"]]
+
+
+def _signal_metal() -> str:
+    """Currently-selected metal for the signal tabs (sidebar toggle)."""
+    return st.session_state.get("signal_metal", "Copper")
 
 
 def _tc_label_map(last_price: float) -> dict:
@@ -525,6 +545,15 @@ with st.sidebar:
         curve_file = curve_file_override if curve_file_override else _local_bytesio(LOCAL_CURVE_PATH)
     else:
         curve_file = st.file_uploader("Metals Futures Curve", type=["xlsx", "xls", "csv", "xlsm"], key="curve")
+
+    st.divider()
+
+    st.markdown("##### 🔬 Signal Metal")
+    st.selectbox(
+        "Metal for signal tabs (Momentum / Carry / Value / Portfolio)",
+        ["Copper", "Aluminium"], index=0, key="signal_metal",
+    )
+    st.caption("Drives Tabs 7-10. Overview tabs keep their own metal pickers.")
 
     st.divider()
 
@@ -2051,12 +2080,14 @@ with tab7:
     )
 
     # ── Data loading (shared by both sections) ────────────────────────────────
-    _f1_df = _load_copper_f1_data()
+    _mom_metal = _signal_metal()
+    st.caption(f"🔬 Metal: **{_mom_metal}**  (change via the sidebar 'Signal Metal' toggle). "
+               + ("" if _mom_metal == "Copper" else
+                  "Live charts, metrics and the comparison dropdown reflect Aluminium; "
+                  "the 'best-signal' summary cards are Copper-calibrated references."))
+    _f1_df = _load_f1_data(_mom_metal)
     if _f1_df.empty:
-        st.error(
-            "LME_Copper_Rolling_F1_v2.csv not found. "
-            "Ensure it is in the same directory as app.py."
-        )
+        st.error(f"Rolling F1 file for {_mom_metal} not found. Ensure the CSV is alongside app.py.")
         st.stop()
     f1r: pd.Series = _f1_df["F1_raw"]
     f1c: pd.Series = _f1_df["F1_continuous"]
@@ -3163,14 +3194,16 @@ with tab8:
                       "deadband": carry_sub_val[1], "same_day": carry_same_day}
 
     # ── Data loading ──────────────────────────────────────────────────────────
-    _f1_df_c8 = _load_copper_f1_data()
+    _c8_metal = _signal_metal()
+    st.caption(f"🔬 Metal: **{_c8_metal}**  (sidebar 'Signal Metal' toggle).")
+    _f1_df_c8 = _load_f1_data(_c8_metal)
     if _f1_df_c8.empty:
-        st.error("LME_Copper_Rolling_F1_v2.csv not found. Place it in the same directory as app.py.")
+        st.error(f"Rolling F1 file for {_c8_metal} not found. Place the CSV beside app.py.")
         st.stop()
     cf1c = _f1_df_c8["F1_continuous"]
     cf1r = _f1_df_c8["F1_raw"]
 
-    _cu_sheet_c8 = _find_curve_sheet("Copper", curve_data) if curve_data else None
+    _cu_sheet_c8 = _find_curve_sheet(_c8_metal, curve_data) if curve_data else None
     if not curve_data or _cu_sheet_c8 is None:
         st.error("Futures Curve data not loaded. Upload Metals Futures Curve file in the sidebar.")
         st.stop()
@@ -3178,7 +3211,7 @@ with tab8:
     c8_curve_px.index = pd.to_datetime(c8_curve_px.index).normalize()
     c8_curve_px = c8_curve_px.sort_index()
 
-    _cash_cu8 = parse_cash_3m_columns(cash_data.get("Copper", pd.DataFrame()), "Copper")
+    _cash_cu8 = parse_cash_3m_columns(cash_data.get(_c8_metal, pd.DataFrame()), _c8_metal)
     if not _cash_cu8.empty:
         _cash_cu8.index = pd.to_datetime(_cash_cu8.index).normalize()
 
@@ -3912,13 +3945,17 @@ with tab9:
                "Signal from forward curve contracts; PnL always from F1_continuous.")
 
     # ── Data loading (shared by Section 1 and 2) ─────────────────────────────
-    _f1_df_v9 = _load_copper_f1_data()
+    _v9_metal = _signal_metal()
+    st.caption(f"🔬 Metal: **{_v9_metal}**  (sidebar 'Signal Metal' toggle)."
+               + ("" if _v9_metal == "Copper" else
+                  "  Live charts/metrics/dropdown reflect Aluminium; 'best-signal' cards are Copper references."))
+    _f1_df_v9 = _load_f1_data(_v9_metal)
     if _f1_df_v9.empty:
-        st.error("LME_Copper_Rolling_F1_v2.csv not found.")
+        st.error(f"Rolling F1 file for {_v9_metal} not found.")
         st.stop()
     vf1c = _f1_df_v9["F1_continuous"]
     vf1r = _f1_df_v9["F1_raw"]
-    _cu_sheet_v9 = _find_curve_sheet("Copper", curve_data) if curve_data else None
+    _cu_sheet_v9 = _find_curve_sheet(_v9_metal, curve_data) if curve_data else None
     if not curve_data or _cu_sheet_v9 is None:
         st.error("Futures Curve data not loaded. Upload Metals Futures Curve file in the sidebar.")
         st.stop()
@@ -4900,14 +4937,17 @@ with tab10:
     )
 
     # ── Load data ──────────────────────────────────────────────────────────────
-    _f1_df_p10 = _load_copper_f1_data()
+    _p10_metal = _signal_metal()
+    st.caption(f"🔬 Metal: **{_p10_metal}**  (sidebar 'Signal Metal' toggle). "
+               "Portfolio legs auto-switch to the metal's best-performing signals.")
+    _f1_df_p10 = _load_f1_data(_p10_metal)
     if _f1_df_p10.empty:
-        st.error("LME_Copper_Rolling_F1_v2.csv not found.")
+        st.error(f"Rolling F1 file for {_p10_metal} not found.")
         st.stop()
     pf1c = _f1_df_p10["F1_continuous"]
     pf1r = _f1_df_p10["F1_raw"]
 
-    _cu_sheet_p10 = _find_curve_sheet("Copper", curve_data) if curve_data else None
+    _cu_sheet_p10 = _find_curve_sheet(_p10_metal, curve_data) if curve_data else None
     if not curve_data or _cu_sheet_p10 is None:
         st.error("Futures Curve data not loaded. Upload in the sidebar.")
         st.stop()
@@ -4915,30 +4955,42 @@ with tab10:
     p10_crv.index = pd.to_datetime(p10_crv.index).normalize()
     p10_crv = p10_crv.sort_index()
 
-    # ── Signal 1: Momentum MA(35,43), shift-1 execution ───────────────────────
-    # shift-1 = signal at close(t) sets the position for the t->t+1 return (the
-    # Momentum tab labels this timing "Same-Day"; no look-ahead). All three legs
-    # below use the same shift-1 convention.
-    _p10_mom_pos = np.sign(pf1r.rolling(35).mean() - pf1r.rolling(43).mean()).shift(1).fillna(0)
+    # ── Portfolio legs: metal-specific best-of-each configs (all shift-1, no look-ahead) ──
+    #   Copper:    Momentum MA(35,43) | Carry 20d roll-yield momentum | Value V1 F8 5yr
+    #   Aluminium: Momentum MA(60,115)| Carry 252d roll-yield z-score | Value V1 F12 5yr
+    if _p10_metal == "Aluminium":
+        _P10_MA = (60, 115); _P10_CARRY = "zscore"; _P10_VK = 12
+    else:
+        _P10_MA = (35, 43);  _P10_CARRY = "carrymom"; _P10_VK = 8
+    _p10_mom_label   = f"MA({_P10_MA[0]},{_P10_MA[1]})"
+    _p10_carry_label = "Z-score 252d" if _P10_CARRY == "zscore" else "CarryMom 20d"
+    _p10_val_label   = f"V1 F{_P10_VK} 5yr"
 
-    # ── Signal 2: Carry Momentum 20d (best walk-forward OOS carry signal +0.50) ─
+    # ── Signal 1: Momentum MA crossover, shift-1 ──────────────────────────────
+    _p10_mom_pos = np.sign(pf1r.rolling(_P10_MA[0]).mean() - pf1r.rolling(_P10_MA[1]).mean()).shift(1).fillna(0)
+
+    # ── Signal 2: Carry — roll-yield momentum (copper) or 252d z-score (aluminium) ─
     if "F1" in p10_crv.columns and "F2" in p10_crv.columns:
         _p10_cr_base = ((p10_crv["F1"] - p10_crv["F2"]) / p10_crv["F1"]).replace([np.inf, -np.inf], np.nan)
-        _p10_cr_mom  = (_p10_cr_base - _p10_cr_base.shift(20)).dropna()    # 20d change in roll yield
-        # Same-day exec (shift 1, no look-ahead): signal at close(t) trades t->t+1.
-        _p10_carry_pos = np.sign(_p10_cr_mom).shift(1).reindex(pf1c.index).fillna(0)
+        if _P10_CARRY == "zscore":
+            _p10_cr_sig = ((_p10_cr_base - _p10_cr_base.rolling(252).mean())
+                           / _p10_cr_base.rolling(252).std()).replace([np.inf, -np.inf], np.nan)
+        else:
+            _p10_cr_sig = (_p10_cr_base - _p10_cr_base.shift(20))   # 20d change in roll yield
+        _p10_carry_pos = np.sign(_p10_cr_sig).shift(1).reindex(pf1c.index).fillna(0)
     else:
         st.error("F1 or F2 column missing from curve data.")
         st.stop()
 
-    # ── Signal 3A: Value V1 F8 5yr ±10%, shift-1 execution ───────────────────
-    _p10_val_v1_ok = "F8" in p10_crv.columns
+    # ── Signal 3A: Value V1 on F{VK}, 5yr MA, ±10%, shift-1 ──────────────────
+    _p10_vk_col = f"F{_P10_VK}"
+    _p10_val_v1_ok = _p10_vk_col in p10_crv.columns
     if _p10_val_v1_ok:
-        _p10_f8 = p10_crv["F8"].dropna()
-        _p10_ma8 = _p10_f8.rolling(1260, min_periods=630).mean()
-        _p10_dev8 = ((_p10_f8 - _p10_ma8) / _p10_ma8).replace([np.inf, -np.inf], np.nan).dropna()
-        _p10_v1_bin = np.where(_p10_dev8.values < -0.10, 1.0, np.where(_p10_dev8.values > 0.10, -1.0, 0.0))
-        _p10_val_v1_pos = pd.Series(_p10_v1_bin, index=_p10_dev8.index).shift(1).fillna(0).reindex(pf1c.index).fillna(0)
+        _p10_fk = p10_crv[_p10_vk_col].dropna()
+        _p10_mak = _p10_fk.rolling(1260, min_periods=630).mean()
+        _p10_devk = ((_p10_fk - _p10_mak) / _p10_mak).replace([np.inf, -np.inf], np.nan).dropna()
+        _p10_v1_bin = np.where(_p10_devk.values < -0.10, 1.0, np.where(_p10_devk.values > 0.10, -1.0, 0.0))
+        _p10_val_v1_pos = pd.Series(_p10_v1_bin, index=_p10_devk.index).shift(1).fillna(0).reindex(pf1c.index).fillna(0)
     else:
         _p10_val_v1_pos = pd.Series(0.0, index=pf1c.index)
 
@@ -4951,11 +5003,11 @@ with tab10:
     with _p10_val_col:
         _p10_val_choice = st.selectbox(
             "Value signal for portfolio",
-            ["V1: F8 5yr (OOS +0.43, robust)", "V2: BG 10yr (OOS +0.07, fragile)"],
+            ["V1: MA-reversion 5yr (default, robust)", "V2: BG 10yr reversal (fragile)"],
             index=0, key="p10_val_choice",
-            help="Default V1 F8: walk-forward OOS +0.43 (robust, improves vs IS). "
-                 "V2 BG 10yr has higher IS (+0.51) but collapses OOS to +0.07 - its edge is "
-                 "concentrated in the 2020-21 COVID window, so it is no longer the default.",
+            help=f"Default V1 is metal-specific ({_p10_val_label}): MA-reversion, robust out-of-sample. "
+                 "V2 BG 10yr has higher in-sample Sharpe but collapses out-of-sample (edge concentrated "
+                 "in the 2020-21 dislocation), so it is the alternative, not the default.",
         )
     with _p10_wt_col:
         _p10_wt_choice = st.selectbox(
@@ -5211,9 +5263,9 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     st.markdown("&nbsp;")
     _p10_ic1, _p10_ic2, _p10_ic3 = st.columns(3)
     for _col3, _lbl3, _sh3, _ann3 in [
-        (_p10_ic1, "Momentum MA(35,43)", _mom_sh, _mom_ann),
-        (_p10_ic2, "Carry-Mom 20d",      _car_sh, _car_ann),
-        (_p10_ic3, "Value (selected)",   _val_sh, _val_ann),
+        (_p10_ic1, f"Momentum {_p10_mom_label}", _mom_sh, _mom_ann),
+        (_p10_ic2, f"Carry {_p10_carry_label}",  _car_sh, _car_ann),
+        (_p10_ic3, "Value (selected)",           _val_sh, _val_ann),
     ]:
         _col3.markdown(
             f'<div style="{_p10_card_s}">'
@@ -5369,9 +5421,9 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     fig_p10_cum = go.Figure()
     for _name, _series, _color, _width in [
         ("EW Portfolio",         _p10_cum_port, COLORS["primary"], 2.5),
-        ("Momentum MA(35,43)",   _p10_cum_mom,  "#5BAD72",         1.2),
-        ("Carry Mom 20d",        _p10_cum_car,  COLORS["amber"],   1.2),
-        ("Value (selected)",     _p10_cum_val,  "#7B8FC0",         1.2),
+        (f"Momentum {_p10_mom_label}", _p10_cum_mom, "#5BAD72",       1.2),
+        (f"Carry {_p10_carry_label}",  _p10_cum_car, COLORS["amber"], 1.2),
+        ("Value (selected)",           _p10_cum_val, "#7B8FC0",       1.2),
     ]:
         fig_p10_cum.add_trace(go.Scatter(
             x=_series.index, y=_series.values,
