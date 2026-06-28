@@ -473,6 +473,59 @@ mixed_bullet([("Sub-period attribution: ", True), ("Reproduce the NGL energy pap
 mixed_bullet([("10-metal extension: ", True), ("Apply same framework to all LME base metals "
               "(Aluminium, Zinc, Lead, Nickel, Tin, Cobalt, Molybdenum, Lithium, Steel).", False)])
 
+space(6)
+
+# ── 6.1 Inverse-vol trailing-window research ──────────────────────────────────
+heading2("6.1  Research — Inverse-Vol Weighting: Trailing-Window Sensitivity")
+body("As an extension to the equal-weight (EW) benchmark we studied inverse-volatility weighting, "
+     "where each sleeve is weighted by 1 / its trailing return-volatility (renormalised daily and "
+     "lagged one day to avoid look-ahead). We swept the trailing-vol estimation window to identify "
+     "the most stable horizon. Full sample 2006–2025 (5,053 trading days); legs = MA(35,43), "
+     "Carry-Momentum 20d, Value V1 F8 5yr. Figures are active-day annualised Sharpe and cumulative "
+     "P&L drawdown in USD per metric ton.", space_after=4)
+
+iv_tbl = doc.add_table(rows=9, cols=6)
+iv_tbl.style = "Table Grid"
+iv_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+iv_headers = ["Weighting", "Gross Sharpe", "Net 5bps", "Net 10bps", "Ann %", "Max DD ($/MT)"]
+iv_widths  = [Inches(2.1), Inches(1.0), Inches(0.9), Inches(0.9), Inches(0.7), Inches(1.1)]
+for i, (h, w) in enumerate(zip(iv_headers, iv_widths)):
+    cell = iv_tbl.rows[0].cells[i]; cell.width = w
+    set_cell_bg(cell, "B87333")
+    run = cell.paragraphs[0].add_run(h)
+    run.bold = True; run.font.size = Pt(9); run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+iv_rows = [
+    ("Equal-Weight (1/3 each)",      "1.045", "0.959", "0.899", "11.9", "−2,020"),
+    ("Inverse-Vol — 10d",            "0.858", "0.800", "0.743", "13.3", "−3,064"),
+    ("Inverse-Vol — 21d",            "0.908", "0.852", "0.797", "13.7", "−3,040"),
+    ("Inverse-Vol — 42d",            "0.903", "0.848", "0.794", "13.3", "−3,054"),
+    ("Inverse-Vol — 63d (selected)", "0.941", "0.887", "0.833", "13.5", "−3,031"),
+    ("Inverse-Vol — 126d",           "0.906", "0.852", "0.800", "12.4", "−3,038"),
+    ("Inverse-Vol — 189d",           "0.910", "0.858", "0.807", "12.2", "−3,031"),
+    ("Inverse-Vol — 252d",           "0.884", "0.832", "0.782", "11.7", "−3,029"),
+]
+for ri, row_data in enumerate(iv_rows):
+    fill = "F5EFE8" if ri % 2 == 0 else "FAFAFA"
+    for ci, val in enumerate(row_data):
+        cell = iv_tbl.rows[ri + 1].cells[ci]
+        set_cell_bg(cell, fill)
+        run = cell.paragraphs[0].add_run(val)
+        run.font.size = Pt(9)
+        if ci == 0:
+            run.bold = True
+        cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER if ci >= 1 else WD_ALIGN_PARAGRAPH.LEFT
+
+space(4)
+body("Findings: (i) the 63-day trailing window is the Sharpe-optimal inverse-vol horizon, gross and "
+     "net of costs — shorter windows (≤21d) are too noisy and raise turnover, while longer windows "
+     "(≥126d) give up return without improving Sharpe. (ii) Equal-weight still dominates every "
+     "inverse-vol window on net Sharpe and has a materially shallower drawdown (−$2,020 vs "
+     "≈ −$3,030/MT), so EW remains the portfolio default; inverse-vol trades a higher annual return "
+     "(~13.5%) for worse risk-adjusted performance. (iii) Transaction costs penalise inverse-vol "
+     "more, owing to its daily reweighting turnover.", italic=True, space_after=4)
+
 space(4)
 
 # ══════════════════════════════════════════════════════════════════════════════

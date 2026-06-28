@@ -1949,10 +1949,11 @@ def _wf_ma3543_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
         pos_full = np.sign(f1r_w.rolling(35).mean() - f1r_w.rolling(43).mean()).shift(1).fillna(0)
         pos_oos = pos_full.iloc[-OOS_W:].set_axis(oos_dt)
         f1c_oos = _f1c.reindex(oos_dt)
+        f1r_oos = _f1r.reindex(oos_dt)        # TC on actual traded price F1_raw
         pnl = pos_oos * f1c_oos.diff()
         if tc_bps > 0:
             chg = pos_oos.diff().abs(); chg.iloc[0] = abs(pos_oos.iloc[0])
-            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * f1c_oos
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * f1r_oos
         with np.errstate(invalid="ignore", divide="ignore"):
             ret = (pnl / f1c_oos.shift(1)).replace([np.inf, -np.inf], np.nan)
         act = ret[pos_oos != 0].dropna()
@@ -2012,10 +2013,11 @@ def _wf_anchors_isopt_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
         w = _opt_w(np.column_stack(ret_mat))
         port = sum(wi * p.reindex(oos_dt).fillna(0) for wi, p in zip(w, pos_anchors))
         f1c_oos = _f1c.reindex(oos_dt)
+        f1r_oos = _f1r.reindex(oos_dt)        # TC on actual traded price F1_raw
         pnl = port * f1c_oos.diff()
         if tc_bps > 0:
             chg = port.diff().abs(); chg.iloc[0] = abs(port.iloc[0])
-            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * f1c_oos
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * f1r_oos
         with np.errstate(invalid="ignore", divide="ignore"):
             ret = (pnl / f1c_oos.shift(1)).replace([np.inf,-np.inf], np.nan)
         act = ret[port != 0].dropna()
@@ -2317,10 +2319,12 @@ with tab7:
     delta_s   = pd.Series(delta_np, index=f1r.index)
     gross_pnl = pos_s * delta_s
 
-    # TC in bps: cost per position change = |Δpos| × (bps/10000 / 2) × F1_price
+    # TC in bps: cost per position change = |Δpos| × (bps/10000 / 2) × F1_raw price.
+    # The spread is paid on the ACTUAL traded front-month price (F1_raw), not the
+    # back-adjusted continuous index (F1_continuous is used only for PnL accounting).
     pos_change   = pos_s.diff().abs()
     pos_change.iloc[0] = abs(pos_s.iloc[0])
-    tc_cost_s    = pos_change * (tc_bps / 10000.0 / 2.0) * f1c
+    tc_cost_s    = pos_change * (tc_bps / 10000.0 / 2.0) * f1r
     net_pnl      = gross_pnl - tc_cost_s
 
     cum_pnl_gross = gross_pnl.cumsum()
@@ -2937,7 +2941,7 @@ with tab7:
 
 **Transaction costs**
 - Expressed in basis points (bps) of notional, round-trip
-- TC_cost[t] = |Δposition[t]| × (bps / 10000 / 2) × F1_cont[t]
+- TC_cost[t] = |Δposition[t]| × (bps / 10000 / 2) × F1_raw[t]   (spread is paid on the actual traded front-month price)
 - Flip (+1→−1): |Δ|=2 → cost = 1 full round trip × price
 - Entry (0→±1): |Δ|=1 → cost = ½ round trip × price
 - Cost is time-varying (scales with copper price level)
@@ -3188,6 +3192,7 @@ with tab8:
     carry_raw = carry_raw.reindex(_c8_idx).dropna()
     _c8_idx = carry_raw.index
     cf1c_a = cf1c.reindex(_c8_idx)
+    cf1r_a = cf1r.reindex(_c8_idx)   # F1_raw aligned — used for TC, not PnL
 
     carry_sig_arr = _carry_binarize(carry_raw.values, carry_spec)
     T_c8 = len(carry_sig_arr)
@@ -3206,7 +3211,7 @@ with tab8:
     c8_gross_pnl = carry_pos * c8_delta
     c8_pos_change = carry_pos.diff().abs()
     c8_pos_change.iloc[0] = abs(carry_pos.iloc[0])
-    c8_tc_cost = c8_pos_change * (carry_tc_bps / 10000.0 / 2.0) * cf1c_a
+    c8_tc_cost = c8_pos_change * (carry_tc_bps / 10000.0 / 2.0) * cf1r_a
     c8_net_pnl = c8_gross_pnl - c8_tc_cost
     c8_cum_gross = c8_gross_pnl.cumsum()
     c8_cum_net = c8_net_pnl.cumsum()
@@ -3819,7 +3824,7 @@ about +0.52 Same-Day versus +0.42 Lag-1. Both are realistic, neither uses future
 shift-0 "Same-Day" that booked the contemporaneous move was look-ahead and has been removed.)
 
 **Transaction Costs**
-`TC[t] = |delta_position[t]| x (bps/10000/2) x F1_cont[t]`
+`TC[t] = |delta_position[t]| x (bps/10000/2) x F1_raw[t]`   (TC on the actual traded price; PnL still on F1_continuous)
 Flip (+1 to -1): delta=2, cost = 1 full round-trip x price.
 Entry (0 to +/-1): delta=1, cost = 0.5 round-trip x price.
 
@@ -3854,12 +3859,13 @@ Baz, J., Granger, N. M. (2015). Dissecting Investment Strategies in the Cross Se
 
 
 @st.cache_data(show_spinner=False)
-def _wf_value_oos_tc(_pos: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
+def _wf_value_oos_tc(_pos: pd.Series, _f1c: pd.Series, _f1r: pd.Series, tc_bps: int) -> dict:
     """Walk-forward OOS Sharpes (IS=5yr, OOS=1yr) for a fixed value position series with TC."""
     IS_W, OOS_W = 1260, 252
     idx  = _pos.index.intersection(_f1c.index)
     pos  = _pos.reindex(idx).fillna(0)
     f1cs = _f1c.reindex(idx)
+    f1rs = _f1r.reindex(idx)        # F1_raw aligned — used for TC, not PnL
     T    = len(idx)
     out  = {}
     oos_s = IS_W
@@ -3870,11 +3876,12 @@ def _wf_value_oos_tc(_pos: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
         yr      = str(idx[oos_s].year) + ("*" if (oos_e - oos_s) < OOS_W else "")
         p_oos   = pos.iloc[oos_s:oos_e]
         c_oos   = f1cs.iloc[oos_s:oos_e]
+        r_oos   = f1rs.iloc[oos_s:oos_e]
         pnl     = p_oos * c_oos.diff()
         if tc_bps > 0:
             chg = p_oos.diff().abs()
             chg.iloc[0] = abs(p_oos.iloc[0])
-            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * c_oos
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * r_oos
         with np.errstate(invalid="ignore", divide="ignore"):
             ret = (pnl / c_oos.shift(1)).replace([np.inf, -np.inf], np.nan)
         act = ret[p_oos != 0].dropna()
@@ -4121,7 +4128,7 @@ with tab9:
     v9_gross_pnl = val_pos * v9_delta
     v9_pos_change = val_pos.diff().abs()
     v9_pos_change.iloc[0] = abs(val_pos.iloc[0])
-    v9_tc_cost   = v9_pos_change * (val_tc_bps / 10000.0 / 2.0) * vf1c_a
+    v9_tc_cost   = v9_pos_change * (val_tc_bps / 10000.0 / 2.0) * vf1r_a
     v9_net_pnl   = v9_gross_pnl - v9_tc_cost
     v9_cum_pnl   = v9_gross_pnl.cumsum()
     v9_cum_net   = v9_net_pnl.cumsum()
@@ -4334,7 +4341,7 @@ with tab9:
 
     _v9_var, _v9_k, _v9_N = _V9_OOS_OPTS[_v9_oos_sig]
     _v9_pos_built = _v9_build_pos(_v9_var, _v9_k, _v9_N)
-    _v9_wf_active = _wf_value_oos_tc(_v9_pos_built, vf1c, _v9_oos_tc_bps) if not _v9_pos_built.empty else {}
+    _v9_wf_active = _wf_value_oos_tc(_v9_pos_built, vf1c, vf1r, _v9_oos_tc_bps) if not _v9_pos_built.empty else {}
 
     _v9_wf_vals    = [v for v in _v9_wf_active.values() if v is not None and not np.isnan(v)]
     _v9_wf_avg     = np.nanmean(_v9_wf_vals) if _v9_wf_vals else np.nan
@@ -4977,6 +4984,7 @@ with tab10:
     _p10_c  = _p10_carry_pos.reindex(_p10_idx).fillna(0)
     _p10_v  = _p10_val_pos.reindex(_p10_idx).fillna(0)
     _p10_f  = pf1c.reindex(_p10_idx)
+    _p10_fraw = pf1r.reindex(_p10_idx)   # F1_raw aligned — used for TC, not PnL
 
     # Equal-weight and inverse-vol composites
     _p10_port_ew = (_p10_m + _p10_c + _p10_v) / 3.0
@@ -5000,7 +5008,7 @@ with tab10:
         pnl = pos * _p10_f.diff()
         if tc_bps > 0:
             chg = pos.diff().abs(); chg.iloc[0] = abs(pos.iloc[0])
-            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * _p10_f
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * _p10_fraw
         with np.errstate(invalid="ignore", divide="ignore"):
             return (pnl / _p10_f.shift(1)).replace([np.inf, -np.inf], np.nan)
 
@@ -5017,7 +5025,7 @@ with tab10:
         pnl  = pos * _p10_f.diff()
         if tc_bps > 0:
             chg = pos.diff().abs(); chg.iloc[0] = abs(pos.iloc[0])
-            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * _p10_f
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * _p10_fraw
         cum  = pnl.cumsum()
         dd   = float((cum - cum.cummax()).min())
         flat_pct = float(100 * (pos == 0).sum() / len(pos))
@@ -5030,10 +5038,11 @@ with tab10:
         if len(idx) < 20: return np.nan
         p  = pos.reindex(idx)
         f_ = _p10_f.reindex(idx)
+        fraw_ = _p10_fraw.reindex(idx)
         pnl = p * f_.diff()
         if tc_bps > 0:
             chg = p.diff().abs(); chg.iloc[0] = abs(p.iloc[0])
-            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * f_
+            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * fraw_
         with np.errstate(invalid="ignore", divide="ignore"):
             ret = (pnl / f_.shift(1)).replace([np.inf, -np.inf], np.nan)
         return _p10_sharpe(ret)
@@ -5349,7 +5358,7 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
         pnl = pos * _p10_f.diff()
         if _p10_tc_bps > 0:
             chg = pos.diff().abs(); chg.iloc[0] = abs(pos.iloc[0])
-            pnl = pnl - chg * (_p10_tc_bps / 10000.0 / 2.0) * _p10_f
+            pnl = pnl - chg * (_p10_tc_bps / 10000.0 / 2.0) * _p10_fraw
         return pnl.cumsum()
 
     _p10_cum_port = _cum_pnl(_p10_port)
@@ -5439,7 +5448,7 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     _p10_pnl_s = _p10_port * _p10_f.diff()
     if _p10_tc_bps > 0:
         _p10_chg = _p10_port.diff().abs(); _p10_chg.iloc[0] = abs(_p10_port.iloc[0])
-        _p10_pnl_s = _p10_pnl_s - _p10_chg * (_p10_tc_bps / 10000.0 / 2.0) * _p10_f
+        _p10_pnl_s = _p10_pnl_s - _p10_chg * (_p10_tc_bps / 10000.0 / 2.0) * _p10_fraw
     _p10_ann_pnl = _p10_pnl_s.groupby(_p10_pnl_s.index.year).sum()
     _p10_ann_colors = ["#5BAD72" if v >= 0 else "#B85450" for v in _p10_ann_pnl.values]
 
