@@ -490,11 +490,6 @@ def _load_f1_data(metal: str = "Copper") -> pd.DataFrame:
     return df[["F1_raw", "F1_continuous"]]
 
 
-def _signal_metal() -> str:
-    """Currently-selected metal for the signal tabs (sidebar toggle)."""
-    return st.session_state.get("signal_metal", "Copper")
-
-
 def _tc_label_map(last_price: float) -> dict:
     """TC selectbox options with bps and $/MT per-flip equivalent in each label."""
     def _lbl(bps):
@@ -545,15 +540,6 @@ with st.sidebar:
         curve_file = curve_file_override if curve_file_override else _local_bytesio(LOCAL_CURVE_PATH)
     else:
         curve_file = st.file_uploader("Metals Futures Curve", type=["xlsx", "xls", "csv", "xlsm"], key="curve")
-
-    st.divider()
-
-    st.markdown("##### 🔬 Signal Metal")
-    st.selectbox(
-        "Metal for signal tabs (Momentum / Carry / Value / Portfolio)",
-        ["Copper", "Aluminium"], index=0, key="signal_metal",
-    )
-    st.caption("Drives Tabs 7-10. Overview tabs keep their own metal pickers.")
 
     st.divider()
 
@@ -2080,11 +2066,10 @@ with tab7:
     )
 
     # ── Data loading (shared by both sections) ────────────────────────────────
-    _mom_metal = _signal_metal()
-    st.caption(f"🔬 Metal: **{_mom_metal}**  (change via the sidebar 'Signal Metal' toggle). "
-               + ("" if _mom_metal == "Copper" else
-                  "Live charts, metrics and the comparison dropdown reflect Aluminium; "
-                  "the 'best-signal' summary cards are Copper-calibrated references."))
+    _mom_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="mom_metal")
+    if _mom_metal != "Copper":
+        st.caption("Live charts, metrics and the comparison dropdown reflect Aluminium; "
+                   "the 'best-signal' summary cards are Copper-calibrated references.")
     _f1_df = _load_f1_data(_mom_metal)
     if _f1_df.empty:
         st.error(f"Rolling F1 file for {_mom_metal} not found. Ensure the CSV is alongside app.py.")
@@ -3194,8 +3179,7 @@ with tab8:
                       "deadband": carry_sub_val[1], "same_day": carry_same_day}
 
     # ── Data loading ──────────────────────────────────────────────────────────
-    _c8_metal = _signal_metal()
-    st.caption(f"🔬 Metal: **{_c8_metal}**  (sidebar 'Signal Metal' toggle).")
+    _c8_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="carry_metal")
     _f1_df_c8 = _load_f1_data(_c8_metal)
     if _f1_df_c8.empty:
         st.error(f"Rolling F1 file for {_c8_metal} not found. Place the CSV beside app.py.")
@@ -3945,10 +3929,10 @@ with tab9:
                "Signal from forward curve contracts; PnL always from F1_continuous.")
 
     # ── Data loading (shared by Section 1 and 2) ─────────────────────────────
-    _v9_metal = _signal_metal()
-    st.caption(f"🔬 Metal: **{_v9_metal}**  (sidebar 'Signal Metal' toggle)."
-               + ("" if _v9_metal == "Copper" else
-                  "  Live charts/metrics/dropdown reflect Aluminium; 'best-signal' cards are Copper references."))
+    _v9_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="value_metal")
+    if _v9_metal != "Copper":
+        st.caption("Live charts/metrics/dropdown reflect Aluminium; "
+                   "'best-signal' cards are Copper references.")
     _f1_df_v9 = _load_f1_data(_v9_metal)
     if _f1_df_v9.empty:
         st.error(f"Rolling F1 file for {_v9_metal} not found.")
@@ -4937,9 +4921,8 @@ with tab10:
     )
 
     # ── Load data ──────────────────────────────────────────────────────────────
-    _p10_metal = _signal_metal()
-    st.caption(f"🔬 Metal: **{_p10_metal}**  (sidebar 'Signal Metal' toggle). "
-               "Portfolio legs auto-switch to the metal's best-performing signals.")
+    _p10_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="port_metal")
+    st.caption("Portfolio legs auto-switch to the selected metal's best-performing signals.")
     _f1_df_p10 = _load_f1_data(_p10_metal)
     if _f1_df_p10.empty:
         st.error(f"Rolling F1 file for {_p10_metal} not found.")
