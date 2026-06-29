@@ -1958,7 +1958,7 @@ def _wf_ma3543_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
         oos_e = min(oos_s + OOS_W, T)
         if (oos_e - oos_s) < OOS_W:
             oos_s += OOS_W; continue
-        yr = str(dates[oos_s].year)
+        yr = str(dates[oos_e - 1].year)   # label window by its END year (Dec-2010 window = 2011 OOS)
         f1r_w = _f1r.iloc[oos_s - IS_W:oos_e]
         oos_dt = dates[oos_s:oos_e]
         pos_full = np.sign(f1r_w.rolling(35).mean() - f1r_w.rolling(43).mean()).shift(1).fillna(0)
@@ -2016,7 +2016,7 @@ def _wf_anchors_isopt_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
         oos_e = min(oos_s + OOS_W, T)
         if (oos_e - oos_s) < OOS_W:
             oos_s += OOS_W; continue
-        yr = str(dates[oos_s].year)
+        yr = str(dates[oos_e - 1].year)   # label window by its END year (Dec-2010 window = 2011 OOS)
         is_dt = dates[oos_s - IS_W:oos_s]; oos_dt = dates[oos_s:oos_e]
         f1c_is = _f1c.reindex(is_dt)
         ret_mat = []
@@ -2044,19 +2044,171 @@ def _wf_anchors_isopt_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
 
 
 # ══════════════════════════════════════════════════════
+# DYNAMIC "BEST SIGNAL" SCANNERS  (per-metal, cached)
+# ══════════════════════════════════════════════════════
+def _pos_metrics_generic(pos, f1r, f1c, tc_bps: int = 5) -> dict:
+    """Active-day gross/net Sharpe, ann return %, max-DD % for a position series.
+    PnL on F1_continuous; TC on F1_raw. Identical convention to the live tabs."""
+    pos = pos.reindex(f1c.index).fillna(0.0)
+    gp = pos * f1c.diff()
+    chg = pos.diff().abs()
+    if len(chg):
+        chg.iloc[0] = abs(pos.iloc[0])
+    tc = chg * (tc_bps / 10000.0 / 2.0) * f1r.reindex(f1c.index)
+    net = gp - tc
+    def _s(pnl):
+        with np.errstate(invalid="ignore", divide="ignore"):
+            r = (pnl / f1c.shift(1)).replace([np.inf, -np.inf], np.nan)
+        a = r[pos != 0].dropna()
+        return float(a.mean() / a.std(ddof=1) * np.sqrt(252)) if len(a) > 20 and a.std(ddof=1) > 0 else np.nan
+    with np.errstate(invalid="ignore", divide="ignore"):
+        gr = (gp / f1c.shift(1)).replace([np.inf, -np.inf], np.nan)
+    cum = gr.fillna(0).cumsum() * 100
+    return dict(gross=_s(gp), net=_s(net),
+                ann=float(gr.dropna().mean() * 252 * 100) if gr.notna().any() else np.nan,
+                mdd=float((cum - cum.cummax()).min()), nact=int((pos != 0).sum()))
+
+def _exec(sigbin, same_day):
+    """Same-Day = shift 1, Lag-1 = shift 2 (no look-ahead)."""
+    return sigbin.shift(1) if same_day else sigbin.shift(2)
+
+
+@st.cache_data(show_spinner=False)
+def _mom_best_cards(metal: str, tc_bps: int = 5):
+    df = _load_f1_data(metal)
+    if df.empty:
+        return None
+    f1r, f1c = df["F1_raw"], df["F1_continuous"]
+    def ma_sig(m, n): return np.sign(f1r.rolling(m).mean() - f1r.rolling(n).mean())
+    def cta_single_sig(s, l):
+        x = f1r.ewm(com=s-1, adjust=False).mean() - f1r.ewm(com=l-1, adjust=False).mean()
+        y = x / f1r.rolling(63).std(); z = y / y.rolling(252).std()
+        return pd.Series(np.sign(z * np.exp(-z**2/4) / 0.89), index=f1r.index)
+    def cta_paper_sig():
+        pv = f1r.rolling(63).std(); us = []
+        for s, l in zip((8,16,32), (24,48,96)):
+            x = f1r.ewm(com=s-1, adjust=False).mean() - f1r.ewm(com=l-1, adjust=False).mean()
+            y = x / pv; z = (y / y.rolling(252).std()).values; us.append(z*np.exp(-z**2/4)/0.89)
+        return pd.Series(np.sign(np.nanmean(np.stack(us,1),1)), index=f1r.index)
+    def best(cands):
+        b = None
+        for name, sig, sd in cands:
+            mt = _pos_metrics_generic(_exec(sig, sd), f1r, f1c, tc_bps)
+            if not np.isnan(mt["gross"]) and (b is None or mt["gross"] > b["gross"]):
+                b = dict(name=name, timing="Same-Day" if sd else "Lag-1", **mt)
+        return b
+    # MA family — curated known-good pairs (so each metal's optimum is evaluated) + coarse grid
+    _ma_explicit = [(35,43),(33,48),(35,44),(34,47),(36,44),(1,5),(5,20),(10,60),
+                    (60,115),(65,100),(63,100),(40,90),(50,120),(20,115),(45,90),(55,110)]
+    _ma_grid = [(m, n) for m in range(5, 81, 5) for n in range(m+5, 146, 5)]
+    ma_cands = [(f"MA({m},{n})", ma_sig(m, n), sd)
+                for (m, n) in sorted(set(_ma_explicit + _ma_grid)) for sd in (True, False)]
+    # CTA family — singles + paper
+    cta_cands = [(f"CTA({s},{l})", cta_single_sig(s, l), sd)
+                 for (s, l) in [(8,21),(9,21),(9,20),(10,19),(14,15),(16,48),(32,96)] for sd in (True, False)]
+    cta_cands += [("CTA Paper (3-scale)", cta_paper_sig(), sd) for sd in (True, False)]
+    # Anchors EW (3 structural anchors), best timing
+    anc_cands = [("Anchors EW MA(10,25)+MA(35,43)+MA(63,100)",
+                  sum(ma_sig(m, n) for m, n in [(10,25),(35,43),(63,100)]) / 3.0, sd) for sd in (True, False)]
+    return dict(ma=best(ma_cands), cta=best(cta_cands), anc=best(anc_cands))
+
+
+@st.cache_data(show_spinner=False)
+def _carry_best_cards(metal: str, tc_bps: int = 5):
+    df = _load_f1_data(metal)
+    if df.empty or not curve_data:
+        return None
+    sheet = _find_curve_sheet(metal, curve_data)
+    if not sheet:
+        return None
+    f1r, f1c = df["F1_raw"], df["F1_continuous"]
+    crv = curve_data[sheet]["prices"].copy(); crv.index = pd.to_datetime(crv.index).normalize(); crv = crv.sort_index()
+    def best(cands):
+        b = None
+        for name, sig, sd in cands:
+            mt = _pos_metrics_generic(_exec(sig, sd), f1r, f1c, tc_bps)
+            if not np.isnan(mt["gross"]) and (b is None or mt["gross"] > b["gross"]):
+                b = dict(name=name, timing="Same-Day" if sd else "Lag-1", **mt)
+        return b
+    out = {}
+    if "F1" in crv and "F2" in crv:
+        base = ((crv["F1"]-crv["F2"])/crv["F1"]).replace([np.inf,-np.inf], np.nan)
+        lvl = [("(F1-F2)/F1 level", np.sign(base), sd) for sd in (True, False)]
+        if "F3" in crv:
+            b3 = ((crv["F1"]-crv["F3"])/crv["F1"]).replace([np.inf,-np.inf], np.nan)
+            lvl += [("(F1-F3)/F1 level", np.sign(b3), sd) for sd in (True, False)]
+        out["level"] = best(lvl)
+        out["mom"] = best([(f"CarryMom {h}d", np.sign(base-base.shift(h)), sd) for h in (20, 60) for sd in (True, False)])
+        z = ((base-base.rolling(252).mean())/base.rolling(252).std()).replace([np.inf,-np.inf], np.nan)
+        out["zscore"] = best([("Z-score 252d", np.sign(z), sd) for sd in (True, False)])
+    slope = []
+    for j, k in [(3,15),(4,16),(5,17),(6,18),(7,19),(8,20),(9,21),(10,22),(11,23),(12,24)]:
+        if f"F{j}" in crv and f"F{k}" in crv:
+            s = ((crv[f"F{j}"]-crv[f"F{k}"])/crv[f"F{k}"]).replace([np.inf,-np.inf], np.nan)
+            slope += [(f"Slope (F{j}-F{k})/F{k}", np.sign(s), sd) for sd in (True, False)]
+    if slope:
+        out["slope"] = best(slope)
+    return out
+
+
+@st.cache_data(show_spinner=False)
+def _value_best_cards(metal: str, tc_bps: int = 5):
+    df = _load_f1_data(metal)
+    if df.empty or not curve_data:
+        return None
+    sheet = _find_curve_sheet(metal, curve_data)
+    if not sheet:
+        return None
+    f1r, f1c = df["F1_raw"], df["F1_continuous"]
+    crv = curve_data[sheet]["prices"].copy(); crv.index = pd.to_datetime(crv.index).normalize(); crv = crv.sort_index()
+    def best(cands):
+        b = None
+        for name, sig, sd in cands:
+            mt = _pos_metrics_generic(_exec(sig, sd), f1r, f1c, tc_bps)
+            if not np.isnan(mt["gross"]) and (b is None or mt["gross"] > b["gross"]):
+                b = dict(name=name, timing="Same-Day" if sd else "Lag-1", **mt)
+        return b
+    def v1_sig(k, N):
+        if f"F{k}" not in crv: return None
+        p = crv[f"F{k}"].dropna(); ma = p.rolling(N, min_periods=max(N//2, 60)).mean()
+        dev = ((p-ma)/ma).replace([np.inf,-np.inf], np.nan)
+        return pd.Series(np.where(dev < -0.10, 1.0, np.where(dev > 0.10, -1.0, 0.0)), index=dev.index).where(dev.notna())
+    v1 = []
+    for k in [1, 5, 8, 12]:
+        for N, lab in [(252,"1yr"),(1260,"5yr"),(2520,"10yr")]:
+            s = v1_sig(k, N)
+            if s is not None:
+                v1 += [(f"V1 F{k} {lab}", s, sd) for sd in (True, False)]
+    out = {"v1": best(v1)} if v1 else {}
+    v2 = []
+    for N, lab in [(756,"3yr"),(1260,"5yr"),(2520,"10yr")]:
+        rev = (f1r.shift(N)-f1r).replace([np.inf,-np.inf], np.nan)
+        v2 += [(f"V2 BG {lab}", np.sign(rev), sd) for sd in (True, False)]
+    out["v2"] = best(v2)
+    return out
+
+
+def _fmt_sh(x):  return "N/A" if x is None or (isinstance(x, float) and np.isnan(x)) else f"{x:+.2f}"
+def _fmt_pct(x): return "N/A" if x is None or (isinstance(x, float) and np.isnan(x)) else f"{x:+.1f}%"
+def _fmt_dd(x):  return "N/A" if x is None or (isinstance(x, float) and np.isnan(x)) else f"{x:.0f}%"
+
+
+# ══════════════════════════════════════════════════════
 # TAB 7: MOMENTUM SIGNALS
 # ══════════════════════════════════════════════════════
 
 with tab7:
-    st.markdown("### Momentum Signals - LME Copper")
+    # ── Metal toggle (top of tab) ─────────────────────────────────────────────
+    _mom_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="mom_metal")
+    st.markdown(f"### Momentum Signals - LME {_mom_metal}")
     st.markdown(
         '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
         'border-radius:4px;padding:10px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px;">'
         '<span style="color:#B87333;font-family:\'IBM Plex Mono\',monospace;font-size:0.78rem;'
         'font-weight:700;white-space:nowrap;">SIGNAL 1 OF 3</span>'
         '<span style="color:#8A8278;font-size:0.8rem;">Price trends persist in short-to-medium horizons. '
-        'The MA(35,43) signal is validated OOS and feeds directly into the equal-weight portfolio (Tab 10). '
-        'Carry and Value signals follow in Tabs 8-9.</span></div>',
+        'The momentum sleeve feeds the equal-weight portfolio (Tab 10); Carry and Value follow in Tabs 8-9. '
+        'All cards and metrics below recompute live for the selected metal.</span></div>',
         unsafe_allow_html=True,
     )
     st.caption(
@@ -2066,10 +2218,6 @@ with tab7:
     )
 
     # ── Data loading (shared by both sections) ────────────────────────────────
-    _mom_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="mom_metal")
-    if _mom_metal != "Copper":
-        st.caption("Live charts, metrics and the comparison dropdown reflect Aluminium; "
-                   "the 'best-signal' summary cards are Copper-calibrated references.")
     _f1_df = _load_f1_data(_mom_metal)
     if _f1_df.empty:
         st.error(f"Rolling F1 file for {_mom_metal} not found. Ensure the CSV is alongside app.py.")
@@ -2077,11 +2225,12 @@ with tab7:
     f1r: pd.Series = _f1_df["F1_raw"]
     f1c: pd.Series = _f1_df["F1_continuous"]
 
-    # ── Best Momentum Signal - By Variant (headline) ──────────────────────────
-    section_header("BEST MOMENTUM SIGNAL - BY VARIANT")
+    # ── Best Momentum Signal - By Variant (DYNAMIC, computed live per metal) ───
+    section_header(f"BEST MOMENTUM SIGNAL - BY VARIANT  ({_mom_metal})")
     st.caption(
-        "Best configuration per signal family, full-period IS backtest (2006-2025), 0 TC, "
-        "gross Same-Day Sharpe (shift-1, no look-ahead). Past performance is not indicative of future results."
+        f"Best configuration per signal family for {_mom_metal}, full-period IS backtest "
+        f"({f1r.index[0].year}-{f1r.index[-1].year}), gross active-day Sharpe (TC=0), no look-ahead. "
+        "Computed live from data - changes with the metal toggle. Past performance is not indicative of future results."
     )
     _mb_cs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
                "border-radius:4px;padding:14px 20px")
@@ -2092,38 +2241,29 @@ with tab7:
     _mb_big = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;font-size:1.55rem;font-weight:700;margin:0")
     _mb_sub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
     _mb_hr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
-    _mbc1, _mbc2, _mbc3 = st.columns(3)
-    with _mbc1:
-        st.markdown(f"""<div style="{_mb_csx}">
-<p style="{_mb_lbx}">MA Crossover  ★</p>
-<p style="{_mb_big}">+0.72</p>
+    _mb = _mom_best_cards(_mom_metal)
+    _mb_fam = [("MA Crossover", _mb.get("ma") if _mb else None),
+               ("Anchors EW",   _mb.get("anc") if _mb else None),
+               ("CTA Baz-Granger", _mb.get("cta") if _mb else None)]
+    _mb_best = max(range(3), key=lambda i: (_mb_fam[i][1]["gross"] if _mb_fam[i][1] and not np.isnan(_mb_fam[i][1]["gross"]) else -9))
+    for _i, (_col, (_lbl, _d)) in enumerate(zip(st.columns(3), _mb_fam)):
+        with _col:
+            _star = "  ★" if _i == _mb_best else ""
+            _sty, _lsty = (_mb_csx, _mb_lbx) if _i == _mb_best else (_mb_cs, _mb_lbl)
+            if not _d:
+                st.markdown(f'<div style="{_sty}"><p style="{_lsty}">{_lbl}{_star}</p>'
+                            f'<p style="{_mb_big}">N/A</p></div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f"""<div style="{_sty}">
+<p style="{_lsty}">{_lbl}{_star}</p>
+<p style="{_mb_big}">{_fmt_sh(_d['gross'])}</p>
 <p style="{_mb_sub}">Sharpe Ratio (Gross)</p>
 <hr style="{_mb_hr}"/>
-<p style="{_mb_sub}">MA(35,43), Same-Day</p>
-<p style="{_mb_sub}">Ann Ret ≈ +18.3%, Max DD ≈ −64%</p>
+<p style="{_mb_sub}">{_d['name']}, {_d['timing']}</p>
+<p style="{_mb_sub}">Ann Ret ≈ {_fmt_pct(_d['ann'])}, Max DD ≈ {_fmt_dd(_d['mdd'])}</p>
 </div>""", unsafe_allow_html=True)
-    with _mbc2:
-        st.markdown(f"""<div style="{_mb_cs}">
-<p style="{_mb_lbl}">Anchors EW</p>
-<p style="{_mb_big}">+0.47</p>
-<p style="{_mb_sub}">Sharpe Ratio (Gross)</p>
-<hr style="{_mb_hr}"/>
-<p style="{_mb_sub}">MA(10,25)+MA(35,43)+MA(63,100), Lag-1</p>
-<p style="{_mb_sub}">Ann Ret ≈ +8.7%, Max DD ≈ −46%</p>
-</div>""", unsafe_allow_html=True)
-    with _mbc3:
-        st.markdown(f"""<div style="{_mb_cs}">
-<p style="{_mb_lbl}">CTA Baz-Granger</p>
-<p style="{_mb_big}">+0.11</p>
-<p style="{_mb_sub}">Sharpe Ratio (Gross)</p>
-<hr style="{_mb_hr}"/>
-<p style="{_mb_sub}">3-timescale, Same-Day</p>
-<p style="{_mb_sub}">Ann Ret ≈ +2.5%, Max DD ≈ −89%</p>
-</div>""", unsafe_allow_html=True)
-    st.caption(
-        "MA(35,43) is the standout momentum signal and the portfolio momentum leg (+0.49 walk-forward OOS). "
-        "Anchors blend three timescales for a shallower drawdown; CTA is weak on copper."
-    )
+    st.caption(f"Cards recompute live for {_mom_metal}: the MA-crossover grid, CTA family and Anchors EW are "
+               "each re-scanned, and the strongest family is starred.")
 
     # ── SECTION 2: IS PARAMETER SEARCH (IN-SAMPLE) ────────────────────────────
     _m_is_yr0 = str(f1r.index[0].year); _m_is_yr1 = str(f1r.index[-1].year)
@@ -2249,7 +2389,7 @@ with tab7:
     if sig_type == "Anchors + IS-Opt Weights":
         st.info(
             "**Anchors + IS-Opt Weights** - IS backtest uses equal-weight combination of the three anchor MAs. "
-            "The IS-optimised walk-forward Sharpe (+0.442 avg) is shown in Section 1. "
+            "The IS-optimised walk-forward OOS Sharpe (computed live) is shown in Section 1. "
             "Position shown here is a continuous range −1 to +1 (average of three ±1 signals).",
             icon="ℹ️",
         )
@@ -2748,7 +2888,9 @@ with tab7:
 
     # ── Annual PnL bar chart ──────────────────────────────────────────────────
     st.divider()
-    section_header("ANNUAL PnL BREAKDOWN (Gross, USD/MT)")
+    section_header(f"ANNUAL PnL BREAKDOWN - {variant_label} ({timing_label}), Gross USD/MT")
+    st.caption("Shows the strategy currently selected above (Signal Type / Variant / Timing). "
+               "Change those controls to view a different strategy's annual PnL.")
 
     annual_pnl = gross_pnl.resample("YE").sum()
     annual_pnl.index = annual_pnl.index.year
@@ -2858,7 +3000,10 @@ with tab7:
 
     # ── Signal & Position chart ────────────────────────────────────────────────
     st.divider()
-    section_header("SIGNAL & POSITION OVER TIME")
+    section_header(f"SIGNAL & POSITION OVER TIME - {variant_label} ({timing_label})")
+    st.caption("This chart reflects the strategy chosen in the controls above (Strategy Preset, or "
+               "Signal Type / Variant / Timing). To view a different strategy here, change those controls; "
+               "the comparison dropdown in the IS section overlays a second variant against it.")
 
     # Full date range - no filter widget
     f1r_w = f1r
@@ -2988,7 +3133,8 @@ with tab7:
 # ══════════════════════════════════════════════════════
 
 with tab8:
-    st.markdown("### Carry Signals - LME Copper")
+    _c8_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="carry_metal")
+    st.markdown(f"### Carry Signals - LME {_c8_metal}")
     st.markdown(
         '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
         'border-radius:4px;padding:10px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px;">'
@@ -3001,11 +3147,12 @@ with tab8:
     )
     st.caption("Term structure carry: Long in backwardation, Short in contango. Signal from curve shape; PnL always from F1_continuous.")
 
-    # ── Best Carry Signal - By Variant (headline, top of tab) ─────────────────
-    section_header("BEST CARRY SIGNAL - BY VARIANT")
+    # ── Best Carry Signal - By Variant (DYNAMIC, computed live per metal) ──────
+    section_header(f"BEST CARRY SIGNAL - BY VARIANT  ({_c8_metal})")
     st.caption(
-        "Best configuration per variant family - full-period IS backtest (2006-2025), 0 TC, "
-        "gross Same-Day Sharpe (shift-1, no look-ahead). Past performance is not indicative of future results."
+        f"Best configuration per variant family for {_c8_metal} - full-period IS backtest, gross active-day "
+        "Sharpe (TC=0), no look-ahead. Computed live - changes with the metal toggle. "
+        "Past performance is not indicative of future results."
     )
     _bcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
              "border-radius:4px;padding:14px 20px")
@@ -3016,48 +3163,30 @@ with tab8:
     _bbig = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;font-size:1.55rem;font-weight:700;margin:0")
     _bsub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
     _bhr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
-    _bsc4, _bsc3, _bsc1, _bsc2 = st.columns(4)
-    with _bsc4:
-        st.markdown(f"""<div style="{_bcsx}">
-<p style="{_blbx}">V4 - Carry Momentum  ★</p>
-<p style="{_bbig}">+0.52</p>
+    _cb = _carry_best_cards(_c8_metal)
+    _cb_fam = [("V4 - Carry Momentum", _cb.get("mom") if _cb else None),
+               ("V3 - Z-Score",        _cb.get("zscore") if _cb else None),
+               ("V1 - Roll Yield",     _cb.get("level") if _cb else None),
+               ("V2 - Long Slope",     _cb.get("slope") if _cb else None)]
+    _cb_best = max(range(4), key=lambda i: (_cb_fam[i][1]["gross"] if _cb_fam[i][1] and not np.isnan(_cb_fam[i][1]["gross"]) else -9))
+    for _i, (_col, (_lbl, _d)) in enumerate(zip(st.columns(4), _cb_fam)):
+        with _col:
+            _star = "  ★" if _i == _cb_best else ""
+            _sty, _lsty = (_bcsx, _blbx) if _i == _cb_best else (_bcs, _blbl)
+            if not _d:
+                st.markdown(f'<div style="{_sty}"><p style="{_lsty}">{_lbl}{_star}</p>'
+                            f'<p style="{_bbig}">N/A</p></div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f"""<div style="{_sty}">
+<p style="{_lsty}">{_lbl}{_star}</p>
+<p style="{_bbig}">{_fmt_sh(_d['gross'])}</p>
 <p style="{_bsub}">Sharpe Ratio (Gross)</p>
 <hr style="{_bhr}"/>
-<p style="{_bsub}">20-day Δ(F1−F2)/F1, Same-Day</p>
-<p style="{_bsub}">Ann Ret ≈ +13.5%, Max DD ≈ −47%</p>
+<p style="{_bsub}">{_d['name']}, {_d['timing']}</p>
+<p style="{_bsub}">Ann Ret ≈ {_fmt_pct(_d['ann'])}, Max DD ≈ {_fmt_dd(_d['mdd'])}</p>
 </div>""", unsafe_allow_html=True)
-    with _bsc3:
-        st.markdown(f"""<div style="{_bcs}">
-<p style="{_blbl}">V3 - Z-Score</p>
-<p style="{_bbig}">+0.26</p>
-<p style="{_bsub}">Sharpe Ratio (Gross)</p>
-<hr style="{_bhr}"/>
-<p style="{_bsub}">(F1−F2)/F1, 252d Z, Same-Day</p>
-<p style="{_bsub}">Ann Ret ≈ +6.2%, Max DD ≈ −80%</p>
-</div>""", unsafe_allow_html=True)
-    with _bsc1:
-        st.markdown(f"""<div style="{_bcs}">
-<p style="{_blbl}">V1 - Roll Yield</p>
-<p style="{_bbig}">+0.10</p>
-<p style="{_bsub}">Sharpe Ratio (Gross)</p>
-<hr style="{_bhr}"/>
-<p style="{_bsub}">(F1−F2)/F1, Same-Day</p>
-<p style="{_bsub}">Ann Ret ≈ +2.6%, Max DD ≈ −147%</p>
-</div>""", unsafe_allow_html=True)
-    with _bsc2:
-        st.markdown(f"""<div style="{_bcs}">
-<p style="{_blbl}">V2 - Long Slope</p>
-<p style="{_bbig}">+0.18</p>
-<p style="{_bsub}">Sharpe Ratio (Gross)</p>
-<hr style="{_bhr}"/>
-<p style="{_bsub}">F4−F16 slope, Same-Day</p>
-<p style="{_bsub}">Ann Ret ≈ +4.6%, Max DD ≈ −75%</p>
-</div>""", unsafe_allow_html=True)
-    st.caption(
-        "V4 Carry Momentum (sign of the 20-day change in the (F1−F2)/F1 roll yield) is the best carry "
-        "signal and the portfolio carry leg (+0.50 walk-forward OOS). Same-Day (shift-1) entry beats "
-        "Lag-1 for carry; V1 level is the naive baseline. All figures are post the look-ahead fix."
-    )
+    st.caption(f"Cards recompute live for {_c8_metal}; the strongest family is starred. "
+               "Same-Day vs Lag-1 is selected per family by gross Sharpe.")
 
     st.markdown("""
     <div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;border-radius:4px;padding:14px 20px;margin-bottom:8px;">
@@ -3179,7 +3308,6 @@ with tab8:
                       "deadband": carry_sub_val[1], "same_day": carry_same_day}
 
     # ── Data loading ──────────────────────────────────────────────────────────
-    _c8_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="carry_metal")
     _f1_df_c8 = _load_f1_data(_c8_metal)
     if _f1_df_c8.empty:
         st.error(f"Rolling F1 file for {_c8_metal} not found. Place the CSV beside app.py.")
@@ -3890,7 +4018,7 @@ def _wf_value_oos_tc(_pos: pd.Series, _f1c: pd.Series, _f1r: pd.Series, tc_bps: 
         oos_e   = min(oos_s + OOS_W, T)
         if (oos_e - oos_s) < OOS_W // 2:
             break
-        yr      = str(idx[oos_s].year) + ("*" if (oos_e - oos_s) < OOS_W else "")
+        yr      = str(idx[oos_e - 1].year) + ("*" if (oos_e - oos_s) < OOS_W else "")   # END-year label
         p_oos   = pos.iloc[oos_s:oos_e]
         c_oos   = f1cs.iloc[oos_s:oos_e]
         r_oos   = f1rs.iloc[oos_s:oos_e]
@@ -3914,7 +4042,8 @@ def _wf_value_oos_tc(_pos: pd.Series, _f1c: pd.Series, _f1r: pd.Series, tc_bps: 
 # ══════════════════════════════════════════════════════
 
 with tab9:
-    st.markdown("### Value Signals - LME Copper")
+    _v9_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="value_metal")
+    st.markdown(f"### Value Signals - LME {_v9_metal}")
     st.markdown(
         '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
         'border-radius:4px;padding:10px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px;">'
@@ -3929,10 +4058,6 @@ with tab9:
                "Signal from forward curve contracts; PnL always from F1_continuous.")
 
     # ── Data loading (shared by Section 1 and 2) ─────────────────────────────
-    _v9_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="value_metal")
-    if _v9_metal != "Copper":
-        st.caption("Live charts/metrics/dropdown reflect Aluminium; "
-                   "'best-signal' cards are Copper references.")
     _f1_df_v9 = _load_f1_data(_v9_metal)
     if _f1_df_v9.empty:
         st.error(f"Rolling F1 file for {_v9_metal} not found.")
@@ -3969,38 +4094,44 @@ with tab9:
 
     # ── Best Value Signal Summary ─────────────────────────────────────────────
     st.divider()
-    section_header("BEST VALUE SIGNAL - BY VARIANT")
+    section_header(f"BEST VALUE SIGNAL - BY VARIANT  ({_v9_metal})")
     st.caption(
-        f"Best-performing configuration per variant. IS backtest, Full period {vf1c.index[0].year}-{vf1c.index[-1].year}, 0 TC, Same-Day entry, Gross Sharpe."
+        f"Best-performing configuration per variant for {_v9_metal}. IS backtest, full period "
+        f"{vf1c.index[0].year}-{vf1c.index[-1].year}, gross active-day Sharpe (TC=0), best timing per variant. "
+        "Computed live - changes with the metal toggle."
     )
     _vbsc1, _vbsc2 = st.columns(2)
     _vbcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
               "border-radius:4px;padding:14px 20px")
+    _vbcsx = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #5BAD72;"
+              "border-radius:4px;padding:14px 20px")
     _vblbl = ("color:#B87333;font-family:'IBM Plex Mono',monospace;"
+              "font-size:0.85rem;font-weight:600;margin:0 0 6px")
+    _vblbx = ("color:#5BAD72;font-family:'IBM Plex Mono',monospace;"
               "font-size:0.85rem;font-weight:600;margin:0 0 6px")
     _vbbig = ("color:#E8DDD0;font-family:'IBM Plex Mono',monospace;"
               "font-size:1.55rem;font-weight:700;margin:0")
     _vbsub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
     _vbhr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
-    with _vbsc1:
-        st.markdown(f"""<div style="{_vbcs}">
-<p style="{_vblbl}">V1 - MA Reversion</p>
-<p style="{_vbbig}">+0.277</p>
+    _vb = _value_best_cards(_v9_metal)
+    _vb_fam = [("V1 - MA Reversion", _vb.get("v1") if _vb else None),
+               ("V2 - Baz-Granger Reversal", _vb.get("v2") if _vb else None)]
+    _vb_best = max(range(2), key=lambda i: (_vb_fam[i][1]["gross"] if _vb_fam[i][1] and not np.isnan(_vb_fam[i][1]["gross"]) else -9))
+    for _i, (_col, (_lbl, _d)) in enumerate(zip([_vbsc1, _vbsc2], _vb_fam)):
+        with _col:
+            _star = "  ★" if _i == _vb_best else ""
+            _sty, _lsty = (_vbcsx, _vblbx) if _i == _vb_best else (_vbcs, _vblbl)
+            if not _d:
+                st.markdown(f'<div style="{_sty}"><p style="{_lsty}">{_lbl}{_star}</p>'
+                            f'<p style="{_vbbig}">N/A</p></div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f"""<div style="{_sty}">
+<p style="{_lsty}">{_lbl}{_star}</p>
+<p style="{_vbbig}">{_fmt_sh(_d['gross'])}</p>
 <p style="{_vbsub}">Sharpe Ratio (Gross)</p>
 <hr style="{_vbhr}"/>
-<p style="{_vbsub}">F8, 5yr Lookback, ±10% Threshold, Same-Day</p>
-<p style="{_vbsub}">Ann Ret ≈ +7.1%, Max DD ≈ −67%, 38% Flat Days</p>
-<p style="{_vbsub}">Note: F12 is the NGL paper's energy reference; for copper, F8 scores higher</p>
-</div>""", unsafe_allow_html=True)
-    with _vbsc2:
-        st.markdown(f"""<div style="{_vbcs}">
-<p style="{_vblbl}">V2 - Baz-Granger Reversal</p>
-<p style="{_vbbig}">+0.512</p>
-<p style="{_vbsub}">Sharpe Ratio (Gross)</p>
-<hr style="{_vbhr}"/>
-<p style="{_vbsub}">F1_raw, 10yr Lookback, Same-Day</p>
-<p style="{_vbsub}">Ann Ret ≈ +10.2%, Max DD ≈ −44%</p>
-<p style="{_vbsub}">Non-monotonic: 5yr is a trap (Sharpe −0.14) - use 3yr or 10yr</p>
+<p style="{_vbsub}">{_d['name']}{' , ±10% threshold' if _lbl.startswith('V1') else ''}, {_d['timing']}</p>
+<p style="{_vbsub}">Ann Ret ≈ {_fmt_pct(_d['ann'])}, Max DD ≈ {_fmt_dd(_d['mdd'])}</p>
 </div>""", unsafe_allow_html=True)
     st.caption(
         "Same-Day (shift-1, no look-ahead) is the default: for V2 Baz-Granger it beats Lag-1 (+0.51 vs +0.37); "
@@ -4408,13 +4539,13 @@ with tab9:
     with _v9wf_c2:
         if _v9_is_10yr:
             st.markdown(f"""<div style="{_v9_cs}">
-<p style="{_v9_lbl}">V2 BG 10yr - Data Constraint</p>
-<p style="{_v9_big}">5</p>
-<p style="{_v9_sub}">OOS windows available (2020-2024)</p>
+<p style="{_v9_lbl}">10yr Lookback - Data Constraint</p>
+<p style="{_v9_big}">{_v9_wf_n_tot}</p>
+<p style="{_v9_sub}">OOS windows available ({_v9_first_yr}-{_v9_last_yr})</p>
 <hr style="{_v9_hr}"/>
-<p style="{_v9_sub}">Signal first valid: Jan 2016</p>
-<p style="{_v9_sub}">IS window (5yr) consumes 2016-2021 data</p>
-<p style="{_v9_sub}">Full-period Sharpe = entire signal history - no true IS holdout</p>
+<p style="{_v9_sub}">A 10yr lookback consumes ~10yr of history before the signal starts,</p>
+<p style="{_v9_sub}">then a 5yr IS window before the first OOS window.</p>
+<p style="{_v9_sub}">Few OOS windows exist - treat this OOS estimate as low-confidence.</p>
 </div>""", unsafe_allow_html=True)
         else:
             _v9_wf_n_gt03 = sum(1 for v in _v9_wf_vals if v > 0.30)
@@ -4913,16 +5044,15 @@ This threshold was calibrated for crude oil (higher volatility). Consider ±15-2
 # ══════════════════════════════════════════════════════
 
 with tab10:
-    st.markdown("### Portfolio Construction - LME Copper")
+    _p10_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="port_metal")
+    st.markdown(f"### Portfolio Construction - LME {_p10_metal}")
     st.caption(
         "Equal-weight combination of the three risk premia signals. "
         "All positions sized ±1 per signal; portfolio position ranges −1 to +1. "
-        "PnL from F1_continuous throughout."
+        "PnL from F1_continuous throughout. Legs auto-switch to the selected metal's best signals."
     )
 
     # ── Load data ──────────────────────────────────────────────────────────────
-    _p10_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="port_metal")
-    st.caption("Portfolio legs auto-switch to the selected metal's best-performing signals.")
     _f1_df_p10 = _load_f1_data(_p10_metal)
     if _f1_df_p10.empty:
         st.error(f"Rolling F1 file for {_p10_metal} not found.")
@@ -5087,49 +5217,48 @@ with tab10:
     _car_sh,  _car_ann,  _car_dd,  _car_flat  = _p10_metrics(_p10_c,    _p10_tc_bps)
     _val_sh,  _val_ann,  _val_dd,  _val_flat  = _p10_metrics(_p10_v,    _p10_tc_bps)
 
-    # ── Portfolio story intro ──────────────────────────────────────────────────
-    st.markdown("""
+    # ── Portfolio story intro (DYNAMIC per metal) ──────────────────────────────
+    _cmc = _p10_m.corr(_p10_c); _cmv = _p10_m.corr(_p10_v); _ccv = _p10_c.corr(_p10_v)
+    def _shc(x): return "N/A" if x is None or (isinstance(x, float) and np.isnan(x)) else f"{x:+.2f}"
+    st.markdown(f"""
 <div style="background:#111827;border:1px solid #2A2A2A;border-radius:6px;padding:16px 22px;margin-bottom:4px;">
 <p style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:700;margin:0 0 10px">
-THREE ORTHOGONAL RISK PREMIA &rarr; ONE EQUAL-WEIGHT PORTFOLIO</p>
+THREE ORTHOGONAL RISK PREMIA &rarr; ONE EQUAL-WEIGHT PORTFOLIO &nbsp;({_p10_metal})</p>
 <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#C8BFB4;">
 <tr style="border-bottom:1px solid #2A2A2A;color:#8A8278;font-size:0.72rem;">
   <td style="padding:4px 10px 4px 0">Signal</td>
-  <td style="padding:4px 10px">Best Variant</td>
-  <td style="padding:4px 10px">OOS Sharpe</td>
+  <td style="padding:4px 10px">Leg used ({_p10_metal})</td>
+  <td style="padding:4px 10px">Net Sharpe (IS, sel. TC)</td>
   <td style="padding:4px 10px">Entry</td>
   <td style="padding:4px 10px">Correlation Role</td>
 </tr>
 <tr style="border-bottom:1px solid #1C1C1C;">
   <td style="padding:5px 10px 5px 0;color:#B87333;font-weight:600">Momentum</td>
-  <td style="padding:5px 10px">MA(35,43)</td>
-  <td style="padding:5px 10px;color:#5BAD72">+0.49 (walk-fwd)</td>
-  <td style="padding:5px 10px">Same-Day</td>
+  <td style="padding:5px 10px">{_p10_mom_label}</td>
+  <td style="padding:5px 10px;color:#5BAD72">{_shc(_mom_sh)}</td>
+  <td style="padding:5px 10px">shift-1</td>
   <td style="padding:5px 10px">Trend persistence - anchor signal</td>
 </tr>
 <tr style="border-bottom:1px solid #1C1C1C;">
   <td style="padding:5px 10px 5px 0;color:#B87333;font-weight:600">Carry</td>
-  <td style="padding:5px 10px">&Delta;20d (F1&minus;F2)/F1</td>
-  <td style="padding:5px 10px;color:#5BAD72">+0.50 (walk-fwd OOS)</td>
-  <td style="padding:5px 10px">Same-Day</td>
-  <td style="padding:5px 10px">Curve-momentum - nearly uncorrelated with price-Mom (+0.12)</td>
+  <td style="padding:5px 10px">{_p10_carry_label}</td>
+  <td style="padding:5px 10px;color:#5BAD72">{_shc(_car_sh)}</td>
+  <td style="padding:5px 10px">shift-1</td>
+  <td style="padding:5px 10px">Curve premium - diversifies price-momentum</td>
 </tr>
 <tr>
   <td style="padding:5px 10px 5px 0;color:#B87333;font-weight:600">Value</td>
-  <td style="padding:5px 10px">V1 F8 5yr ±10%</td>
-  <td style="padding:5px 10px;color:#5BAD72">+0.43 (walk-fwd OOS)</td>
-  <td style="padding:5px 10px">Same-Day</td>
-  <td style="padding:5px 10px">Mean-reversion - negatively correlated with Mom (&minus;0.21)</td>
+  <td style="padding:5px 10px">{_p10_val_label}</td>
+  <td style="padding:5px 10px;color:#5BAD72">{_shc(_val_sh)}</td>
+  <td style="padding:5px 10px">shift-1</td>
+  <td style="padding:5px 10px">Mean-reversion - typically negatively correlated with Mom</td>
 </tr>
 </table>
 <p style="color:#8A8278;font-size:0.75rem;margin:10px 0 0">
-All legs use same-day execution (trade at the signal's close; first return next day; no look-ahead).
-Sleeves updated to best walk-forward OOS variants: carry &rarr; 20-day carry-momentum (+0.50 OOS, was
-level +0.24), value &rarr; V1 F8 (+0.43 OOS, was V2 BG which collapses OOS to +0.07). Momentum MA(35,43)
-+0.49 is partial OOS (IS-selected params).<br>
-Pairwise correlations: Mom-Carry +0.12 &nbsp;|&nbsp; Mom-Value &minus;0.21 &nbsp;|&nbsp; Carry-Value low.
-&nbsp;Realised EW portfolio Sharpe &asymp; <b>+1.00 net</b> (full); walk-forward OOS <b>+0.91</b> (13/16 windows);
-inverse-vol &asymp; +0.89.</p>
+All legs use shift-1 execution (trade at the signal's close; first return next day; no look-ahead). Legs
+auto-switch to the selected metal's best-performing configuration. Live pairwise position correlations:
+Mom-Carry {_shc(_cmc)} &nbsp;|&nbsp; Mom-Value {_shc(_cmv)} &nbsp;|&nbsp; Carry-Value {_shc(_ccv)}.
+&nbsp;Equal-weight portfolio net Sharpe (IS, selected TC) &asymp; <b>{_shc(_port_sh)}</b>; per-window walk-forward OOS is shown below.</p>
 </div>""", unsafe_allow_html=True)
 
     # ── Section 1: Live Portfolio Badge ───────────────────────────────────────
@@ -5548,34 +5677,29 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     st.divider()
     with st.expander("Methodology Notes", expanded=False):
         st.markdown("""
-**Signal Definitions (best walk-forward OOS configuration per strategy):**
-- **Momentum:** MA(35,43) crossover on F1_raw, same-day entry. Position: ±1. (OOS +0.49)
-- **Carry:** 20-day change in the (F1−F2)/F1 roll yield (curve momentum), same-day. Position: ±1. (OOS +0.50)
-- **Value V1 (default):** (F8 − MA_1260) / MA_1260 deviation, ±10% threshold. Position: −1/0/+1. (OOS +0.43)
-- *Value V2 (optional):* F1_raw[t−2520] − F1_raw[t] reversal (10yr). Higher IS (+0.51) but collapses OOS to +0.07.
+**Signal Definitions (each leg = the selected metal's best-performing configuration; all numbers in the
+cards/tables above recompute live for Copper vs Aluminium):**
+- **Momentum:** MA crossover on F1_raw, shift-1 entry, position ±1. *Copper:* MA(35,43); *Aluminium:* slow MA(60,115).
+- **Carry:** shift-1, position ±1. *Copper:* 20-day change in the (F1−F2)/F1 roll yield (curve momentum);
+  *Aluminium:* 252-day z-score of the (F1−F2)/F1 roll yield.
+- **Value V1 (default):** (Fk − MA_1260)/MA_1260 deviation, ±10% threshold, shift-1, position −1/0/+1.
+  *Copper:* F8; *Aluminium:* F12.
+- *Value V2 (optional):* F1_raw[t−2520] − F1_raw[t] reversal (10yr) - higher in-sample Sharpe but fragile out-of-sample.
 
-**EW Portfolio:**
-`Port_pos[t] = (1/3) × Mom[t] + (1/3) × Carry[t] + (1/3) × Value[t]`
+**EW Portfolio:** `Port_pos = (1/3)·Mom + (1/3)·Carry + (1/3)·Value`, ranging −1 to +1. When all three agree |port| = 1;
+a 2−1 split gives |port| = 1/3; a value flat (0) reduces conviction.
 
-Portfolio position ranges −1 to +1. When all three signals agree, |port| = 1 (full conviction).
-When signals split 2−1, |port| = 1/3 (reduced size). When two are zero (V1 flat zone), |port| = 1/3 or 0.
+**Entry timing (no look-ahead):** Same-Day = shift 1 (trade at the signal's close; first return t→t+1).
+Lag-1 = shift 2 (one further day of delay). The retired shift-0 "same-day" booked an already-realised move
+(look-ahead) and is removed.
 
-**Entry timing - two legitimate conventions (neither has look-ahead):**
-- **Same-Day (shift 1, default):** signal from close(t) is traded *at that close(t)*; first return is t→t+1.
-- **Lag-1 / next-close (shift 2):** position taken at close(t+1); first return is t+1→t+2 (conservative on execution latency).
+**Transaction costs:** TC = |Δposition| × (bps/10000/2) × **F1_raw** (the actual traded price); the spread is
+charged on every position change. PnL and returns are computed on the roll-adjusted F1_continuous.
 
-The old "Same-Day" booked the t−1→t return that had *already happened* by the time the signal was known (shift 0)
-- that was pure look-ahead and is removed. (On the *level* (F1−F2)/F1 carry it had inflated the same-day
-Sharpe from ~0.10 honest to ~0.62 - which is why the portfolio carry leg uses the 20d roll-yield momentum instead.)
-Per-leg Sharpe (the actual portfolio legs): Mom MA(35,43) +0.72, Carry-Mom 20d +0.52, Value V1 F8 +0.28 (Same-Day, shift 1);
-Mom +0.63, Carry-Mom +0.42, Value +0.33 (Lag-1, shift 2).
-
-**Diversification Claim:**
-If signals are pairwise uncorrelated (ρ ≈ 0) and each has Sharpe S, then EW Sharpe ≈ √3 × S.
-With the best-OOS sleeves (Mom 0.49, Carry-mom 0.50, Value V1 0.43 - avg ≈ 0.47) and low pairwise
-correlations, theoretical EW ≈ 0.81. **Realised EW ≈ +1.00 net full-period, +0.91 walk-forward OOS
-(13/16 windows positive)** - above the naive ceiling thanks to the negative Mom-Value correlation (−0.21).
-Inverse-vol weighting ≈ +0.89; EW is the default (marginally higher Sharpe, lower drawdown).
+**Diversification:** with low pairwise leg correlations, the equal-weight Sharpe tends to exceed the average
+single-leg Sharpe (≈ √3 × avg if the legs were uncorrelated). The per-leg Sharpes, live correlations and the
+realised EW / inverse-vol portfolio Sharpe (for the selected metal at the chosen TC) are shown in the table and
+cards above and update with the metal toggle. EW is the default; inverse-vol is the alternative.
 
 **Disclaimer:** Partial-OOS backtest (params IS-selected, applied walk-forward). Not investment advice.
         """)
