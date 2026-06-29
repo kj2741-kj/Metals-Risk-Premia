@@ -5232,11 +5232,9 @@ with tab10:
         ret  = _p10_ret(pos, tc_bps)
         sh   = _p10_sharpe(ret)
         ann  = float(ret.dropna().mean() * 252 * 100)
-        pnl  = pos * _p10_f.diff()
-        if tc_bps > 0:
-            chg = pos.diff().abs(); chg.iloc[0] = abs(pos.iloc[0])
-            pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * _p10_fraw
-        cum  = pnl.cumsum()
+        # Max drawdown in % (cumulative-return path) - SAME convention as the
+        # Momentum/Carry/Value tabs, so the number is directly comparable across tabs.
+        cum  = ret.fillna(0).cumsum() * 100
         dd   = float((cum - cum.cummax()).min())
         flat_pct = float(100 * (pos == 0).sum() / len(pos))
         return sh, ann, dd, flat_pct
@@ -5363,7 +5361,7 @@ Mom-Carry {_shc(_cmc)} &nbsp;|&nbsp; Mom-Value {_shc(_cmv)} &nbsp;|&nbsp; Carry-
     for _col2, _lbl2, _big2, _sub2 in [
         (_p10_cc1, "Sharpe Ratio", f"{_port_sh:+.3f}", f"Ann.{'  Net' if _p10_tc_bps>0 else ' Gross'} ({_p10_yr0}-{_p10_yr1})"),
         (_p10_cc2, "Ann. Return",  f"{_port_ann:+.1f}%", f"{'Net' if _p10_tc_bps>0 else 'Gross'}, {_p10_tc_note_hdr.strip(', ')}"),
-        (_p10_cc3, "Max Drawdown", f"${_port_dd:,.0f}/MT", "Cumulative USD/MT"),
+        (_p10_cc3, "Max Drawdown", f"{_port_dd:.0f}%", "Cumulative-return drawdown (same basis as other tabs)"),
         (_p10_cc4, "% In Market",  f"{100-_port_flat:.1f}%", f"Flat: {_port_flat:.1f}% of days"),
     ]:
         _col2.markdown(
@@ -5411,7 +5409,7 @@ blowing out in a given regime).
 | Sharpe - pre-2022 | {_ew_pre:+.3f} | {_iv_pre:+.3f} |
 | Sharpe - post-2022 | {_ew_post:+.3f} | {_iv_post:+.3f} |
 | Ann. return | {_ew_ann:+.1f}% | {_iv_ann:+.1f}% |
-| Max drawdown | ${_ew_dd:,.0f}/MT | ${_iv_dd:,.0f}/MT |
+| Max drawdown | {_ew_dd:.0f}% | {_iv_dd:.0f}% |
 
 **Read:** EW is marginally better on full-period Sharpe and has a smaller drawdown; inverse-vol earns a
 higher annual return and is steadier post-2022. Neither dominates - which is itself the finding: with
