@@ -2043,6 +2043,47 @@ def _wf_anchors_isopt_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
     return out
 
 
+@st.cache_data(show_spinner=False)
+def _wf_portfolio_tc(metal, use_iv, use_v2, tc_bps, _mom, _carry, _val, _port, _f1r, _f1c):
+    """Walk-forward OOS Sharpe per sleeve + the combined portfolio.
+    Each leg is the metal's a-priori-selected configuration (never re-optimised per
+    window); it is simply evaluated on rolling 1yr OOS windows after a 5yr burn-in
+    (IS=1260, OOS=252). Windows are labelled by their END year. Cache is keyed on
+    (metal, use_iv, use_v2, tc_bps) so it recomputes correctly for every selection."""
+    IS_W, OOS_W = 1260, 252
+    idx = _f1c.index
+    T, dates = len(idx), idx
+    legs = {
+        "Momentum":  _mom.reindex(idx).fillna(0.0),
+        "Carry":     _carry.reindex(idx).fillna(0.0),
+        "Value":     _val.reindex(idx).fillna(0.0),
+        "Portfolio": _port.reindex(idx).fillna(0.0),
+    }
+    out = {k: {} for k in legs}
+    oos_s = IS_W
+    while oos_s < T:
+        oos_e = min(oos_s + OOS_W, T)
+        if (oos_e - oos_s) < OOS_W:
+            oos_s += OOS_W; continue
+        yr = str(dates[oos_e - 1].year)
+        oos_dt = dates[oos_s:oos_e]
+        f1c_oos = _f1c.reindex(oos_dt); f1r_oos = _f1r.reindex(oos_dt)
+        for name, pos in legs.items():
+            p = pos.reindex(oos_dt).fillna(0)
+            pnl = p * f1c_oos.diff()
+            if tc_bps > 0:
+                chg = p.diff().abs(); chg.iloc[0] = abs(p.iloc[0])
+                pnl = pnl - chg * (tc_bps / 10000.0 / 2.0) * f1r_oos
+            with np.errstate(invalid="ignore", divide="ignore"):
+                ret = (pnl / f1c_oos.shift(1)).replace([np.inf, -np.inf], np.nan)
+            act = ret[p != 0].dropna()
+            sd = act.std(ddof=1) if len(act) else np.nan
+            out[name][yr] = (float(act.mean() / sd * np.sqrt(252))
+                             if len(act) >= 20 and sd and sd > 0 else np.nan)
+        oos_s += OOS_W
+    return out
+
+
 # ══════════════════════════════════════════════════════
 # DYNAMIC "BEST SIGNAL" SCANNERS  (per-metal, cached)
 # ══════════════════════════════════════════════════════
@@ -5167,6 +5208,10 @@ with tab10:
 
     _p10_use_iv = "Inverse" in _p10_wt_choice
     _p10_port = _p10_port_iv if _p10_use_iv else _p10_port_ew
+    # Dynamic weighting labels used by every card/chart/table below (no hardcoded "EW")
+    _p10_wt_full  = "Inverse-Vol" if _p10_use_iv else "Equal-Weight"
+    _p10_wt_word  = "INVERSE-VOL" if _p10_use_iv else "EQUAL-WEIGHT"
+    _p10_port_label = f"{_p10_wt_full} Portfolio"
 
     # ── PnL series ────────────────────────────────────────────────────────────
     def _p10_ret(pos: pd.Series, tc_bps: int = 0) -> pd.Series:
@@ -5223,7 +5268,7 @@ with tab10:
     st.markdown(f"""
 <div style="background:#111827;border:1px solid #2A2A2A;border-radius:6px;padding:16px 22px;margin-bottom:4px;">
 <p style="color:#B87333;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:700;margin:0 0 10px">
-THREE ORTHOGONAL RISK PREMIA &rarr; ONE EQUAL-WEIGHT PORTFOLIO &nbsp;({_p10_metal})</p>
+THREE ORTHOGONAL RISK PREMIA &rarr; ONE {_p10_wt_word} PORTFOLIO &nbsp;({_p10_metal})</p>
 <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#C8BFB4;">
 <tr style="border-bottom:1px solid #2A2A2A;color:#8A8278;font-size:0.72rem;">
   <td style="padding:4px 10px 4px 0">Signal</td>
@@ -5258,7 +5303,7 @@ THREE ORTHOGONAL RISK PREMIA &rarr; ONE EQUAL-WEIGHT PORTFOLIO &nbsp;({_p10_meta
 All legs use shift-1 execution (trade at the signal's close; first return next day; no look-ahead). Legs
 auto-switch to the selected metal's best-performing configuration. Live pairwise position correlations:
 Mom-Carry {_shc(_cmc)} &nbsp;|&nbsp; Mom-Value {_shc(_cmv)} &nbsp;|&nbsp; Carry-Value {_shc(_ccv)}.
-&nbsp;Equal-weight portfolio net Sharpe (IS, selected TC) &asymp; <b>{_shc(_port_sh)}</b>; per-window walk-forward OOS is shown below.</p>
+&nbsp;{_p10_wt_full} portfolio net Sharpe (IS, selected TC) &asymp; <b>{_shc(_port_sh)}</b>; per-window walk-forward OOS is shown below.</p>
 </div>""", unsafe_allow_html=True)
 
     # ── Section 1: Live Portfolio Badge ───────────────────────────────────────
@@ -5282,7 +5327,7 @@ Mom-Carry {_shc(_cmc)} &nbsp;|&nbsp; Mom-Value {_shc(_cmv)} &nbsp;|&nbsp; Carry-
         "padding:14px 18px;text-align:center"
     )
     for _col, _lbl, _val in [
-        (_p10_badge_col1, "EW Portfolio", _p10_cur_pos),
+        (_p10_badge_col1, _p10_port_label, _p10_cur_pos),
         (_p10_badge_col2, "Momentum", _p10_cur_mom),
         (_p10_badge_col3, "Carry", _p10_cur_carry),
         (_p10_badge_col4, "Value", _p10_cur_val),
@@ -5301,7 +5346,7 @@ Mom-Carry {_shc(_cmc)} &nbsp;|&nbsp; Mom-Value {_shc(_cmv)} &nbsp;|&nbsp; Carry-
     st.divider()
     _p10_yr0 = str(pf1c.index[0].year); _p10_yr1 = str(pf1c.index[-1].year)
     _p10_tc_note_hdr = f", {_p10_tc_label}" if _p10_tc_bps > 0 else ", 0 TC (Gross)"
-    _p10_wt_short = "INVERSE-VOL" if _p10_use_iv else "EQUAL-WEIGHT"
+    _p10_wt_short = _p10_wt_word
     section_header(f"{_p10_wt_short} PORTFOLIO PERFORMANCE{_p10_tc_note_hdr.upper()}")
     st.caption(f"Full period {_p10_yr0}-{_p10_yr1}{_p10_tc_note_hdr}, all sleeves same-day execution (shift 1, no look-ahead).")
 
@@ -5342,6 +5387,8 @@ Mom-Carry {_shc(_cmc)} &nbsp;|&nbsp; Mom-Value {_shc(_cmv)} &nbsp;|&nbsp; Carry-
         _ew_f, _ew_pre, _ew_post, _ew_ann, _ew_dd = _p10_cmp(_p10_port_ew)
         _iv_f, _iv_pre, _iv_post, _iv_ann, _iv_dd = _p10_cmp(_p10_port_iv)
         _tcn = "Net" if _p10_tc_bps > 0 else "Gross"
+        _aw = _p10_iw.mean()   # realised average inverse-vol weights (live, per metal)
+        _awm = float(_aw.get("m", 1/3)); _awc = float(_aw.get("c", 1/3)); _awv = float(_aw.get("v", 1/3))
         st.markdown(f"""
 **How inverse-vol weighting works**
 
@@ -5353,9 +5400,10 @@ Equal-weight gives each sleeve a fixed **1/3** of the position. That equalises *
 2. Weight each sleeve by **w_i = (1/σ_i) / Σ(1/σ_j)** - low-vol sleeves get more weight, so each contributes ≈ equal risk.
 3. Portfolio position = w_m×Mom + w_c×Carry + w_v×Value, rebalanced daily.
 
-For *these* three copper signals the realised vols are similar, so the average weights land near
-**0.34 / 0.34 / 0.39** - close to equal. The benefit is therefore modest and shows up mostly as
-**post-2022 stability** (the weights tilt away from whichever sleeve is blowing out in a given regime).
+For *these* three {_p10_metal} signals the realised vols are similar, so the average weights land near
+**{_awm:.2f} / {_awc:.2f} / {_awv:.2f}** (Mom / Carry / Value) - close to equal. The benefit is therefore
+modest and shows up mostly as **post-2022 stability** (the weights tilt away from whichever sleeve is
+blowing out in a given regime).
 
 | Metric ({_tcn}, TC={_p10_tc_bps}bps) | Equal-Weight | Inverse-Vol |
 |---|---|---|
@@ -5388,6 +5436,138 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
             f'</div>',
             unsafe_allow_html=True,
         )
+
+    # ── Section 2b: Out-of-Sample Walk-Forward Validation ─────────────────────
+    st.divider()
+    section_header("OUT-OF-SAMPLE WALK-FORWARD VALIDATION")
+    _p10_wf = _wf_portfolio_tc(
+        _p10_metal, _p10_use_iv, _p10_use_v2, _p10_tc_bps,
+        _p10_m, _p10_c, _p10_v, _p10_port, pf1r, pf1c,
+    )
+    _p10_wf_yrs = sorted(_p10_wf["Portfolio"].keys())
+    _p10_wf_first = _p10_wf_yrs[0] if _p10_wf_yrs else "N/A"
+    _p10_wf_last  = _p10_wf_yrs[-1] if _p10_wf_yrs else "N/A"
+    _p10_wf_recent = _p10_wf_yrs[-3:] if len(_p10_wf_yrs) >= 3 else _p10_wf_yrs
+    _p10_wf_recent_lbl = f"{_p10_wf_recent[0]}-{_p10_wf_recent[-1]}" if _p10_wf_recent else "-"
+    _p10_wf_tcn = f", {_p10_tc_label}" if _p10_tc_bps > 0 else ", 0 TC (Gross)"
+    st.caption(
+        f"IS = 5yr rolling window, OOS = 1yr, all legs same-day execution (shift 1, no look-ahead). "
+        f"Each leg uses {_p10_metal}'s a-priori configuration - never re-optimised per window. "
+        f"{len(_p10_wf_yrs)} OOS windows, labelled by end year, coverage {_p10_wf_first}-{_p10_wf_last}"
+        f"{_p10_wf_tcn}."
+    )
+
+    def _wf_avg(d):
+        vv = [v for v in d.values() if v is not None and not np.isnan(v)]
+        return float(np.nanmean(vv)) if vv else np.nan
+    def _wf_avg_recent(d):
+        vv = [d[y] for y in _p10_wf_recent if y in d and not np.isnan(d[y])]
+        return float(np.nanmean(vv)) if vv else np.nan
+
+    _p10_wf_port_avg   = _wf_avg(_p10_wf["Portfolio"])
+    _p10_wf_port_rec   = _wf_avg_recent(_p10_wf["Portfolio"])
+    _p10_wf_port_vals  = [v for v in _p10_wf["Portfolio"].values() if v is not None and not np.isnan(v)]
+    _p10_wf_npos       = sum(1 for v in _p10_wf_port_vals if v > 0)
+    _p10_wf_ngt03      = sum(1 for v in _p10_wf_port_vals if v > 0.30)
+    _p10_wf_ntot       = len(_p10_wf["Portfolio"])
+
+    _p10_wfc1, _p10_wfc2, _p10_wfc3 = st.columns(3)
+    _wfs   = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
+              "border-radius:4px;padding:14px 20px")
+    _wfsg  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #475569;"
+              "border-radius:4px;padding:14px 20px")
+    _wflbl = "color:#B87333;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:600;margin:0 0 6px"
+    _wflbg = "color:#94A3B8;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:600;margin:0 0 6px"
+    _wfbig = "color:#E8DDD0;font-family:'IBM Plex Mono',monospace;font-size:1.55rem;font-weight:700;margin:0"
+    _wfmed = "color:#E8DDD0;font-family:'IBM Plex Mono',monospace;font-size:1.15rem;font-weight:600;margin:0"
+    _wfsub = "color:#8A8278;font-size:0.75rem;margin:2px 0"
+    _wfhr  = "border:none;border-top:1px solid #2A2A2A;margin:8px 0"
+
+    with _p10_wfc1:
+        st.markdown(f"""<div style="{_wfs}">
+<p style="{_wflbl}">{_p10_port_label} - OOS Sharpe</p>
+<p style="{_wfbig}">{_p10_wf_port_avg:+.3f}</p>
+<p style="{_wfsub}">Avg across {_p10_wf_ntot} OOS windows ({_p10_wf_first}-{_p10_wf_last}){_p10_wf_tcn}</p>
+<hr style="{_wfhr}"/>
+<p style="{_wfsub}">{_p10_wf_recent_lbl} avg</p>
+<p style="{_wfmed}">{_p10_wf_port_rec:+.3f}</p>
+<p style="{_wfsub}">Fixed-config, zero per-window re-optimisation</p>
+</div>""", unsafe_allow_html=True)
+
+    with _p10_wfc2:
+        st.markdown(f"""<div style="{_wfs}">
+<p style="{_wflbl}">Per-Sleeve OOS Sharpe</p>
+<p style="{_wfmed}">Mom {_wf_avg(_p10_wf['Momentum']):+.2f} &nbsp; Carry {_wf_avg(_p10_wf['Carry']):+.2f} &nbsp; Val {_wf_avg(_p10_wf['Value']):+.2f}</p>
+<hr style="{_wfhr}"/>
+<p style="{_wfsub}">Avg OOS Sharpe of each leg, same windows{_p10_wf_tcn}</p>
+<p style="{_wfsub}">Portfolio OOS Sharpe ({_p10_wf_port_avg:+.2f}) typically exceeds the best single leg - diversification holding out-of-sample</p>
+</div>""", unsafe_allow_html=True)
+
+    with _p10_wfc3:
+        _p10_wf_best = max(_p10_wf["Portfolio"], key=lambda y: (_p10_wf["Portfolio"][y]
+                            if not np.isnan(_p10_wf["Portfolio"][y]) else -9)) if _p10_wf_ntot else "N/A"
+        _p10_wf_worst = min(_p10_wf["Portfolio"], key=lambda y: (_p10_wf["Portfolio"][y]
+                            if not np.isnan(_p10_wf["Portfolio"][y]) else 9)) if _p10_wf_ntot else "N/A"
+        st.markdown(f"""<div style="{_wfsg}">
+<p style="{_wflbg}">OOS Consistency - {_p10_wt_full}</p>
+<p style="{_wfsub}">Positive OOS Sharpe</p>
+<p style="{_wfmed}">{_p10_wf_npos} / {_p10_wf_ntot} windows</p>
+<hr style="{_wfhr}"/>
+<p style="{_wfsub}">OOS Sharpe above +0.30</p>
+<p style="{_wfmed}">{_p10_wf_ngt03} / {_p10_wf_ntot} windows</p>
+<hr style="{_wfhr}"/>
+<p style="{_wfsub}">Best: {_p10_wf_best} ({_p10_wf['Portfolio'].get(_p10_wf_best, float('nan')):+.2f}), Worst: {_p10_wf_worst} ({_p10_wf['Portfolio'].get(_p10_wf_worst, float('nan')):+.2f})</p>
+</div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    _p10_wf_fc1, _p10_wf_fc2 = st.columns([2, 4])
+    with _p10_wf_fc1:
+        _p10_wf_pick = st.multiselect(
+            "Series to plot (annual OOS Sharpe)",
+            [_p10_port_label, "Momentum", "Carry", "Value"],
+            default=[_p10_port_label],
+            key="p10_wf_pick",
+        )
+    _p10_wf_series_map = {
+        _p10_port_label: ("Portfolio", COLORS["primary"]),
+        "Momentum":      ("Momentum",  "#5BAD72"),
+        "Carry":         ("Carry",     COLORS["amber"]),
+        "Value":         ("Value",     "#7B8FC0"),
+    }
+    fig_p10_wf = go.Figure()
+    for _disp in (_p10_wf_pick or [_p10_port_label]):
+        _key, _clr = _p10_wf_series_map[_disp]
+        _d = _p10_wf[_key]
+        fig_p10_wf.add_trace(go.Bar(
+            x=list(_d.keys()), y=list(_d.values()), name=_disp,
+            marker_color=_clr,
+            hovertemplate="%{x}<br>" + _disp + " OOS Sharpe: %{y:.3f}<extra></extra>",
+        ))
+    fig_p10_wf.add_hline(y=0, line_color="#475569", line_width=1)
+    if _p10_port_label in (_p10_wf_pick or [_p10_port_label]):
+        fig_p10_wf.add_hline(
+            y=_p10_wf_port_avg, line_dash="dot", line_color=COLORS["primary"], line_width=1.5,
+            annotation_text=f"Portfolio avg {_p10_wf_port_avg:+.3f}",
+            annotation_position="top right", annotation_font=dict(size=10, color=COLORS["primary"]),
+        )
+    fig_p10_wf.update_layout(
+        height=320, margin=dict(l=0, r=0, t=20, b=0),
+        paper_bgcolor="#0E1117", plot_bgcolor="#131922",
+        font=dict(color="#E8DDD0", family="IBM Plex Mono", size=11),
+        xaxis=dict(gridcolor="#1C2333", title=None),
+        yaxis=dict(gridcolor="#1C2333", title="OOS Sharpe", zeroline=False),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11), orientation="h", y=1.12),
+        barmode="group",
+    )
+    st.plotly_chart(fig_p10_wf, use_container_width=True)
+    st.caption(
+        f"Walk-forward out-of-sample: the selected configuration is applied to each unseen 1yr window "
+        f"after a 5yr burn-in. The {_p10_wt_full.lower()} portfolio's avg OOS Sharpe is "
+        f"{_p10_wf_port_avg:+.3f} versus per-sleeve "
+        f"Mom {_wf_avg(_p10_wf['Momentum']):+.2f} / Carry {_wf_avg(_p10_wf['Carry']):+.2f} / "
+        f"Value {_wf_avg(_p10_wf['Value']):+.2f}. Use the selector to overlay individual sleeves."
+    )
 
     # ── Section 3: Pairwise Correlation Heatmap ───────────────────────────────
     st.divider()
@@ -5438,7 +5618,7 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
         )
         _theo_sharpe = np.sqrt(3) * np.mean([abs(_mom_sh), abs(_car_sh), abs(_val_sh)])
         st.caption(
-            f"Theoretical EW Sharpe (uncorrelated) ≈ √3 × avg individual = {_theo_sharpe:.3f}. "
+            f"Theoretical portfolio Sharpe (uncorrelated) ≈ √3 × avg individual = {_theo_sharpe:.3f}. "
             f"Realised: {_port_sh:.3f}."
         )
 
@@ -5461,7 +5641,7 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
             "Momentum":  _p10_sub_sharpe(_p10_m,    _ps, _pe, _p10_tc_bps),
             "Carry":     _p10_sub_sharpe(_p10_c,    _ps, _pe, _p10_tc_bps),
             "Value":     _p10_sub_sharpe(_p10_v,    _ps, _pe, _p10_tc_bps),
-            "EW Portfolio": _p10_sub_sharpe(_p10_port, _ps, _pe, _p10_tc_bps),
+            _p10_port_label: _p10_sub_sharpe(_p10_port, _ps, _pe, _p10_tc_bps),
         })
 
     _sub_df = pd.DataFrame(_sub_rows).set_index("Period")
@@ -5474,12 +5654,12 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     _sub_html = "<table style='width:100%;border-collapse:collapse;font-family:IBM Plex Mono,monospace;font-size:0.82rem'>"
     _sub_html += "<tr style='border-bottom:1px solid #2A2A2A'>"
     _sub_html += "<th style='text-align:left;color:#8A8278;padding:6px 10px'>Period</th>"
-    for _ch in ["Momentum", "Carry", "Value", "EW Portfolio"]:
+    for _ch in ["Momentum", "Carry", "Value", _p10_port_label]:
         _sub_html += f"<th style='text-align:right;color:#8A8278;padding:6px 10px'>{_ch}</th>"
     _sub_html += "</tr>"
     for _pr, _srow in _sub_df.iterrows():
         _sub_html += f"<tr style='border-bottom:1px solid #1A1A1A'><td style='color:#E8DDD0;padding:6px 10px'>{_pr}</td>"
-        for _ck in ["Momentum", "Carry", "Value", "EW Portfolio"]:
+        for _ck in ["Momentum", "Carry", "Value", _p10_port_label]:
             _v = _srow[_ck]
             _sub_html += f"<td style='text-align:right;padding:6px 10px'>{_fmt_sub(_v)}</td>"
         _sub_html += "</tr>"
@@ -5515,8 +5695,29 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     # ── Section 6: Cumulative PnL Chart ──────────────────────────────────────
     st.divider()
     _p10_pnl_lbl = f"Net ({_p10_tc_label})" if _p10_tc_bps > 0 else "Gross"
-    section_header(f"CUMULATIVE PnL (USD/MT) - {_p10_pnl_lbl}")
-    st.caption(f"{_p10_pnl_lbl} cumulative PnL. EW Portfolio vs individual signals on common period.")
+    section_header("CUMULATIVE PERFORMANCE")
+
+    _p10_cum_ctl1, _p10_cum_ctl2 = st.columns([1.6, 2.4])
+    with _p10_cum_ctl1:
+        _p10_cum_mode = st.radio(
+            "Scale",
+            ["Raw $/MT (1-unit position)", "Risk-scaled (each to 10% vol)"],
+            index=0, key="p10_cum_mode", horizontal=False,
+            help="Raw $/MT plots dollar PnL of a 1-unit position. Because the portfolio holds the "
+                 "AVERAGE of three sleeves, its gross size (and so its raw $/MT) is smaller than an "
+                 "always-on single sleeve - even though its Sharpe is higher. The risk-scaled view "
+                 "puts every series at the same 10% annual volatility, so the curves are directly "
+                 "comparable on a risk-adjusted basis and the portfolio's higher Sharpe shows as the "
+                 "steepest, smoothest line.",
+        )
+    with _p10_cum_ctl2:
+        _p10_cum_pick = st.multiselect(
+            "Series to plot",
+            [_p10_port_label, "Momentum", "Carry", "Value"],
+            default=[_p10_port_label, "Momentum", "Carry", "Value"],
+            key="p10_cum_pick",
+        )
+    _p10_cum_risk = _p10_cum_mode.startswith("Risk")
 
     def _cum_pnl(pos):
         pnl = pos * _p10_f.diff()
@@ -5525,43 +5726,85 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
             pnl = pnl - chg * (_p10_tc_bps / 10000.0 / 2.0) * _p10_fraw
         return pnl.cumsum()
 
-    _p10_cum_port = _cum_pnl(_p10_port)
-    _p10_cum_mom  = _cum_pnl(_p10_m)
-    _p10_cum_car  = _cum_pnl(_p10_c)
-    _p10_cum_val  = _cum_pnl(_p10_v)
+    def _cum_riskscaled(pos, target_vol=0.10):
+        pnl = pos * _p10_f.diff()
+        if _p10_tc_bps > 0:
+            chg = pos.diff().abs(); chg.iloc[0] = abs(pos.iloc[0])
+            pnl = pnl - chg * (_p10_tc_bps / 10000.0 / 2.0) * _p10_fraw
+        with np.errstate(invalid="ignore", divide="ignore"):
+            ret = (pnl / _p10_f.shift(1)).replace([np.inf, -np.inf], np.nan)
+        act = ret[pos != 0].dropna()
+        vol = act.std(ddof=1) * np.sqrt(252) if len(act) > 20 else np.nan
+        scale = (target_vol / vol) if vol and vol > 0 else 0.0
+        return (ret.fillna(0) * scale).cumsum() * 100.0
+
+    _p10_cum_fn = _cum_riskscaled if _p10_cum_risk else _cum_pnl
+    _p10_cum_map = {
+        _p10_port_label: (_p10_cum_fn(_p10_port), COLORS["primary"], 2.5),
+        "Momentum":      (_p10_cum_fn(_p10_m),    "#5BAD72",         1.4),
+        "Carry":         (_p10_cum_fn(_p10_c),    COLORS["amber"],   1.4),
+        "Value":         (_p10_cum_fn(_p10_v),    "#7B8FC0",         1.4),
+    }
+    _p10_disp_names = {
+        _p10_port_label: _p10_port_label,
+        "Momentum":      f"Momentum {_p10_mom_label}",
+        "Carry":         f"Carry {_p10_carry_label}",
+        "Value":         f"Value {_p10_val_label}",
+    }
+    if _p10_cum_risk:
+        _hov = "%{x|%b %d, %Y}<br>Cum return (10% vol): %{y:,.1f}%<extra></extra>"
+    else:
+        _hov = "%{x|%b %d, %Y}<br>Cum PnL: $%{y:,.0f}/MT<extra></extra>"
 
     fig_p10_cum = go.Figure()
-    for _name, _series, _color, _width in [
-        ("EW Portfolio",         _p10_cum_port, COLORS["primary"], 2.5),
-        (f"Momentum {_p10_mom_label}", _p10_cum_mom, "#5BAD72",       1.2),
-        (f"Carry {_p10_carry_label}",  _p10_cum_car, COLORS["amber"], 1.2),
-        ("Value (selected)",           _p10_cum_val, "#7B8FC0",       1.2),
-    ]:
+    for _disp in (_p10_cum_pick or [_p10_port_label]):
+        _series, _color, _width = _p10_cum_map[_disp]
         fig_p10_cum.add_trace(go.Scatter(
             x=_series.index, y=_series.values,
-            name=_name, mode="lines",
+            name=_p10_disp_names[_disp], mode="lines",
             line=dict(color=_color, width=_width),
-            hovertemplate="%{x|%b %d, %Y}<br>Cum PnL: $%{y:,.0f}/MT<extra></extra>",
+            hovertemplate=_hov,
         ))
     fig_p10_cum.update_layout(
         height=400, margin=dict(l=0, r=0, t=20, b=0),
         paper_bgcolor="#0E1117", plot_bgcolor="#131922",
         font=dict(color="#E8DDD0", family="IBM Plex Mono", size=11),
         xaxis=dict(gridcolor="#1C2333", showgrid=True),
-        yaxis=dict(gridcolor="#1C2333", showgrid=True, tickprefix="$", ticksuffix="/MT"),
+        yaxis=(dict(gridcolor="#1C2333", showgrid=True, ticksuffix="%") if _p10_cum_risk
+               else dict(gridcolor="#1C2333", showgrid=True, tickprefix="$", ticksuffix="/MT")),
         legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
         hovermode="x unified",
     )
     st.plotly_chart(fig_p10_cum, use_container_width=True)
+    if _p10_cum_risk:
+        st.caption(
+            f"{_p10_pnl_lbl}, risk-scaled. Every series is scaled to a common 10% annual volatility, "
+            f"so slope = risk-adjusted return. The {_p10_wt_full.lower()} portfolio is the steepest and "
+            f"smoothest line, consistent with its higher Sharpe."
+        )
+    else:
+        st.caption(
+            f"{_p10_pnl_lbl} dollar PnL of a 1-unit position. The portfolio holds the average of three "
+            f"sleeves, so an always-on single sleeve (e.g. Momentum) can show larger raw $/MT while still "
+            f"having a LOWER Sharpe - higher dollar PnL is not higher risk-adjusted return. Switch to "
+            f"'Risk-scaled' above to compare like-for-like."
+        )
 
     # ── Section 7: Rolling Sharpe ─────────────────────────────────────────────
     st.divider()
     section_header("ROLLING SHARPE (252-DAY)")
-    _p10_rsh_cc1, _p10_rsh_cc2 = st.columns([4, 1])
+    _p10_rsh_cc1, _p10_rsh_cc2, _p10_rsh_cc3 = st.columns([2.6, 1.6, 1])
     with _p10_rsh_cc1:
-        st.caption(f"Rolling 1yr Sharpe - {_p10_wt_short.title().replace('-',' ')} portfolio vs each sleeve. "
+        st.caption(f"Rolling 1yr Sharpe - {_p10_port_label} vs each sleeve. "
                    f"Net uses the selected {_p10_tc_label}.")
     with _p10_rsh_cc2:
+        _p10_rsh_pick = st.multiselect(
+            "Series",
+            [_p10_port_label, "Momentum", "Carry", "Value"],
+            default=[_p10_port_label, "Momentum", "Carry", "Value"],
+            key="p10_rsh_pick",
+        )
+    with _p10_rsh_cc3:
         _p10_rsh_basis = st.radio("Returns", ["Gross", "Net of TC"], index=0,
                                   key="p10_rsh_basis", horizontal=False)
     _p10_rsh_net = _p10_rsh_basis.startswith("Net")
@@ -5575,21 +5818,24 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
             raw=True,
         )
 
-    _p10_rsh_port = _p10_roll_sh(_p10_port)
-    _p10_rsh_mom  = _p10_roll_sh(_p10_m)
-    _p10_rsh_car  = _p10_roll_sh(_p10_c)
-    _p10_rsh_val  = _p10_roll_sh(_p10_v)
-
+    _p10_rsh_map = {
+        _p10_port_label: (_p10_roll_sh(_p10_port), COLORS["primary"], 2.2),
+        "Momentum":      (_p10_roll_sh(_p10_m),    "#5BAD72",         1.0),
+        "Carry":         (_p10_roll_sh(_p10_c),    COLORS["amber"],   1.0),
+        "Value":         (_p10_roll_sh(_p10_v),    "#7B8FC0",         1.0),
+    }
+    _p10_rsh_disp = {
+        _p10_port_label: _p10_port_label,
+        "Momentum":      f"Momentum {_p10_mom_label}",
+        "Carry":         f"Carry {_p10_carry_label}",
+        "Value":         f"Value {_p10_val_label}",
+    }
     fig_p10_rsh = go.Figure()
-    for _name, _series, _color, _width in [
-        (f"{_p10_wt_short.title().replace('-',' ')} Portfolio", _p10_rsh_port, COLORS["primary"], 2.2),
-        ("Momentum",           _p10_rsh_mom,  "#5BAD72",         1.0),
-        ("Carry-Mom 20d",      _p10_rsh_car,  COLORS["amber"],   1.0),
-        ("Value V1",           _p10_rsh_val,  "#7B8FC0",         1.0),
-    ]:
+    for _disp in (_p10_rsh_pick or [_p10_port_label]):
+        _series, _color, _width = _p10_rsh_map[_disp]
         fig_p10_rsh.add_trace(go.Scatter(
             x=_series.index, y=_series.values,
-            name=_name, mode="lines",
+            name=_p10_rsh_disp[_disp], mode="lines",
             line=dict(color=_color, width=_width),
             hovertemplate="%{x|%b %d, %Y}<br>Rolling Sharpe: %{y:.3f}<extra></extra>",
         ))
@@ -5635,11 +5881,20 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     # ── Section 9: Position Decomposition ────────────────────────────────────
     st.divider()
     section_header("POSITION DECOMPOSITION")
-    st.caption("Each signal's contribution to the EW portfolio position (±1/3 per signal).")
-
-    _p10_dec_mom  = _p10_m / 3.0
-    _p10_dec_car  = _p10_c / 3.0
-    _p10_dec_val  = _p10_v / 3.0
+    if _p10_use_iv:
+        st.caption("Each signal's contribution to the Inverse-Vol portfolio position "
+                   "(daily inverse-vol weight × signal). Stacked contributions sum to the portfolio position.")
+        _p10_dec_mom = _p10_wm * _p10_m
+        _p10_dec_car = _p10_wc * _p10_c
+        _p10_dec_val = _p10_wv * _p10_v
+        _p10_dec_tags = ("Momentum (w×sig)", "Carry (w×sig)", "Value (w×sig)")
+    else:
+        st.caption("Each signal's contribution to the Equal-Weight portfolio position (±1/3 per signal). "
+                   "Stacked contributions sum to the portfolio position.")
+        _p10_dec_mom = _p10_m / 3.0
+        _p10_dec_car = _p10_c / 3.0
+        _p10_dec_val = _p10_v / 3.0
+        _p10_dec_tags = ("Momentum (±1/3)", "Carry (±1/3)", "Value (±1/3)")
 
     _p10_dec_start = st.date_input(
         "From date", value=pd.Timestamp("2020-01-01").date(),
@@ -5650,9 +5905,9 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
 
     fig_p10_dec = go.Figure()
     for _name, _series, _color in [
-        ("Momentum (±1/3)",  _p10_dec_mom.reindex(_p10_dec_idx),  "#5BAD72"),
-        ("Carry (±1/3)",     _p10_dec_car.reindex(_p10_dec_idx),  COLORS["amber"]),
-        ("Value (±1/3)",     _p10_dec_val.reindex(_p10_dec_idx),  "#7B8FC0"),
+        (_p10_dec_tags[0],  _p10_dec_mom.reindex(_p10_dec_idx),  "#5BAD72"),
+        (_p10_dec_tags[1],  _p10_dec_car.reindex(_p10_dec_idx),  COLORS["amber"]),
+        (_p10_dec_tags[2],  _p10_dec_val.reindex(_p10_dec_idx),  "#7B8FC0"),
     ]:
         fig_p10_dec.add_trace(go.Scatter(
             x=_series.index, y=_series.values,
