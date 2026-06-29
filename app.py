@@ -2260,6 +2260,7 @@ with tab7:
             st.session_state["mom_sig_type"] = "MA Crossover"
             st.session_state["mom_variant"]  = "MA(60,115) - Best Sharpe [Al default]"
             st.session_state["mom_timing"]   = "Same-Day"
+        st.session_state.pop("wf_chart_mode", None)  # reset OOS chart mode on metal change
 
     st.markdown(f"### Momentum Signals - LME {_mom_metal}")
     st.markdown(
@@ -2697,9 +2698,10 @@ with tab7:
 <p style="{_big}">{_WF_MA35_AVG:+.3f}</p>
 <p style="{_sub}">Avg OOS Sharpe, {_wf_first_yr}-{_wf_last_yr[:4]}, {_WF_N_TOTAL} Windows{_tc_note}</p>
 <hr style="{_hr}"/>
-<p style="{_sub}">{_recent_label} avg</p>
-<p style="{_med}">{_WF_MA35_P23:+.3f}</p>
-<p style="{_sub}">Zero re-optimisation across all {_WF_N_TOTAL} windows</p>
+<p style="{_sub}">{_recent_label} avg &nbsp; {_WF_MA35_P23:+.3f}</p>
+<hr style="{_hr}"/>
+<p style="color:#94A3B8;font-size:0.68rem;font-family:'IBM Plex Mono',monospace;font-weight:700;letter-spacing:0.06em;margin:4px 0 2px;">FIXED-PARAMETER</p>
+<p style="{_sub}">{_m_ma_str} identified on {_m_is_yr0}-{_m_is_yr1} full history. Annual bars show post-{_wf_first_yr} performance decomposition, not an independent held-out test.</p>
 </div>""", unsafe_allow_html=True)
 
     with _wf_c2:
@@ -2710,6 +2712,9 @@ with tab7:
 <hr style="{_hr}"/>
 <p style="{_sub}">MA(10,25) + MA(35,43) + MA(63,100) structural anchors</p>
 <p style="{_sub}">Max-Sharpe QP weights, re-optimised annually on prior 5yr IS data</p>
+<hr style="{_hr}"/>
+<p style="color:#5BAD72;font-size:0.68rem;font-family:'IBM Plex Mono',monospace;font-weight:700;letter-spacing:0.06em;margin:4px 0 2px;">ROLLING WALK-FORWARD</p>
+<p style="{_sub}">Weights re-estimated blind on each prior IS window. Each OOS year is genuinely held out from the estimation step.</p>
 </div>""", unsafe_allow_html=True)
 
     with _wf_c3:
@@ -2730,13 +2735,14 @@ with tab7:
 
     _wf_chart_c1, _wf_chart_c2 = st.columns([2, 4])
     with _wf_chart_c1:
+        _wf_ma_opt = f"{_m_ma_str} - Annual OOS Sharpe"
         _wf_chart_mode = st.selectbox(
             "Annual OOS Sharpe - Strategy",
-            ["MA(35,43) - Annual OOS Sharpe", "Anchors + IS-Opt Weights"],
+            [_wf_ma_opt, "Anchors + IS-Opt Weights"],
             index=0, key="wf_chart_mode",
         )
 
-    if _wf_chart_mode == "MA(35,43) - Annual OOS Sharpe":
+    if _wf_chart_mode == _wf_ma_opt:
         _wf_years_plot  = list(_wf_active.keys())
         _wf_sh_plot     = list(_wf_active.values())
         _wf_bar_cls = [
@@ -2777,8 +2783,11 @@ with tab7:
         st.plotly_chart(fig_wf_bar, use_container_width=True)
         _gold_lbl = ", ".join(_wf_recent_yrs) if _wf_recent_yrs else "recent"
         st.caption(
-            f"Gold-bordered bars = most recent {len(_wf_recent_yrs)} complete OOS windows ({_gold_lbl}). "
-            + (f"TC = {_oos_tc_label} deducted on each signal flip." if _oos_tc_bps > 0 else "Gross returns shown.")
+            f"FIXED-PARAMETER. {_m_ma_str} was identified on the {_m_is_yr0}-{_m_is_yr1} full history; "
+            "parameters are unchanged across all windows. Each bar shows strategy performance in that calendar "
+            f"year — a sub-period decomposition, not a held-out test. "
+            f"Gold borders = most recent {len(_wf_recent_yrs)} windows ({_gold_lbl}). "
+            + (f"TC = {_oos_tc_label} applied." if _oos_tc_bps > 0 else "Gross.")
         )
     else:
         # Anchors + IS-Opt Weights: all OOS windows, computed live (TC-aware)
@@ -2814,11 +2823,12 @@ with tab7:
         )
         st.plotly_chart(fig_anc, use_container_width=True)
         st.caption(
-            f"All {len(_anc_sh)} OOS windows, IS-opt QP weights re-fit annually on prior 5yr data "
-            f"(max-Sharpe, w≥0, Σw=1). Full-period avg {_WF_OPT_AVG_FULL:+.3f}"
+            f"ROLLING WALK-FORWARD. Combination weights are re-estimated by max-Sharpe QP (w≥0, Σw=1) "
+            "on each preceding five-year in-sample window and applied blind to the following twelve months. "
+            "The three anchor MAs [MA(10,25), MA(35,43), MA(63,100)] are structurally fixed — only the "
+            f"blend weights are optimised per window, so there is no anchor-selection look-ahead. "
+            f"Full-period avg {_WF_OPT_AVG_FULL:+.3f}"
             + (f", TC = {_oos_tc_label}." if _oos_tc_bps > 0 else " (gross).")
-            + " The three anchor MAs [MA(10,25), MA(35,43), MA(63,100)] are structural, not data-fitted - "
-            "only the combination weights are optimised IS, so there is no anchor-selection look-ahead."
         )
 
     with st.expander("Walk-Forward Annual Detail", expanded=False):
@@ -4539,9 +4549,11 @@ with tab9:
     # ── SECTION 1: OUT-OF-SAMPLE WALK-FORWARD ────────────────────────────────
     st.markdown("#### Out-of-Sample Walk-Forward Validation")
     st.caption(
-        "IS = 5yr rolling window, OOS = 1yr, Same-Day entry, Fixed parameters - no re-optimisation per window. "
-        "Window labels denote the start year of each OOS period. "
-        "V1 F8 and F12 use ±10% threshold throughout. "
+        "FIXED-PARAMETER. Contract, lookback, and threshold were selected across the full "
+        f"{_v9_is_yr0}-{_v9_is_yr1} history; parameters are unchanged across all windows. "
+        "Each annual bar reflects strategy performance in that calendar year — a sub-period "
+        "decomposition under fixed parameters, not an independent held-out test. "
+        "IS = 5yr, OOS = 1yr. V1 F8 and F12 use ±10% threshold throughout. "
         "V2 BG 10yr: signal first valid Jan 2016; only 5 complete OOS windows available."
     )
 
@@ -5499,10 +5511,11 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     _p10_wf_recent_lbl = f"{_p10_wf_recent[0]}-{_p10_wf_recent[-1]}" if _p10_wf_recent else "-"
     _p10_wf_tcn = f", {_p10_tc_label}" if _p10_tc_bps > 0 else ", 0 TC (Gross)"
     st.caption(
-        f"IS = 5yr rolling window, OOS = 1yr, all legs same-day execution (shift 1, no look-ahead). "
-        f"Each leg uses {_p10_metal}'s a-priori configuration - never re-optimised per window. "
-        f"{len(_p10_wf_yrs)} OOS windows, labelled by end year, coverage {_p10_wf_first}-{_p10_wf_last}"
-        f"{_p10_wf_tcn}."
+        f"FIXED-PARAMETER. All three sleeve configurations for {_p10_metal} were identified on the full "
+        "history; no parameter is re-estimated per window. Each annual bar reflects portfolio performance "
+        "in that calendar year — a sub-period decomposition under fixed parameters, not an independent "
+        f"held-out test. IS = 5yr, OOS = 1yr, {len(_p10_wf_yrs)} windows, labelled by end year, "
+        f"coverage {_p10_wf_first}-{_p10_wf_last}{_p10_wf_tcn}."
     )
 
     def _wf_avg(d):
@@ -5539,7 +5552,7 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
 <hr style="{_wfhr}"/>
 <p style="{_wfsub}">{_p10_wf_recent_lbl} avg</p>
 <p style="{_wfmed}">{_p10_wf_port_rec:+.3f}</p>
-<p style="{_wfsub}">Fixed-config, zero per-window re-optimisation</p>
+<p style="{_wfsub}">Fixed-parameter; sub-period decomposition, not a held-out test</p>
 </div>""", unsafe_allow_html=True)
 
     with _p10_wfc2:
