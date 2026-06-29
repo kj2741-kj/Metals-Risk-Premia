@@ -1948,8 +1948,9 @@ _VALUE_CMP_OPTIONS: dict = {
 
 
 @st.cache_data(show_spinner=False)
-def _wf_ma3543_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
-    """Walk-forward OOS Sharpes for MA(35,43) Lag-1 with round-trip TC."""
+def _wf_ma_tc(m: int, n: int, _f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
+    """Walk-forward OOS Sharpes for MA(m,n) Same-Day entry with round-trip TC.
+    IS=5yr (1260d), OOS=1yr (252d) rolling windows; windows labelled by end year."""
     IS_W, OOS_W = 1260, 252
     T, dates = len(_f1r), _f1r.index
     out = {}
@@ -1958,13 +1959,13 @@ def _wf_ma3543_tc(_f1r: pd.Series, _f1c: pd.Series, tc_bps: int) -> dict:
         oos_e = min(oos_s + OOS_W, T)
         if (oos_e - oos_s) < OOS_W:
             oos_s += OOS_W; continue
-        yr = str(dates[oos_e - 1].year)   # label window by its END year (Dec-2010 window = 2011 OOS)
+        yr = str(dates[oos_e - 1].year)
         f1r_w = _f1r.iloc[oos_s - IS_W:oos_e]
         oos_dt = dates[oos_s:oos_e]
-        pos_full = np.sign(f1r_w.rolling(35).mean() - f1r_w.rolling(43).mean()).shift(1).fillna(0)
+        pos_full = np.sign(f1r_w.rolling(m).mean() - f1r_w.rolling(n).mean()).shift(1).fillna(0)
         pos_oos = pos_full.iloc[-OOS_W:].set_axis(oos_dt)
         f1c_oos = _f1c.reindex(oos_dt)
-        f1r_oos = _f1r.reindex(oos_dt)        # TC on actual traded price F1_raw
+        f1r_oos = _f1r.reindex(oos_dt)
         pnl = pos_oos * f1c_oos.diff()
         if tc_bps > 0:
             chg = pos_oos.diff().abs(); chg.iloc[0] = abs(pos_oos.iloc[0])
@@ -2241,6 +2242,25 @@ def _fmt_dd(x):  return "N/A" if x is None or (isinstance(x, float) and np.isnan
 with tab7:
     # ── Metal toggle (top of tab) ─────────────────────────────────────────────
     _mom_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="mom_metal")
+
+    # Metal-canonical MA pair (used for OOS and default preset)
+    _m_ma = (35, 43) if _mom_metal == "Copper" else (60, 115)
+    _m_ma_str = f"MA{_m_ma}"
+
+    # Auto-reset controls to metal-canonical config when the metal toggle changes
+    if st.session_state.get("_mom_metal_prev") != _mom_metal:
+        st.session_state["_mom_metal_prev"] = _mom_metal
+        if _mom_metal == "Copper":
+            st.session_state["mom_preset"]   = "MA(35,43), Same-Day  [Cu Best]"
+            st.session_state["mom_sig_type"] = "MA Crossover"
+            st.session_state["mom_variant"]  = "MA(35,43) - Best Sharpe [Cu default]"
+            st.session_state["mom_timing"]   = "Same-Day"
+        else:
+            st.session_state["mom_preset"]   = "MA(60,115), Same-Day  [Al Best]"
+            st.session_state["mom_sig_type"] = "MA Crossover"
+            st.session_state["mom_variant"]  = "MA(60,115) - Best Sharpe [Al default]"
+            st.session_state["mom_timing"]   = "Same-Day"
+
     st.markdown(f"### Momentum Signals - LME {_mom_metal}")
     st.markdown(
         '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
@@ -2270,8 +2290,7 @@ with tab7:
     section_header(f"BEST MOMENTUM SIGNAL - BY VARIANT  ({_mom_metal})")
     st.caption(
         f"Best configuration per signal family for {_mom_metal}, full-period IS backtest "
-        f"({f1r.index[0].year}-{f1r.index[-1].year}), gross active-day Sharpe (TC=0), no look-ahead. "
-        "Computed live from data - changes with the metal toggle. Past performance is not indicative of future results."
+        f"({f1r.index[0].year}-{f1r.index[-1].year}), gross active-day Sharpe (TC=0), no look-ahead."
     )
     _mb_cs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
                "border-radius:4px;padding:14px 20px")
@@ -2303,8 +2322,6 @@ with tab7:
 <p style="{_mb_sub}">{_d['name']}, {_d['timing']}</p>
 <p style="{_mb_sub}">Ann Ret ≈ {_fmt_pct(_d['ann'])}, Max DD ≈ {_fmt_dd(_d['mdd'])}</p>
 </div>""", unsafe_allow_html=True)
-    st.caption(f"Cards recompute live for {_mom_metal}: the MA-crossover grid, CTA family and Anchors EW are "
-               "each re-scanned, and the strongest family is starred.")
 
     # ── SECTION 2: IS PARAMETER SEARCH (IN-SAMPLE) ────────────────────────────
     _m_is_yr0 = str(f1r.index[0].year); _m_is_yr1 = str(f1r.index[-1].year)
@@ -2320,9 +2337,14 @@ with tab7:
 
     # ── Strategy Preset ───────────────────────────────────────────────────────
     _MOM_PRESETS = {
-        "MA(35,43), Same-Day  [WF Best / Default]": {
+        "MA(35,43), Same-Day  [Cu Best]": {
             "mom_sig_type": "MA Crossover",
-            "mom_variant":  "MA(35,43) - Best Sharpe [default]",
+            "mom_variant":  "MA(35,43) - Best Sharpe [Cu default]",
+            "mom_timing":   "Same-Day",
+        },
+        "MA(60,115), Same-Day  [Al Best]": {
+            "mom_sig_type": "MA Crossover",
+            "mom_variant":  "MA(60,115) - Best Sharpe [Al default]",
             "mom_timing":   "Same-Day",
         },
         "CTA(9,21), Same-Day  [Baz-Granger Best]": {
@@ -2337,7 +2359,7 @@ with tab7:
         },
         "MA(35,43), Lag-1  [Sensitivity Check]": {
             "mom_sig_type": "MA Crossover",
-            "mom_variant":  "MA(35,43) - Best Sharpe [default]",
+            "mom_variant":  "MA(35,43) - Best Sharpe [Cu default]",
             "mom_timing":   "Lag-1 (Next-Day)",
         },
         "Custom (use controls below)": {},
@@ -2378,7 +2400,8 @@ with tab7:
     with c2:
         if sig_type == "MA Crossover":
             variant_opts = {
-                "MA(35,43) - Best Sharpe [default]": (35, 43),
+                "MA(35,43) - Best Sharpe [Cu default]": (35, 43),
+                "MA(60,115) - Best Sharpe [Al default]": (60, 115),
                 "MA(33,48)": (33, 48),
                 "MA(35,44)": (35, 44),
                 "MA(34,47)": (34, 47),
@@ -2624,7 +2647,7 @@ with tab7:
 
     # ── Out-of-Sample Walk-Forward Validation ──────────────────────────────────
     st.divider()
-    _wf_active     = _wf_ma3543_tc(f1r, f1c, _oos_tc_bps)
+    _wf_active     = _wf_ma_tc(_m_ma[0], _m_ma[1], f1r, f1c, _oos_tc_bps)
     # Anchors + IS-opt walk-forward - computed live for ALL OOS windows (TC-aware).
     _WF_ANC_OPT      = _wf_anchors_isopt_tc(f1r, f1c, _oos_tc_bps)
     _anc_opt_vals    = [v for v in _WF_ANC_OPT.values() if v is not None and not np.isnan(v)]
@@ -2638,8 +2661,8 @@ with tab7:
     st.markdown("#### Out-of-Sample Walk-Forward Validation")
     st.caption(
         f"IS = 5yr rolling window, OOS = 1yr, Same-Day entry, {len(_wf_active)} OOS windows. "
-        "MA(35,43) selected a priori - never re-optimised per window. "
-        f"Window labels denote the start year of each OOS period; "
+        f"{_m_ma_str} selected a priori for {_mom_metal} - never re-optimised per window. "
+        f"Window labels denote the end year of each OOS period; "
         f"data coverage spans {_wf_first_yr}-{_wf_last_yr[:4]}."
     )
 
@@ -2670,31 +2693,30 @@ with tab7:
 
     with _wf_c1:
         st.markdown(f"""<div style="{_cs}">
-<p style="{_lbl}">MA(35,43) - Fixed Parameter</p>
+<p style="{_lbl}">{_m_ma_str} - Fixed Parameter</p>
 <p style="{_big}">{_WF_MA35_AVG:+.3f}</p>
 <p style="{_sub}">Avg OOS Sharpe, {_wf_first_yr}-{_wf_last_yr[:4]}, {_WF_N_TOTAL} Windows{_tc_note}</p>
 <hr style="{_hr}"/>
 <p style="{_sub}">{_recent_label} avg</p>
 <p style="{_med}">{_WF_MA35_P23:+.3f}</p>
-<p style="{_sub}">Zero re-optimisation, 13-day tail excluded</p>
+<p style="{_sub}">Zero re-optimisation across all {_WF_N_TOTAL} windows</p>
 </div>""", unsafe_allow_html=True)
 
     with _wf_c2:
         st.markdown(f"""<div style="{_cs}">
-<p style="{_lbl}">Anchors + IS-Opt Weights</p>
+<p style="{_lbl}">Anchors EW + IS-Opt Weights</p>
 <p style="{_big}">{_WF_OPT_AVG_FULL:+.3f}</p>
 <p style="{_sub}">Avg OOS Sharpe, {_wf_first_yr}-{_wf_last_yr[:4]}, {len(_WF_ANC_OPT)} Windows{_tc_note}</p>
 <hr style="{_hr}"/>
-<p style="{_sub}">MA(10,25) + MA(35,43) + MA(63,100)</p>
+<p style="{_sub}">MA(10,25) + MA(35,43) + MA(63,100) structural anchors</p>
 <p style="{_sub}">Max-Sharpe QP weights, re-optimised annually on prior 5yr IS data</p>
-<p style="{_sub}">Optimizer assigns w≈1.0 to MA(35,43) in 9 / 15 windows</p>
 </div>""", unsafe_allow_html=True)
 
     with _wf_c3:
         _wf_best_yr  = max(_wf_active, key=lambda y: _wf_active[y])
         _wf_worst_yr = min(_wf_active, key=lambda y: _wf_active[y])
         st.markdown(f"""<div style="{_csg}">
-<p style="{_lblg}">OOS Consistency - MA(35,43)</p>
+<p style="{_lblg}">OOS Consistency - {_m_ma_str}</p>
 <p style="{_sub}">Positive OOS Sharpe</p>
 <p style="{_med}">{_WF_N_POS} / {_WF_N_TOTAL} windows</p>
 <hr style="{_hr}"/>
@@ -2747,7 +2769,7 @@ with tab7:
         fig_wf_bar.update_layout(
             **CHART_LAYOUT, height=300,
             title=dict(
-                text=f"MA(35,43) - Annual OOS Sharpe  (Walk-Forward, IS=5yr, Same-Day{_tc_note})",
+                text=f"{_m_ma_str} - Annual OOS Sharpe  ({_mom_metal}, Walk-Forward, IS=5yr, Same-Day{_tc_note})",
                 font=dict(size=13),
             ),
             yaxis_title="OOS Sharpe", xaxis_title=None, showlegend=False,
@@ -2802,7 +2824,7 @@ with tab7:
     with st.expander("Walk-Forward Annual Detail", expanded=False):
         _wf_yrs_tbl = list(_wf_active.keys())
         _is_labels  = [f"{int(y.rstrip('*'))-5}-{int(y.rstrip('*'))-1}" for y in _wf_yrs_tbl]
-        _tc_col     = f"MA(35,43) OOS{'  '+_oos_tc_label if _oos_tc_bps>0 else ' (Gross)'}"
+        _tc_col     = f"{_m_ma_str} OOS{'  '+_oos_tc_label if _oos_tc_bps>0 else ' (Gross)'}"
         _anc_map    = {y: f"{v:+.3f}" for y, v in _WF_ANC_OPT.items()}
         _wf_tbl = pd.DataFrame({
             "OOS Window":      _wf_yrs_tbl,
@@ -2813,9 +2835,10 @@ with tab7:
         })
         st.dataframe(_wf_tbl, use_container_width=True, hide_index=True)
         st.caption(
-            "OOS Window label = start year of 252-day OOS period. "
+            "OOS Window label = end year of 252-day OOS period. "
+            f"{_m_ma_str} is the a-priori fixed parameter for {_mom_metal}, never re-optimised. "
             "Anchors+Opt: IS-opt QP weights on MA(10,25)+MA(35,43)+MA(63,100), re-fit each window; "
-            f"computed live for all {len(_WF_ANC_OPT)} windows, full-period avg = {_WF_OPT_AVG_FULL:+.3f}."
+            f"full-period avg = {_WF_OPT_AVG_FULL:+.3f}."
         )
 
     st.divider()
@@ -3175,6 +3198,19 @@ with tab7:
 
 with tab8:
     _c8_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="carry_metal")
+
+    # Auto-reset to metal-canonical carry config when metal changes
+    if st.session_state.get("_carry_metal_prev") != _c8_metal:
+        st.session_state["_carry_metal_prev"] = _c8_metal
+        if _c8_metal == "Copper":
+            st.session_state["carry_vgroup"] = "V4 - Carry Momentum"
+            st.session_state["carry_subv"]   = "20-day Δcarry (best OOS +0.50)"
+            st.session_state["carry_timing"] = "Same-Day"
+        else:  # Aluminium canonical: Z-score 252d
+            st.session_state["carry_vgroup"] = "V3 - Z-score"
+            st.session_state["carry_subv"]   = "Z-score sign (252d)"
+            st.session_state["carry_timing"] = "Same-Day"
+
     st.markdown(f"### Carry Signals - LME {_c8_metal}")
     st.markdown(
         '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
@@ -3192,8 +3228,7 @@ with tab8:
     section_header(f"BEST CARRY SIGNAL - BY VARIANT  ({_c8_metal})")
     st.caption(
         f"Best configuration per variant family for {_c8_metal} - full-period IS backtest, gross active-day "
-        "Sharpe (TC=0), no look-ahead. Computed live - changes with the metal toggle. "
-        "Past performance is not indicative of future results."
+        "Sharpe (TC=0), no look-ahead."
     )
     _bcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
              "border-radius:4px;padding:14px 20px")
@@ -3226,8 +3261,7 @@ with tab8:
 <p style="{_bsub}">{_d['name']}, {_d['timing']}</p>
 <p style="{_bsub}">Ann Ret ≈ {_fmt_pct(_d['ann'])}, Max DD ≈ {_fmt_dd(_d['mdd'])}</p>
 </div>""", unsafe_allow_html=True)
-    st.caption(f"Cards recompute live for {_c8_metal}; the strongest family is starred. "
-               "Same-Day vs Lag-1 is selected per family by gross Sharpe.")
+    st.caption(f"Strongest family for {_c8_metal} is starred. Same-Day vs Lag-1 selected per family by gross Sharpe.")
 
     st.markdown("""
     <div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;border-radius:4px;padding:14px 20px;margin-bottom:8px;">
@@ -4084,6 +4118,23 @@ def _wf_value_oos_tc(_pos: pd.Series, _f1c: pd.Series, _f1r: pd.Series, tc_bps: 
 
 with tab9:
     _v9_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="value_metal")
+
+    # Auto-reset to metal-canonical value config when metal changes
+    if st.session_state.get("_val_metal_prev") != _v9_metal:
+        st.session_state["_val_metal_prev"] = _v9_metal
+        if _v9_metal == "Copper":
+            st.session_state["val_vgroup"]   = "V1 - MA Reversion"
+            st.session_state["val_contract"] = "F8"
+            st.session_state["val_lb"]       = "5yr  (1260d)"
+            st.session_state["val_thr"]      = "±10% (default)"
+            st.session_state["val_timing"]   = "Lag-1 (Next-Day)"
+        else:  # Aluminium canonical: V1 F12 5yr
+            st.session_state["val_vgroup"]   = "V1 - MA Reversion"
+            st.session_state["val_contract"] = "F12"
+            st.session_state["val_lb"]       = "5yr  (1260d)"
+            st.session_state["val_thr"]      = "±10% (default)"
+            st.session_state["val_timing"]   = "Lag-1 (Next-Day)"
+
     st.markdown(f"### Value Signals - LME {_v9_metal}")
     st.markdown(
         '<div style="background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;'
@@ -4138,8 +4189,7 @@ with tab9:
     section_header(f"BEST VALUE SIGNAL - BY VARIANT  ({_v9_metal})")
     st.caption(
         f"Best-performing configuration per variant for {_v9_metal}. IS backtest, full period "
-        f"{vf1c.index[0].year}-{vf1c.index[-1].year}, gross active-day Sharpe (TC=0), best timing per variant. "
-        "Computed live - changes with the metal toggle."
+        f"{vf1c.index[0].year}-{vf1c.index[-1].year}, gross active-day Sharpe (TC=0), best timing per variant."
     )
     _vbsc1, _vbsc2 = st.columns(2)
     _vbcs  = ("background:#161616;border:1px solid #2A2A2A;border-left:4px solid #B87333;"
