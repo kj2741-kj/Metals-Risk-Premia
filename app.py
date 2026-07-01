@@ -1677,6 +1677,38 @@ def _mom_cum_pnl(f1r: pd.Series, f1c: pd.Series, spec: dict) -> pd.Series:
     return pd.Series(pos * f1c.diff().values.astype(float), index=f1r.index).cumsum()
 
 
+def _mom_daily_ret(f1r: pd.Series, f1c: pd.Series, spec: dict) -> pd.Series:
+    """Daily gross return ratio for a momentum spec (gross PnL / F1 lagged price)."""
+    cpnl = _mom_cum_pnl(f1r, f1c, spec)
+    daily_pnl = cpnl.diff()
+    f1c_al = f1c.reindex(cpnl.index)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return (daily_pnl / f1c_al.shift(1)).replace([np.inf, -np.inf], np.nan)
+
+
+@st.cache_data(show_spinner=False)
+def _ma_sharpe_custom_period(_f1r: pd.Series, _f1c: pd.Series,
+                              n_max: int, yr_start: int, yr_end: int) -> pd.DataFrame:
+    """Recompute MA crossover Sharpe (Same-Day, gross, active-day) for a custom year range.
+    Coarser grid (step=2) than the precomputed CSV — sufficient for regime comparisons."""
+    mask  = (_f1r.index.year >= yr_start) & (_f1r.index.year <= yr_end)
+    f1r_w = _f1r[mask].dropna(); f1c_w = _f1c[mask].dropna()
+    idx   = f1r_w.index.intersection(f1c_w.index)
+    f1r_w = f1r_w.reindex(idx); f1c_w = f1c_w.reindex(idx)
+    rows  = []
+    for m in range(2, 64, 2):
+        fast = f1r_w.rolling(m).mean()
+        for n in range(m + 4, n_max + 1, 2):
+            pos = np.sign(fast - f1r_w.rolling(n).mean()).shift(1).fillna(0)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                ret = (pos * f1c_w.diff() / f1c_w.shift(1)).replace([np.inf, -np.inf], np.nan)
+            act = ret[pos != 0].dropna()
+            sh  = float(act.mean() / act.std(ddof=1) * np.sqrt(252)) \
+                  if len(act) > 20 and act.std(ddof=1) > 0 else np.nan
+            rows.append({"m": m, "n": n, "sharpe": sh})
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["m", "n", "sharpe"])
+
+
 # All variant+timing combinations available for comparison dropdown
 _MOM_CMP_OPTIONS = {
     "N/A": None,
@@ -2863,91 +2895,126 @@ with tab7:
                              index=2, key="rs_window", horizontal=False)
         rs_basis = st.radio("Returns", ["Gross", "Net of TC"], index=0,
                             key="rs_basis_mom", horizontal=False)
+        _rs_overlay_keys = [k for k in _MOM_CMP_OPTIONS.keys() if k != "N/A"]
+        _rs_overlay = st.multiselect(
+            "Overlay strategies",
+            _rs_overlay_keys,
+            default=[],
+            key="rs_overlay",
+            max_selections=5,
+            help="Select up to 5 additional strategies to overlay on the same chart.",
+        )
 
     _rs_net = rs_basis.startswith("Net")
     _dr = (net_ret_all if _rs_net else gross_ret_all).fillna(0)
     roll_252 = (_dr.rolling(252).mean() / _dr.rolling(252).std() * np.sqrt(252))
     roll_504 = (_dr.rolling(504).mean() / _dr.rolling(504).std() * np.sqrt(252))
 
+    _RS_OVL_COLORS = [COLORS["amber"], COLORS["green"], "#A78BFA", "#F472B6", "#22D3EE", "#FB923C"]
+
     with rs_c1:
         fig_rs = go.Figure()
         if rs_window in ("1 Year (252d)", "Both"):
             fig_rs.add_trace(go.Scatter(
-                x=roll_252.index, y=roll_252.values, name="Rolling Sharpe (1yr)",
-                mode="lines", line=dict(color=COLORS["primary"], width=1.6),
+                x=roll_252.index, y=roll_252.values,
+                name=f"{variant_label} (1yr)",
+                mode="lines", line=dict(color=COLORS["primary"], width=2.0),
                 hovertemplate="%{x|%b %Y}<br>Sharpe (1yr): %{y:.2f}<extra></extra>",
             ))
         if rs_window in ("2 Years (504d)", "Both"):
             fig_rs.add_trace(go.Scatter(
-                x=roll_504.index, y=roll_504.values, name="Rolling Sharpe (2yr)",
-                mode="lines", line=dict(color=COLORS["amber"], width=1.6, dash="dot"),
+                x=roll_504.index, y=roll_504.values,
+                name=f"{variant_label} (2yr)",
+                mode="lines", line=dict(color=COLORS["primary"], width=2.0, dash="dot"),
                 hovertemplate="%{x|%b %Y}<br>Sharpe (2yr): %{y:.2f}<extra></extra>",
             ))
-        # Shade positive regions
+        # Overlay additional strategies
+        for _oi, _olbl in enumerate(_rs_overlay):
+            _ospec = _MOM_CMP_OPTIONS.get(_olbl)
+            if _ospec is None:
+                continue
+            _oret = _mom_daily_ret(f1r, f1c, _ospec).fillna(0)
+            _ocol = _RS_OVL_COLORS[_oi % len(_RS_OVL_COLORS)]
+            if rs_window in ("1 Year (252d)", "Both"):
+                _or252 = _oret.rolling(252).mean() / _oret.rolling(252).std() * np.sqrt(252)
+                fig_rs.add_trace(go.Scatter(
+                    x=_or252.index, y=_or252.values,
+                    name=f"{_olbl} (1yr)",
+                    mode="lines", line=dict(color=_ocol, width=1.5),
+                    hovertemplate=f"%{{x|%b %Y}}<br>{_olbl} (1yr): %{{y:.2f}}<extra></extra>",
+                ))
+            if rs_window in ("2 Years (504d)", "Both"):
+                _or504 = _oret.rolling(504).mean() / _oret.rolling(504).std() * np.sqrt(252)
+                fig_rs.add_trace(go.Scatter(
+                    x=_or504.index, y=_or504.values,
+                    name=f"{_olbl} (2yr)",
+                    mode="lines", line=dict(color=_ocol, width=1.5, dash="dot"),
+                    hovertemplate=f"%{{x|%b %Y}}<br>{_olbl} (2yr): %{{y:.2f}}<extra></extra>",
+                ))
         fig_rs.add_hline(y=0,  line_dash="dash", line_color="#475569", line_width=1)
         fig_rs.add_hline(y=0.5, line_dash="dot", line_color=COLORS["green"],
                          line_width=0.8, annotation_text="0.5", annotation_position="right")
         fig_rs.update_layout(
-            **CHART_LAYOUT, height=320,
+            **CHART_LAYOUT, height=360,
             title=dict(text=f"{variant_label} - Rolling Sharpe ({timing_label}, {'Net of TC' if _rs_net else 'Gross'})", font=dict(size=13)),
             yaxis_title="Annualised Sharpe", xaxis_title=None, hovermode="x unified",
         )
         fig_rs.update_xaxes(showspikes=True, spikecolor="#475569", spikethickness=1, spikemode="across")
         st.plotly_chart(fig_rs, use_container_width=True)
     st.caption(f"Signal computed over full {_m_is_yr0}-{_m_is_yr1} history. "
-               f"Rolling Sharpe uses {'net (' + tc_label + ')' if _rs_net else 'gross'} returns. "
-               "Positive/negative swings show regime dependence - a consistently positive curve indicates robustness.")
+               f"Main strategy uses {'net (' + tc_label + ')' if _rs_net else 'gross'} returns; overlay strategies are gross. "
+               "Use the Overlay multiselect to compare any custom MA or CTA variant.")
 
     # ── Cumulative PnL chart ──────────────────────────────────────────────────
     st.divider()
     section_header("CUMULATIVE PnL (USD/MT)")
 
-    # Comparison strategy pickers
-    cmp_keys = list(_MOM_CMP_OPTIONS.keys())
-    cc1, cc2 = st.columns(2)
-    with cc1:
-        cmp_a_label = st.selectbox(
-            "Strategy A", cmp_keys, index=0, key="cmp_a",
-            help="First strategy to plot. Select N/A to hide.",
+    _cmp_all_keys = [k for k in _MOM_CMP_OPTIONS.keys() if k != "N/A"]
+    _cmp_col, _cmp_opt_col = st.columns([4, 1])
+    with _cmp_col:
+        _cmp_selected = st.multiselect(
+            "Compare strategies (select any combination — current strategy always shown)",
+            _cmp_all_keys,
+            default=[],
+            key="mom_cmp_multi",
+            max_selections=6,
+            help="Pick up to 6 MA or CTA variants to overlay against the current strategy.",
         )
-    with cc2:
-        cmp_b_label = st.selectbox(
-            "Strategy B", cmp_keys, index=0, key="cmp_b",
-            help="Second strategy to compare. Select N/A to hide.",
-        )
+    with _cmp_opt_col:
+        _cmp_show_net = st.checkbox("Show net TC", value=False, key="cmp_show_net")
 
-    _CMP_COLORS = [COLORS["primary"], COLORS["amber"], COLORS["green"], "#A78BFA"]
+    _CMP_COLORS = [COLORS["amber"], COLORS["green"], "#A78BFA", "#F472B6",
+                   "#22D3EE", "#FB923C", "#34D399"]
     fig_cum = go.Figure()
-    _cmp_plotted = 0
-    for _lbl, _cidx in [(cmp_a_label, 0), (cmp_b_label, 1)]:
+
+    # Current strategy — always shown (gross solid, net dashed)
+    fig_cum.add_trace(go.Scatter(
+        x=cum_pnl_gross.index, y=cum_pnl_gross.values,
+        name=f"{variant_label} (gross)", mode="lines",
+        line=dict(color=COLORS["primary"], width=2.2, dash="solid"),
+        hovertemplate="%{x|%b %d, %Y}<br>Gross: $%{y:,.1f}/MT<extra></extra>",
+    ))
+    if _cmp_show_net and tc_bps > 0:
+        fig_cum.add_trace(go.Scatter(
+            x=cum_pnl_net.index, y=cum_pnl_net.values,
+            name=f"{variant_label} (net {tc_label})", mode="lines",
+            line=dict(color=COLORS["primary"], width=1.5, dash="dot"),
+            hovertemplate="%{x|%b %d, %Y}<br>Net: $%{y:,.1f}/MT<extra></extra>",
+        ))
+
+    # Selected overlay strategies
+    for _cidx, _lbl in enumerate(_cmp_selected):
         _spec = _MOM_CMP_OPTIONS.get(_lbl)
         if _spec is None:
             continue
         _cpnl = _mom_cum_pnl(f1r, f1c, _spec)
+        _col  = _CMP_COLORS[_cidx % len(_CMP_COLORS)]
         fig_cum.add_trace(go.Scatter(
             x=_cpnl.index, y=_cpnl.values,
             name=_lbl, mode="lines",
-            line=dict(color=_CMP_COLORS[_cidx], width=1.8,
-                      dash="dot" if _cidx == 1 else "solid"),
+            line=dict(color=_col, width=1.6,
+                      dash="dot" if _cidx % 2 == 1 else "solid"),
             hovertemplate=f"%{{x|%b %d, %Y}}<br>{_lbl}: $%{{y:,.1f}}/MT<extra></extra>",
-        ))
-        _cmp_plotted += 1
-
-    # Also show gross/net for the currently selected main strategy
-    fig_cum.add_trace(go.Scatter(
-        x=cum_pnl_gross.index, y=cum_pnl_gross.values,
-        name=f"{variant_label} Gross", mode="lines",
-        line=dict(color="#64748B", width=1.2, dash="solid"),
-        hovertemplate="%{x|%b %d, %Y}<br>Gross: $%{y:,.1f}/MT<extra></extra>",
-        visible="legendonly",
-    ))
-    if tc_bps > 0:
-        fig_cum.add_trace(go.Scatter(
-            x=cum_pnl_net.index, y=cum_pnl_net.values,
-            name=f"{variant_label} Net ({tc_label})", mode="lines",
-            line=dict(color="#94A3B8", width=1.2, dash="dot"),
-            hovertemplate="%{x|%b %d, %Y}<br>Net: $%{y:,.1f}/MT<extra></extra>",
-            visible="legendonly",
         ))
 
     fig_cum.add_hline(y=0, line_dash="dash", line_color="#475569", line_width=1)
@@ -2988,30 +3055,55 @@ with tab7:
 
     if sig_type == "MA Crossover":
         _df_opt = _load_ma_opt()
-        if _df_opt.empty:
-            st.info("MA_Crossover_Optimization.csv not found in data/ folder.")
+        hm_c1, hm_c2 = st.columns([3, 1])
+        with hm_c2:
+            hm_n_max = st.slider("Max n (slow window)", 20, 126, 80, step=5, key="hm_nmax")
+            _hm_yr_start, _hm_yr_end = st.slider(
+                "Date range",
+                min_value=int(_m_is_yr0), max_value=int(_m_is_yr1),
+                value=(int(_m_is_yr0), int(_m_is_yr1)),
+                step=1, key="hm_yr_range",
+                help="Filter the date range used to compute Sharpe for each (m,n) pair.",
+            )
+            _hm_full_history = (_hm_yr_start == int(_m_is_yr0) and _hm_yr_end == int(_m_is_yr1))
+            if _hm_full_history and not _df_opt.empty:
+                hm_metric = st.selectbox(
+                    "Colour by", ["sharpe", "ann_return", "hit_rate"],
+                    format_func=lambda x: {"sharpe": "Sharpe Ratio",
+                                           "ann_return": "Ann Return ($/MT)",
+                                           "hit_rate": "Hit Rate %"}[x],
+                    key="hm_metric",
+                )
+            else:
+                hm_metric = "sharpe"
+                st.caption("Custom date range — colour fixed to Sharpe (recomputed live).")
+
+        # Resolve data source: precomputed CSV for full history, live compute for sub-periods
+        if _hm_full_history and not _df_opt.empty:
+            _df_hm = _df_opt[_df_opt["n"] <= hm_n_max].copy()
         else:
-            hm_c1, hm_c2 = st.columns([3, 1])
-            with hm_c2:
-                hm_metric = st.selectbox("Colour by", ["sharpe", "ann_return", "hit_rate"],
-                                         format_func=lambda x: {"sharpe": "Sharpe Ratio",
-                                                                 "ann_return": "Ann Return ($/MT)",
-                                                                 "hit_rate": "Hit Rate %"}[x],
-                                         key="hm_metric")
-                hm_n_max = st.slider("Max n (slow window)", 20, 126, 80, step=5, key="hm_nmax")
-            _df_filt = _df_opt[_df_opt["n"] <= hm_n_max].copy()
-            _pivot = _df_filt.pivot_table(index="m", columns="n", values=hm_metric)
+            if _hm_yr_end - _hm_yr_start < 2:
+                with hm_c1:
+                    st.warning("Select at least a 2-year window to compute meaningful Sharpe ratios.")
+                _df_hm = pd.DataFrame(columns=["m", "n", "sharpe"])
+            else:
+                with hm_c1:
+                    st.info(f"Computing Sharpe grid for {_hm_yr_start}–{_hm_yr_end}…")
+                _df_hm = _ma_sharpe_custom_period(f1r, f1c, hm_n_max, _hm_yr_start, _hm_yr_end)
+
+        if not _df_hm.empty and hm_metric in _df_hm.columns:
+            _pivot = _df_hm.pivot_table(index="m", columns="n", values=hm_metric)
             import plotly.express as _px
             fig_hm = _px.imshow(
                 _pivot,
                 color_continuous_scale="RdYlGn",
-                zmin=_df_filt[hm_metric].quantile(0.05),
-                zmax=_df_filt[hm_metric].quantile(0.95),
+                zmin=_df_hm[hm_metric].quantile(0.05),
+                zmax=_df_hm[hm_metric].quantile(0.95),
                 labels=dict(x="Slow window n", y="Fast window m", color=hm_metric),
                 aspect="auto",
             )
-            # Mark top-5 pairs
-            _top5 = _df_opt.nlargest(5, "sharpe")
+            # Mark top-5 pairs for the current period
+            _top5 = _df_hm.nlargest(5, "sharpe")
             fig_hm.add_trace(go.Scatter(
                 x=_top5["n"], y=_top5["m"],
                 mode="markers+text",
@@ -3022,15 +3114,27 @@ with tab7:
                 hovertemplate="MA(%{y},%{x})<br>Sharpe: %{customdata:.3f}<extra>Top 5</extra>",
                 customdata=_top5["sharpe"].values,
             ))
+            _period_lbl = "full history" if _hm_full_history else f"{_hm_yr_start}–{_hm_yr_end}"
             fig_hm.update_layout(
                 **CHART_LAYOUT, height=480,
-                title=dict(text=f"MA Crossover - Sharpe surface  (m=fast, n=slow, n≤{hm_n_max})", font=dict(size=13)),
+                title=dict(
+                    text=f"MA Crossover — Sharpe surface ({_period_lbl}, m=fast, n=slow, n≤{hm_n_max})",
+                    font=dict(size=13),
+                ),
                 coloraxis_colorbar=dict(title=hm_metric, thickness=14),
             )
             with hm_c1:
                 st.plotly_chart(fig_hm, use_container_width=True)
-            st.caption("White stars = current top-5 by Sharpe. A wide green plateau means the "
-                       "strategy is robust to parameter choice. An isolated peak suggests overfitting.")
+            _src_note = ("precomputed CSV" if _hm_full_history and not _df_opt.empty
+                         else f"live-computed, step-2 grid, {_hm_yr_start}–{_hm_yr_end}")
+            st.caption(
+                f"White stars = top-5 by Sharpe for {_period_lbl} ({_src_note}). "
+                "Adjust the Date range slider to see which parameter region is robust across regimes. "
+                "A wide green plateau means the strategy is robust to parameter choice."
+            )
+        elif _df_opt.empty and _hm_full_history:
+            with hm_c1:
+                st.info("MA_Crossover_Optimization.csv not found in data/ folder.")
 
     else:  # CTA
         _df_cta = _load_cta_opt()
