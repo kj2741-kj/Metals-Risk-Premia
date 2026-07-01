@@ -1726,8 +1726,15 @@ _MOM_CMP_OPTIONS = {
     "MA(1,5) - Same-Day":   {"type": "ma", "m": 1,  "n": 5,  "same_day": True},
     "MA(5,20) - Lag-1":     {"type": "ma", "m": 5,  "n": 20, "same_day": False},
     "MA(5,20) - Same-Day":  {"type": "ma", "m": 5,  "n": 20, "same_day": True},
-    "MA(10,60) - Lag-1":    {"type": "ma", "m": 10, "n": 60, "same_day": False},
-    "MA(10,60) - Same-Day": {"type": "ma", "m": 10, "n": 60, "same_day": True},
+    "MA(10,60) - Lag-1":     {"type": "ma", "m": 10, "n": 60,  "same_day": False},
+    "MA(10,60) - Same-Day":  {"type": "ma", "m": 10, "n": 60,  "same_day": True},
+    # ── Prof. benchmarks ──────────────────────────────────────────────────────
+    "MA(1,20) - Lag-1":      {"type": "ma", "m": 1,  "n": 20,  "same_day": False},
+    "MA(1,20) - Same-Day":   {"type": "ma", "m": 1,  "n": 20,  "same_day": True},
+    "MA(5,60) - Lag-1":      {"type": "ma", "m": 5,  "n": 60,  "same_day": False},
+    "MA(5,60) - Same-Day":   {"type": "ma", "m": 5,  "n": 60,  "same_day": True},
+    "MA(20,250) - Lag-1":    {"type": "ma", "m": 20, "n": 250, "same_day": False},
+    "MA(20,250) - Same-Day": {"type": "ma", "m": 20, "n": 250, "same_day": True},
     "CTA(9,21) - Lag-1":    {"type": "cta_single", "s": 9,  "l": 21, "same_day": False},
     "CTA(9,21) - Same-Day": {"type": "cta_single", "s": 9,  "l": 21, "same_day": True},
     "CTA(9,20) - Lag-1":    {"type": "cta_single", "s": 9,  "l": 20, "same_day": False},
@@ -2972,13 +2979,14 @@ with tab7:
     _cmp_all_keys = [k for k in _MOM_CMP_OPTIONS.keys() if k != "N/A"]
     _cmp_col, _cmp_opt_col = st.columns([4, 1])
     with _cmp_col:
+        _cmp_benchmarks = ["MA(1,20) - Same-Day", "MA(5,60) - Same-Day", "MA(20,250) - Same-Day"]
         _cmp_selected = st.multiselect(
             "Compare strategies (select any combination — current strategy always shown)",
             _cmp_all_keys,
-            default=[],
+            default=_cmp_benchmarks,
             key="mom_cmp_multi",
             max_selections=6,
-            help="Pick up to 6 MA or CTA variants to overlay against the current strategy.",
+            help="Pick up to 6 MA or CTA variants to overlay. Defaults to the three Prof. benchmarks.",
         )
     with _cmp_opt_col:
         _cmp_show_net = st.checkbox("Show net TC", value=False, key="cmp_show_net")
