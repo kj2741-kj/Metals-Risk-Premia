@@ -521,6 +521,18 @@ with st.sidebar:
     st.markdown('<p class="main-subtitle">Risk Premia & Market Structure</p>', unsafe_allow_html=True)
     st.divider()
 
+    st.markdown("##### 🗂️ Dashboard View")
+    dash_view = st.radio(
+        "Dashboard View",
+        ["Strategies", "Market Data"],
+        index=0,
+        key="dash_view",
+        label_visibility="collapsed",
+        help="Strategies: Momentum, Carry, Value, Portfolio. Market Data: Market Overview, "
+             "Term Structure, Cash vs 3M, Volume & Open Interest, Copper LME-CME Spread, Statistics.",
+    )
+    st.divider()
+
     st.markdown("##### 📂 Data Files")
 
     # Auto-load local files; show uploaders as optional overrides
@@ -715,18 +727,54 @@ ALL_METALS = available_metals + CME_METALS_LIST
 # TABS
 # ═══════════════════════════════════════════════
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+_MARKET_DATA_LABELS = [
     "📊 Market Overview",
     "📈 Term Structure",
     "💰 Cash vs 3M (Carry)",
     "📉 Volume & Open Interest",
     "🔗 Copper LME-CME Spread",
     "📋 Statistics",
+]
+_STRATEGY_LABELS = [
     "⚡ Momentum Signals",
     "📐 Carry Signals",
     "📏 Value Signals",
     "🗂️ Portfolio",
-])
+]
+# Put the sidebar-selected group FIRST so Streamlit's default active tab (always
+# DOM position 0) lands on a tab whose button is actually visible -- st.tabs() has
+# no "default index" param, so the only way to control the initial active tab is
+# to control which label ends up first in the list passed to st.tabs(). Tab bodies
+# below reference tab1..tab10 by name as before; only the underlying DOM order
+# (and which labels are hidden) changes with the toggle.
+if dash_view == "Strategies":
+    _ordered_labels = _STRATEGY_LABELS + _MARKET_DATA_LABELS
+    _n_visible = len(_STRATEGY_LABELS)
+else:
+    _ordered_labels = _MARKET_DATA_LABELS + _STRATEGY_LABELS
+    _n_visible = len(_MARKET_DATA_LABELS)
+
+_tab_objs = st.tabs(_ordered_labels)
+_label_to_tab = dict(zip(_ordered_labels, _tab_objs))
+tab1 = _label_to_tab["📊 Market Overview"]
+tab2 = _label_to_tab["📈 Term Structure"]
+tab3 = _label_to_tab["💰 Cash vs 3M (Carry)"]
+tab4 = _label_to_tab["📉 Volume & Open Interest"]
+tab5 = _label_to_tab["🔗 Copper LME-CME Spread"]
+tab6 = _label_to_tab["📋 Statistics"]
+tab7 = _label_to_tab["⚡ Momentum Signals"]
+tab8 = _label_to_tab["📐 Carry Signals"]
+tab9 = _label_to_tab["📏 Value Signals"]
+tab10 = _label_to_tab["🗂️ Portfolio"]
+
+# Hide the tab BUTTONS (not the underlying computation -- st.tabs doesn't lazily
+# skip hidden panels, all ten bodies still execute either way) for the group
+# that's now sitting in the tail positions. Purely a decluttering choice.
+_hide_css = "".join(
+    f'div[data-baseweb="tab-list"] button:nth-of-type({n}) {{ display: none; }}\n'
+    for n in range(_n_visible + 1, len(_ordered_labels) + 1)
+)
+st.markdown(f"<style>{_hide_css}</style>", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════
