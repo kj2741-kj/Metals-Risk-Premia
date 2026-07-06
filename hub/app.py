@@ -1,15 +1,49 @@
 """
-dashboard_home.py
-==================
-Project hub page: overview, methodology, headline findings, and
-navigation into each asset-class dashboard. Pure landing page -- no
-data loading, so it renders instantly regardless of how heavy the
-other pages get.
+Metals Risk Premia - Project Hub
+==================================
+Standalone landing dashboard: project overview, methodology, headline
+findings, and conclusion, with buttons linking OUT to each asset-class
+dashboard, each of which is its own SEPARATE Streamlit app deployment
+(own URL, own compute/memory allocation, own git folder) rather than a
+page within this one.
+
+Why separate deployments instead of one multi-page app: each Streamlit
+Community Cloud app gets its own container/resource allocation, so
+splitting Metals / Energy / Precious Metals / NGL into distinct
+deployments means one heavy or crashing dashboard can't starve the
+others, and two people can work on two different asset-class folders
+independently without touching this hub or each other's deployment.
+
+This file has no dependency on the root app.py or on any other
+dashboard folder in this repo -- fully self-contained.
 """
 
 import streamlit as st
 
-from dashboard_shared import COLORS, metric_card, section_header
+from dashboard_shared import inject_css, metric_card, section_header
+
+st.set_page_config(
+    page_title="Metals Risk Premia - Hub",
+    page_icon="⚙️",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+inject_css()
+
+# ═══════════════════════════════════════════════
+# Deployment URLs for each asset-class dashboard.
+# Fill in as each one is deployed as its own Streamlit Cloud app.
+# ═══════════════════════════════════════════════
+DASHBOARD_LINKS = {
+    "Metals":         {"url": "https://metals-risk-premia-kj.streamlit.app/", "ready": True,
+                        "desc": "LME Copper & Aluminium. Momentum, Carry, Value, Portfolio (10 tabs) — complete, Stage 1."},
+    "Energy":         {"url": None, "ready": False,
+                        "desc": "WTI, Brent, RBOB, Heating Oil, Nat Gas, Gasoil + 4 extended products. Stage 2, in progress."},
+    "Precious Metals": {"url": None, "ready": False,
+                        "desc": "Gold, Silver, Platinum, Palladium, Copper-CME. Stage 2, in progress."},
+    "NGL / Refined":  {"url": None, "ready": False,
+                        "desc": "Propane, Butane, Ethane, Isobutane, Ethylene, Propylene. Stage 2 — paused pending a ticker-mapping data check."},
+}
 
 st.markdown('<p class="main-title">⚙️ Metals Risk Premia</p>', unsafe_allow_html=True)
 st.markdown(
@@ -73,24 +107,32 @@ with f4:
     st.caption("Momentum-Carry-Value position correlations mostly modest to negative — the combination, "
                "not any one sleeve, is the product.")
 
+section_header("CONCLUSION")
+st.markdown(
+    """
+The diversification thesis holds on every metal tested so far: combining three economically distinct
+premia consistently beats any single sleeve on a risk-adjusted basis, with materially lower drawdown.
+Optimal parameters are asset-specific, not a one-size template — each new product gets its own
+momentum speed, carry variant, and value anchor selected on its own data, same methodology throughout.
+Stage 2 extends this test to a genuinely different asset class (energy, refined products) to see
+whether the same three-premia structure holds outside metals.
+"""
+)
+
 st.divider()
 section_header("EXPLORE THE DASHBOARDS")
-st.caption("Full detail — live signals, parameter controls, equity curves, rolling Sharpe, performance "
-           "metrics — lives in each asset-class page below.")
+st.caption("Each asset class below is its own independent dashboard — click through for live signals, "
+           "parameter controls, equity curves, rolling Sharpe, and performance metrics.")
 
-nav1, nav2, nav3, nav4 = st.columns(4)
-with nav1:
-    st.page_link("dashboard_metals.py", label="**Metals**  →", icon="⚙️")
-    st.caption("LME Copper & Aluminium. Momentum, Carry, Value, Portfolio (10 tabs) — complete, Stage 1.")
-with nav2:
-    st.caption("**Energy**  →")
-    st.caption("Oil & gas products. *Coming in Stage 2.*")
-with nav3:
-    st.caption("**Precious Metals**  →")
-    st.caption("Gold, Silver, Platinum, Palladium, Copper-CME. *Coming in Stage 2.*")
-with nav4:
-    st.caption("**NGL / Refined Products**  →")
-    st.caption("Propane, Butane, Ethane, etc. *Coming in Stage 2 — pending data verification.*")
+nav_cols = st.columns(4)
+for col, (name, info) in zip(nav_cols, DASHBOARD_LINKS.items()):
+    with col:
+        st.markdown(f"**{name}**")
+        if info["ready"]:
+            st.link_button(f"Open {name} →", info["url"], use_container_width=True)
+        else:
+            st.button("Coming Soon", disabled=True, use_container_width=True, key=f"soon_{name}")
+        st.caption(info["desc"])
 
 st.divider()
 st.caption(
