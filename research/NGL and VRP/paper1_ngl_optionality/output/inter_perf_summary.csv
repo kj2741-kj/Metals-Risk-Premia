@@ -1,0 +1,6 @@
+Inter-Spread,Best n,Best eps,Sharpe Ratio,Annualized P/L,Max Drawdown,RoD
+Ethane-Ethylene vs Propane-Propylene,200,0.0,0.63019,0.643708,1.452901,0.4431
+Propane-Ethylene vs Propane-Propylene,200,0.64,0.53033,0.318895,0.80705,0.3951
+Propane-Ethylene vs Butane-Ethylene,200,0.16,0.35575,0.056322,0.549377,0.1025
+Propane-Propylene vs Butane-Ethylene,200,0.64,0.40839,0.246096,0.878831,0.28
+Butane-Ethylene vs Butane-Propylene,200,0.64,0.52947,0.318384,0.807312,0.3944

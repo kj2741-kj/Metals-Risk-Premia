@@ -1,0 +1,6 @@
+Spread,Statistic,P-Value,Cointegrated
+Ethane-Ethylene,-2.545693,0.2593,False
+Propane-Ethylene,-2.590676,0.24061,False
+Propane-Propylene,-4.677953,0.00062,True
+Butane-Ethylene,-2.987347,0.11324,False
+Butane-Propylene,-4.425148,0.00162,True

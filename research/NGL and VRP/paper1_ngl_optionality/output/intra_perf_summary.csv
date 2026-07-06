@@ -1,0 +1,6 @@
+Spread,Best n,Best eps,Sharpe Ratio,Annualized P/L,Max Drawdown,RoD
+Ethane-Ethylene,120,0.9,0.29839,0.038753,0.26808,0.1446
+Propane-Ethylene,200,0.6,0.49529,0.135905,0.528611,0.2571
+Propane-Propylene,250,0.9,0.45999,0.13203,0.697266,0.1894
+Butane-Ethylene,200,0.6,0.46822,0.129781,0.501351,0.2589
+Butane-Propylene,200,0.9,0.48224,0.165282,0.763286,0.2165

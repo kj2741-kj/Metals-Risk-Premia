@@ -1,0 +1,21 @@
+Subject: Following Up from CTW Americas — Metals Risk Premia (Copper Systematic Signals)
+
+Dear [Name],
+
+It was great meeting you at CTW Americas at Stanford — I really enjoyed our conversation about my Metals Risk Premia project and the systematic trading signals work I've been doing on copper. Thank you for offering to connect further and dig into it in more detail; I wanted to follow up as promised.
+
+A bit of background on me: alongside my current research, I previously worked as a risk analyst at Trafigura covering battery metals, which is part of what drew me to building out a systematic framework for identifying and combining risk premia — momentum, carry, and value — across the LME complex, starting with copper (and now extended to aluminium as well).
+
+Attached, please find:
+1. A strategy summary document covering the economic rationale, exact signal formulas, research process, and performance (full-sample, trailing five-year, and walk-forward out-of-sample) for each signal and the combined portfolio, on both Copper and Aluminium.
+2. A short guide to navigating the live dashboard.
+3. A link to the dashboard itself, where everything in the document reproduces live and updates with a metal toggle: https://metals-risk-premia-kj.streamlit.app/ — I've added your email to the list of approved viewers, so you should be able to sign in directly.
+
+I'd genuinely value your perspective, particularly on a couple of open questions flagged directly in the document — for instance, whether the structural momentum parameters we use reflect how a real trading desk would actually think about fast/medium/slow crossover signals, versus what a pure backtest optimum picks out.
+
+Would you have some time in the next couple of weeks for a call to go through it together? Happy to work around your schedule.
+
+Looking forward to hearing your thoughts.
+
+Best regards,
+Kartavya Joshi

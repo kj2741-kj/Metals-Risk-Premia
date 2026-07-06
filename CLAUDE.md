@@ -7,12 +7,30 @@ Git repo: https://github.com/kj2741-kj/Metals-Risk-Premia.git  branch: main
 
 ---
 
-## Data Files (same directory as app.py)
+## Repo Layout (reorganized 2026-07-05)
+| Folder | Contents |
+|--------|----------|
+| `/` (root) | `app.py`, `requirements.txt`, `CLAUDE.md` only — no loose data/scripts/docs |
+| `data/` | Raw + intermediate input files (see table below) |
+| `scripts/` | All standalone analysis/backtest scripts (momentum_signals.py, carry_signals.py, value_signals.py, portfolio.py, regime_*.py, etc.) |
+| `outputs/` | Generated tradebooks/results (`momentum_output*/`, `carry_output/`, `value_output/`, `portfolio_output/`, `tradebooks/`, `Tradebooks 6-28/`) |
+| `docs/` | Strategy summary docs, PDFs, dashboard guide, `docs/images/` |
+| `research/` | Self-contained side research folders: `Papers/`, `NGL and VRP/`, `Fundamentals Cu/`, `BBG data refresh/` |
+
+All scripts in `scripts/` resolve paths via `__file__`-anchored `DATA_DIR`/`OUTPUTS_DIR`/`DOCS_DIR` constants (repo-root-relative), not hardcoded absolute paths or cwd-relative bare filenames.
+
+## Data Files (in `data/`)
 | File | Contents |
 |------|----------|
 | `Metals Cash and 3M.xlsx` | LME cash + 3M prices for 10 metals |
 | `Metals Futures Curve.csv` | LME Copper + other metals, F1–F27, multi-row header Excel |
 | `LME_Copper_Rolling_F1_v2.csv` | F1_raw + F1_continuous (ratio back-adjusted) |
+| `LME_Aluminium_Rolling_F1_v2.csv` | Aluminium equivalent of the above |
+| `expiry_calendars_20260526.xlsx` | LME expiry calendars used to build rolling F1 series |
+| `LME_Copper_Rolling_F1.csv` | Legacy pre-v2 rolling F1 (superseded by `_v2`, kept for reference) |
+| `CTA_Optimization.csv`, `MA_Crossover_Optimization.csv` | Momentum backtest optimization grids |
+
+`app.py` loads these via `os.path.join(os.path.dirname(__file__), "data", ...)`.
 
 Curve sheet names: "Copper LME", "Copper CME", "ALuminium LME", "Lead LME", "Zinc LME", …
 F1_continuous column is used for ALL PnL calculations regardless of signal source.
@@ -149,13 +167,13 @@ If momentum–carry correlation is high: investigate (both trend signals).
 
 ---
 
-## Standalone Scripts
+## Standalone Scripts (all in `scripts/`)
 | Script | Purpose | Output |
 |--------|---------|--------|
-| `momentum_signals.py` | MA + CTA tradebooks | `momentum_output_v3/` |
-| `carry_signals.py` | Carry tradebooks | `carry_output/` |
-| `value_signals.py` | Value tradebooks (V1 F1–F15, V2) | `value_output/` |
-| `portfolio.py` | **TO BE BUILT** | `portfolio_output/` |
+| `scripts/momentum_signals.py` | MA + CTA tradebooks | `outputs/momentum_output_v3/` |
+| `scripts/carry_signals.py` | Carry tradebooks | `outputs/carry_output/` |
+| `scripts/value_signals.py` | Value tradebooks (V1 F1–F15, V2) | `outputs/value_output/` |
+| `scripts/portfolio.py` | EW portfolio construction | `outputs/portfolio_output/` |
 
 ---
 

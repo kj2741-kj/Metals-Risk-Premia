@@ -228,15 +228,15 @@ METAL_COLORS = {
 # LOCAL FILE HELPERS
 # ═══════════════════════════════════════════════
 
-LOCAL_CASH_PATH = os.path.join(os.path.dirname(__file__), "Metals Cash and 3M.xlsx")
-LOCAL_CURVE_PATH = os.path.join(os.path.dirname(__file__), "Metals Futures Curve.csv")
+LOCAL_CASH_PATH = os.path.join(os.path.dirname(__file__), "data", "Metals Cash and 3M.xlsx")
+LOCAL_CURVE_PATH = os.path.join(os.path.dirname(__file__), "data", "Metals Futures Curve.csv")
 
 
 def _local_bytesio(path):
     """Read a local file into a BytesIO buffer with a .name attribute."""
     with open(path, "rb") as f:
         buf = io.BytesIO(f.read())
-    buf.name = os.path.basename(path)
+    buf.name = path
     return buf
 
 
@@ -457,8 +457,8 @@ def parse_cash_3m_columns(df, metal_name):
 # COPPER F1 CONTINUOUS LOADER (module-level)
 # ═══════════════════════════════════════════════
 
-LOCAL_F1_CONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LME_Copper_Rolling_F1_v2.csv")
-LOCAL_AL_F1_PATH   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LME_Aluminium_Rolling_F1_v2.csv")
+LOCAL_F1_CONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "LME_Copper_Rolling_F1_v2.csv")
+LOCAL_AL_F1_PATH   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "LME_Aluminium_Rolling_F1_v2.csv")
 _F1_PATHS = {"Copper": LOCAL_F1_CONT_PATH, "Aluminium": LOCAL_AL_F1_PATH}
 
 
@@ -2283,16 +2283,16 @@ with tab7:
     _mom_metal = st.radio("🔬 Metal", ["Copper", "Aluminium"], horizontal=True, key="mom_metal")
 
     # Metal-canonical MA pair (used for OOS and default preset)
-    _m_ma = (35, 43) if _mom_metal == "Copper" else (60, 115)
+    _m_ma = (20, 45) if _mom_metal == "Copper" else (60, 115)
     _m_ma_str = f"MA{_m_ma}"
 
     # Auto-reset controls to metal-canonical config when the metal toggle changes
     if st.session_state.get("_mom_metal_prev") != _mom_metal:
         st.session_state["_mom_metal_prev"] = _mom_metal
         if _mom_metal == "Copper":
-            st.session_state["mom_preset"]   = "MA(35,43), Same-Day  [Cu Best]"
+            st.session_state["mom_preset"]   = "MA(20,45), Same-Day  [Cu Best]"
             st.session_state["mom_sig_type"] = "MA Crossover"
-            st.session_state["mom_variant"]  = "MA(35,43) - Best Sharpe [Cu default]"
+            st.session_state["mom_variant"]  = "MA(20,45) - Best Sharpe [Cu default]"
             st.session_state["mom_timing"]   = "Same-Day"
         else:
             st.session_state["mom_preset"]   = "MA(60,115), Same-Day  [Al Best]"
@@ -2377,9 +2377,9 @@ with tab7:
 
     # ── Strategy Preset ───────────────────────────────────────────────────────
     _MOM_PRESETS = {
-        "MA(35,43), Same-Day  [Cu Best]": {
+        "MA(20,45), Same-Day  [Cu Best]": {
             "mom_sig_type": "MA Crossover",
-            "mom_variant":  "MA(35,43) - Best Sharpe [Cu default]",
+            "mom_variant":  "MA(20,45) - Best Sharpe [Cu default]",
             "mom_timing":   "Same-Day",
         },
         "MA(60,115), Same-Day  [Al Best]": {
@@ -2397,9 +2397,14 @@ with tab7:
             "mom_variant":  "EW Anchors - MA(10,25) + MA(35,43) + MA(63,100)",
             "mom_timing":   "Lag-1 (Next-Day)",
         },
+        "MA(35,43), Same-Day  [Prior Cu Default]": {
+            "mom_sig_type": "MA Crossover",
+            "mom_variant":  "MA(35,43) - Grid Optimum [legacy Cu default]",
+            "mom_timing":   "Same-Day",
+        },
         "MA(35,43), Lag-1  [Sensitivity Check]": {
             "mom_sig_type": "MA Crossover",
-            "mom_variant":  "MA(35,43) - Best Sharpe [Cu default]",
+            "mom_variant":  "MA(35,43) - Grid Optimum [legacy Cu default]",
             "mom_timing":   "Lag-1 (Next-Day)",
         },
         "Custom (use controls below)": {},
@@ -2440,8 +2445,9 @@ with tab7:
     with c2:
         if sig_type == "MA Crossover":
             variant_opts = {
-                "MA(35,43) - Best Sharpe [Cu default]": (35, 43),
+                "MA(20,45) - Best Sharpe [Cu default]": (20, 45),
                 "MA(60,115) - Best Sharpe [Al default]": (60, 115),
+                "MA(35,43) - Grid Optimum [legacy Cu default]": (35, 43),
                 "MA(33,48)": (33, 48),
                 "MA(35,44)": (35, 44),
                 "MA(34,47)": (34, 47),
@@ -3284,7 +3290,8 @@ with tab7:
 **Position timing** (no look-ahead either way)
 - *Same-Day (shift 1)*: trade at the signal's own close(t); first return t→t+1. Realistic default.
 - *Lag-1 (shift 2)*: trade at the next close(t+1); first return t+1→t+2. Conservative.
-- MA(35,43): Same-Day +0.72 vs Lag-1 +0.63. CTA also leads Same-Day; Anchors near-tied (Lag-1 marginally ahead).
+- MA(20,45) [Cu default]: Same-Day +0.63 vs Lag-1 +0.62. MA(35,43) [legacy grid-optimum, kept on the tab for
+  comparison]: Same-Day +0.72 vs Lag-1 +0.63. CTA also leads Same-Day; Anchors near-tied (Lag-1 marginally ahead).
 
 **Transaction costs**
 - Expressed in basis points (bps) of notional, round-trip
@@ -4424,7 +4431,7 @@ with tab9:
     v9_c1, v9_c2, v9_c3, v9_c4, v9_c5, v9_c6 = st.columns([1.5, 1.2, 1.5, 1.3, 1.2, 1.4])
     with v9_c1:
         val_vgroup = st.selectbox("Variant", ["V1 - MA Reversion", "V2 - Baz-Granger Reversal"],
-                                  index=1, key="val_vgroup")
+                                  index=0, key="val_vgroup")
         val_is_v1 = val_vgroup.startswith("V1")
     with v9_c2:
         val_contract = st.selectbox("Contract", [f"F{k}" for k in range(1, 16)],
@@ -5284,12 +5291,18 @@ with tab10:
     p10_crv = p10_crv.sort_index()
 
     # ── Portfolio legs: metal-specific best-of-each configs (all shift-1, no look-ahead) ──
-    #   Copper:    Momentum MA(35,43) | Carry 20d roll-yield momentum | Value V1 F8 5yr
+    #   Copper:    Momentum MA(20,45) | Carry 252d roll-yield z-score | Value V1 F8 5yr
+    #     (Carry subvariant here is Z-score-252d, NOT the standalone Carry tab's default
+    #     CarryMom-20d -- CarryMom-20d trades the 20d CHANGE in roll yield, which is
+    #     structurally a momentum operation applied to a curve variable, so it overlaps
+    #     conceptually with the Momentum leg already in this blend. Z-score-252d is a
+    #     standardised LEVEL measure -- cleaner conceptual separation between the three
+    #     legs. CarryMom-20d remains the Carry tab's own default, unaffected.)
     #   Aluminium: Momentum MA(60,115)| Carry 252d roll-yield z-score | Value V1 F12 5yr
     if _p10_metal == "Aluminium":
         _P10_MA = (60, 115); _P10_CARRY = "zscore"; _P10_VK = 12
     else:
-        _P10_MA = (35, 43);  _P10_CARRY = "carrymom"; _P10_VK = 8
+        _P10_MA = (20, 45);  _P10_CARRY = "zscore"; _P10_VK = 8
     _p10_mom_label   = f"MA({_P10_MA[0]},{_P10_MA[1]})"
     _p10_carry_label = "Z-score 252d" if _P10_CARRY == "zscore" else "CarryMom 20d"
     _p10_val_label   = f"V1 F{_P10_VK} 5yr"
@@ -5297,7 +5310,7 @@ with tab10:
     # ── Signal 1: Momentum MA crossover, shift-1 ──────────────────────────────
     _p10_mom_pos = np.sign(pf1r.rolling(_P10_MA[0]).mean() - pf1r.rolling(_P10_MA[1]).mean()).shift(1).fillna(0)
 
-    # ── Signal 2: Carry — roll-yield momentum (copper) or 252d z-score (aluminium) ─
+    # ── Signal 2: Carry — 252d roll-yield z-score (both metals; see leg-choice note above) ─
     if "F1" in p10_crv.columns and "F2" in p10_crv.columns:
         _p10_cr_base = ((p10_crv["F1"] - p10_crv["F2"]) / p10_crv["F1"]).replace([np.inf, -np.inf], np.nan)
         if _P10_CARRY == "zscore":
@@ -6105,11 +6118,18 @@ the default for simplicity; switch to inverse-vol above if you prefer regime sta
     st.divider()
     with st.expander("Methodology Notes", expanded=False):
         st.markdown("""
-**Signal Definitions (each leg = the selected metal's best-performing configuration; all numbers in the
-cards/tables above recompute live for Copper vs Aluminium):**
-- **Momentum:** MA crossover on F1_raw, shift-1 entry, position ±1. *Copper:* MA(35,43); *Aluminium:* slow MA(60,115).
-- **Carry:** shift-1, position ±1. *Copper:* 20-day change in the (F1−F2)/F1 roll yield (curve momentum);
-  *Aluminium:* 252-day z-score of the (F1−F2)/F1 roll yield.
+**Signal Definitions (Momentum and Value use each tab's best-performing configuration; the Carry leg is
+Z-score-252d for both metals here, not necessarily the Carry tab's own best performer - see below. All
+numbers in the cards/tables above recompute live for Copper vs Aluminium):**
+- **Momentum:** MA crossover on F1_raw, shift-1 entry, position ±1. *Copper:* MA(20,45) - fast/slow ratio 2.25,
+  a genuine multi-timescale gap (the earlier grid-optimum MA(35,43) has only an 8-day gap/1.23 ratio between its
+  two windows and is kept on the tab as a comparison, not deleted); *Aluminium:* slow MA(60,115), unchanged
+  (already a wide gap, ratio 1.92).
+- **Carry:** shift-1, position ±1, 252-day z-score of the (F1−F2)/F1 roll yield, both metals. On Copper this is
+  deliberately NOT Carry-momentum-20d (the Carry tab's own best performer, and the standard EW portfolio leg
+  used in earlier versions of this document) - Carry-momentum trades the *change* in roll yield, a momentum
+  operation on a curve variable, which blurs the three-distinct-premia taxonomy this portfolio is built on.
+  Z-score is the conceptually clean "Carry" level measure. See "Regime & Carry Momentum Research" below.
 - **Value V1 (default):** (Fk − MA_1260)/MA_1260 deviation, ±10% threshold, shift-1, position −1/0/+1.
   *Copper:* F8; *Aluminium:* F12.
 - *Value V2 (optional):* F1_raw[t−2520] − F1_raw[t] reversal (10yr) - higher in-sample Sharpe but fragile out-of-sample.
@@ -6130,4 +6150,47 @@ realised EW / inverse-vol portfolio Sharpe (for the selected metal at the chosen
 cards above and update with the metal toggle. EW is the default; inverse-vol is the alternative.
 
 **Disclaimer:** Partial-OOS backtest (params IS-selected, applied walk-forward). Not investment advice.
+        """)
+
+    with st.expander("Regime & Carry Momentum Research (not yet in production)", expanded=False):
+        st.markdown("""
+Two further research questions were investigated for the Portfolio (Copper) but are **not** built into the
+live tab above or reflected in any of its cards, charts or numbers - this section is a documented research
+note only.
+
+**Regime detection (R1 / R2).** Two dynamic-weighting approaches were tested walk-forward: R1 (term-structure
+regime - tilt toward Momentum+Carry in backwardation, Value in contango) and R2 (volatility regime - same
+structure, split on trailing realised vol). Both used IS-optimised weights per rolling window (max-Sharpe QP,
+no hand-picked constants). Neither reliably beat the static equal-weight portfolio:
+- R1: average OOS Sharpe ranged **-0.06 to +0.06** depending on configuration (hand-picked weights vs
+  IS-optimised, and which carry leg was used), and was clearly negative on **Aluminium (-0.16)** where
+  backwardation is rare (15% of days vs Copper's 31%), starving the regime fit of data.
+- R2: average OOS Sharpe ranged **-0.04 to +0.12** depending on the carry leg used, with both versions
+  **negative post-2022 (-0.33 to -0.36)** and very high window-to-window variance (many windows fit
+  100%/0%/0% corner-solution weights - a sign of overfitting at this sample size, not a stable signal).
+
+**Conclusion: both R1 and R2 are shelved.** The static equal-weight blend keeps outperforming the
+dynamically re-weighted versions tested.
+
+**Carry Momentum placement.** This tab's Carry leg is Z-score-252d, not Carry-momentum-20d (the Carry tab's
+own best-performing signal) - see the Methodology Notes above for why. That said, Carry-momentum's edge is
+real, not noise (it is the best walk-forward carry signal on the Carry tab), and the literature backs
+treating it as its own thing: **Boons and Prado (2019, *Journal of Finance*, "Basis-Momentum")** identify
+momentum in the near-term futures basis as a return predictor distinct from both the basis level (carry) and
+price momentum - priced, maturity-specific, and increasing in volatility. A quick walk-forward test found
+Carry Momentum still adds real value when reintroduced deliberately alongside the 3-sleeve base
+(Momentum MA(20,45) + Carry Z-score + Value V1 F8), rather than substituted in as "Carry":
+
+| Configuration | Avg OOS Sharpe | Post-2022 |
+|---|---|---|
+| Base 3-sleeve EW (current tab) | 0.49 | 0.86 |
+| + Carry Momentum, unconditional 4th sleeve | 0.54 | 0.99 |
+| + Carry Momentum, **backwardation-only overlay** | **0.60** | 0.92 |
+| + Carry Momentum, high-vol-only overlay | 0.52 | 0.95 |
+| *(for reference)* original all-Carry-Momentum 3-sleeve config | 0.57 | - |
+
+The backwardation-conditional overlay beats even the original all-Carry-Momentum configuration - this isn't
+just "recovering what was given up" by moving Carry to Z-score, it looks like a genuine improvement. This is
+a **promising Phase 2 candidate** (a 4th signal or regime-conditional overlay, not a leg substitution) and is
+flagged for a future build, not the current one.
         """)

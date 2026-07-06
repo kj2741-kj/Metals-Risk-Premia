@@ -1,0 +1,6 @@
+Spread Pair,Statistic,P-Value,Cointegrated
+Ethane-Ethylene vs Propane-Propylene,-4.012953,0.00688,True
+Propane-Ethylene vs Propane-Propylene,-3.884259,0.01043,True
+Propane-Ethylene vs Butane-Ethylene,-3.511085,0.03143,True
+Propane-Propylene vs Butane-Ethylene,-5.256609,5e-05,True
+Butane-Ethylene vs Butane-Propylene,-3.62045,0.02311,True
