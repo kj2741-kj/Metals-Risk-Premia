@@ -6154,34 +6154,37 @@ cards above and update with the metal toggle. EW is the default; inverse-vol is 
 
     with st.expander("Regime & Carry Momentum Research (not yet in production)", expanded=False):
         st.markdown("""
-Two further research questions were investigated for the Portfolio (Copper) but are **not** built into the
-live tab above or reflected in any of its cards, charts or numbers - this section is a documented research
-note only.
+Two further research questions were investigated for the Portfolio (Copper **and** Aluminium) but are **not**
+built into the live tab above or reflected in any of its cards, charts or numbers - this section is a
+documented research note only.
 
-**Regime detection (R1 / R2).** Two dynamic-weighting approaches were tested walk-forward: R1 (term-structure
-regime - tilt toward Momentum+Carry in backwardation, Value in contango) and R2 (volatility regime - same
-structure, split on trailing realised vol). Both used IS-optimised weights per rolling window (max-Sharpe QP,
-no hand-picked constants). Neither reliably beat the static equal-weight portfolio:
-- R1: average OOS Sharpe ranged **-0.06 to +0.06** depending on configuration (hand-picked weights vs
-  IS-optimised, and which carry leg was used), and was clearly negative on **Aluminium (-0.16)** where
-  backwardation is rare (15% of days vs Copper's 31%), starving the regime fit of data.
-- R2: average OOS Sharpe ranged **-0.04 to +0.12** depending on the carry leg used, with both versions
-  **negative post-2022 (-0.33 to -0.36)** and very high window-to-window variance (many windows fit
-  100%/0%/0% corner-solution weights - a sign of overfitting at this sample size, not a stable signal).
+**Regime detection (R1 / R2).** Two dynamic-weighting approaches were tested walk-forward on both metals: R1
+(term-structure regime - tilt toward Momentum+Carry in backwardation, Value in contango) and R2 (volatility
+regime - same structure, split on trailing realised vol). Both used IS-optimised weights per rolling window
+(max-Sharpe QP, no hand-picked constants). Neither reliably beat the static equal-weight portfolio, on either
+metal:
+- R1: average OOS Sharpe ranged **-0.06 to +0.06 on Copper** depending on configuration (hand-picked weights
+  vs IS-optimised, and which carry leg was used), and was clearly negative on **Aluminium (-0.16 avg, -0.20
+  post-2022)**, where backwardation is rare (15% of days vs Copper's 31%), starving the regime fit of data.
+- R2: average OOS Sharpe ranged **-0.04 to +0.12 on Copper** depending on the carry leg used, with both
+  versions **negative post-2022 (-0.33 to -0.36)**; **Aluminium was also negative (-0.15 avg, -0.34
+  post-2022)**. Both metals show very high window-to-window variance (many windows fit 100%/0%/0%
+  corner-solution weights - a sign of overfitting at this sample size, not a stable signal).
 
-**Conclusion: both R1 and R2 are shelved.** The static equal-weight blend keeps outperforming the
-dynamically re-weighted versions tested.
+**Conclusion: both R1 and R2 are shelved on both metals.** The static equal-weight blend keeps outperforming
+the dynamically re-weighted versions tested, everywhere they were tried.
 
 **Carry Momentum placement.** This tab's Carry leg is Z-score-252d, not Carry-momentum-20d (the Carry tab's
-own best-performing signal) - see the Methodology Notes above for why. That said, Carry-momentum's edge is
-real, not noise (it is the best walk-forward carry signal on the Carry tab), and the literature backs
-treating it as its own thing: **Boons and Prado (2019, *Journal of Finance*, "Basis-Momentum")** identify
-momentum in the near-term futures basis as a return predictor distinct from both the basis level (carry) and
-price momentum - priced, maturity-specific, and increasing in volatility. A quick walk-forward test found
-Carry Momentum still adds real value when reintroduced deliberately alongside the 3-sleeve base
-(Momentum MA(20,45) + Carry Z-score + Value V1 F8), rather than substituted in as "Carry":
+own best-performing signal on Copper) - see the Methodology Notes above for why. That said, Carry-momentum's
+edge is real, not noise on Copper (it is the best walk-forward carry signal on the Carry tab there), and the
+literature backs treating it as its own thing: **Boons and Prado (2019, *Journal of Finance*,
+"Basis-Momentum")** identify momentum in the near-term futures basis as a return predictor distinct from both
+the basis level (carry) and price momentum - priced, maturity-specific, and increasing in volatility. A quick
+walk-forward test found Carry Momentum still adds real value **on Copper** when reintroduced deliberately
+alongside the 3-sleeve base (Momentum MA(20,45) + Carry Z-score + Value V1 F8), rather than substituted in as
+"Carry":
 
-| Configuration | Avg OOS Sharpe | Post-2022 |
+| Configuration (Copper) | Avg OOS Sharpe | Post-2022 |
 |---|---|---|
 | Base 3-sleeve EW (current tab) | 0.49 | 0.86 |
 | + Carry Momentum, unconditional 4th sleeve | 0.54 | 0.99 |
@@ -6190,7 +6193,17 @@ Carry Momentum still adds real value when reintroduced deliberately alongside th
 | *(for reference)* original all-Carry-Momentum 3-sleeve config | 0.57 | - |
 
 The backwardation-conditional overlay beats even the original all-Carry-Momentum configuration - this isn't
-just "recovering what was given up" by moving Carry to Z-score, it looks like a genuine improvement. This is
-a **promising Phase 2 candidate** (a 4th signal or regime-conditional overlay, not a leg substitution) and is
-flagged for a future build, not the current one.
+just "recovering what was given up" by moving Carry to Z-score, it looks like a genuine improvement on Copper.
+
+**Aluminium shows the opposite pattern for the unconditional case**, which is informative rather than
+discouraging: adding Carry Momentum as a naive 4th sleeve **hurts** (avg OOS 0.59 vs the 0.77 base), since
+Carry-momentum is already weak/dead on Aluminium standalone (see Section 4 of the Carry tab). The
+regime-conditional overlays are roughly **neutral** there instead (0.77-0.79) rather than harmful. This
+metal-specific asymmetry is a point in favour of the idea, not against it - the regime gating appears to be
+doing real work (excluding a bad signal on Aluminium) rather than being a Copper-only artifact that happens
+to look good in one backtest.
+
+This combination (genuine Copper improvement, harmless-not-harmful Aluminium neutrality) is a **promising
+Phase 2 candidate** (a 4th signal or regime-conditional overlay, not a leg substitution) and is flagged for a
+future build, not the current one.
         """)
